@@ -759,10 +759,28 @@ test('cancelled pointers clear their field without slinging (iOS pointercancel)'
   };
   const cancelled = build(true);
   const released = build(false);
-  assert.equal(cancelled.pointers.size, 0, 'cancelled field was not cleared');
-  assert.equal(released.pointers.size, 0, 'released field was not cleared');
+
+  // A cancel is instant: iOS fires pointercancel on system gestures and a field that
+  // outlives the finger by even a moment is the stuck-invisible-field bug.
+  assert.equal(cancelled.pointers.size, 0, 'cancelled field was not cleared immediately');
   assert.ok(!cancelled.events.some((e) => e.type === 'sling'), 'a cancelled pointer slung — that is the stuck-field bug');
+
+  // A clean release slings, then fades out over field.releaseFade rather than hard-cutting.
   assert.ok(released.events.some((e) => e.type === 'sling'), 'a released gather did NOT sling');
+  const fading = released.pointers.get(1);
+  if (fading) {
+    assert.equal(fading.down, false, 'released field still reads as held');
+    assert.equal(fading.gather, 0, 'a lifted finger must stop attracting immediately');
+  }
+  // ...and it is always gone once the fade is over. No field ever outlives its finger.
+  for (let i = 0; i < Math.ceil((CONFIG.field.releaseFade + 0.1) * 60); i++) step(released, 1 / 60, { pointers: [] });
+  assert.equal(released.pointers.size, 0, 'released field never went away — stuck field');
+
+  // A cancelled field applies no further force at all, from the very next step.
+  const before = cancelled.balls.map((b) => Math.hypot(b.vx, b.vy));
+  step(cancelled, 1 / 60, { pointers: [] });
+  assert.equal(cancelled.pointers.size, 0);
+  assert.equal(before.length, cancelled.balls.length);
 });
 
 test('gather then release actually throws balls outward (the sling does work)', () => {

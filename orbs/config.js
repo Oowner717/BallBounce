@@ -69,10 +69,13 @@ export const CONFIG = {
   // when held nearly still. Released fields sling whatever they gathered.
   field: {
     radius: 118,              // px @ref. Field reach.
-    radiusGather: 250,        // px @ref. Reach once fully morphed into an attractor. Deliberately
+    radiusGather: 275,        // px @ref. Reach once fully morphed into an attractor. Deliberately
                               // MUCH wider than the push radius: the push evacuates its own
                               // neighbourhood, so a same-size attractor would have nothing left
                               // to gather. Reaching past the hole is what makes gather work.
+                              // There is a sharp cliff here: below ~260 on a 390px screen almost
+                              // nothing arrives (balls stall just outside the rim); above ~330 it
+                              // hoovers up the whole screen and leaves no crowd to sling into.
     strength: 2750,           // px/s^2 @ref. Peak outward push at the field centre.
     falloffExp: 2.0,          // Exponent on (1 - t^2)^n falloff, t = dist/radius. Higher = tighter core.
     minDist: 7,               // px @ref. Distance floor so the centre is not a singularity.
@@ -91,13 +94,23 @@ export const CONFIG = {
   /* ----------------------------------------------------- gather and sling -- */
   gather: {
     stillSpeed: 130,          // px/s @ref. Field speed below which the finger counts as "held still".
-    stillTime: 0.26,          // s. How long it must stay still before the morph starts.
+    stillTime: 0.18,          // s. How long it must stay still before the morph starts. Long
+                              // enough not to trigger on a pause mid-swipe.
     morphIn: 0.55,            // s. Time to fully become an attractor.
     morphOut: 0.22,           // s. Time to fall back to push once the finger moves again.
-    orbitRadius: 46,          // px @ref. Radius of the orbit shell balls settle into.
-    orbitSpring: 21.0,        // 1/s^2-ish. Radial spring pulling balls to the shell.
-    orbitDamp: 3.1,           // 1/s. Damping on the radial velocity component. Kills bouncing in/out.
-    orbitSpin: 430,           // px/s @ref. Tangential speed injected; this is what makes it *orbit*.
+    // These four are coupled. A ball orbiting at tangential speed v needs centripetal
+    // acceleration v^2/d, which the spring supplies as orbitSpring*(d - orbitRadius). The
+    // orbit therefore settles NOT at orbitRadius but where those balance:
+    //     d = (k*r0 + sqrt(k^2*r0^2 + 4*k*v^2)) / (2k)
+    // With the old values (k=21, v=430) that was ~120px against a 46px nominal shell, so the
+    // balls orbited far outside the ring drawn for them. main.js draws the ring at the solved
+    // radius, so retuning any of these keeps the visual honest.
+    orbitRadius: 50,          // px @ref. Nominal shell radius (the spring's zero point).
+    orbitSpring: 110,         // 1/s^2. Radial spring toward the shell. Stiff enough to actually
+                              // hold an orbit at the speed orbitSpin asks for.
+    orbitDamp: 6.5,           // 1/s. Damping on radial velocity. Underdamped on purpose: the
+                              // slight bob in and out is what makes the orbit look alive.
+    orbitSpin: 300,           // px/s @ref. Tangential speed injected; this is what makes it *orbit*.
     orbitSpinGain: 3.4,       // 1/s. How hard tangential velocity is driven toward orbitSpin.
     spinRampTime: 0.5,        // s. Time for the spin to reach full strength after the morph.
     pull: 1900,               // px/s^2 @ref. Ceiling on the inward pull. The spring is clamped to
@@ -163,7 +176,9 @@ export const CONFIG = {
     minSplitRadius: 3.4,      // px @ref. A splitter below this will not split again.
     densityExp: 2,            // mass = density * r^densityExp. 2 = "area", reads right in 2D.
     density: 0.022,           // Mass per r^densityExp. Only ratios matter.
-    glowScale: 2.6,           // Halo radius as a multiple of ball radius (render only).
+    glowScale: 1.9,           // Halo radius as a multiple of ball radius (render only). Bigger
+                              // than ~2 and the balls stop reading as small glowing balls and
+                              // start reading as one continuous wall of light.
   },
 
   /* ------------------------------------------------------------ ball types -- */
@@ -183,7 +198,7 @@ export const CONFIG = {
       blastFalloffExp: 1.6,   // Exponent on the blast falloff.
       inertTime: 4.0,         // s. Recharge lockout after detonating. Rendered as a visible refill.
       selfKick: 0.35,         // Fraction of the blast impulse the detonator keeps for itself.
-      scoreEach: 8,           // Flat score per ball caught in the blast, before multipliers.
+      scoreEach: 3,           // Flat score per ball caught in the blast, before multipliers.
     },
     SPLITTER: {
       weight: 14, score: 1.6, unlockLevel: 3,
@@ -221,7 +236,7 @@ export const CONFIG = {
       shardSpeedJitter: 0.4,  // Fractional randomisation of shard speed.
       shardLife: 1.5,         // s. Shard lifetime.
       shardRadius: 2.2,       // px @ref. Shard collision radius against balls.
-      shardScore: 14,         // Flat score for a shard touching a ball, before multipliers.
+      shardScore: 5,          // Flat score for a shard touching a ball, before multipliers.
       shardBounces: 1,        // Wall bounces allowed before a shard expires. The brief says one.
       shardDrag: 0.22,        // 1/s. Shard damping.
       maxShards: 190,         // Hard cap on live shards; excess emissions are dropped.
@@ -234,7 +249,7 @@ export const CONFIG = {
       depth: 2,               // Total links: the ball, then one more hop. "Chains once more."
       range: 175,             // px @ref. Search radius for the next jolt target.
       impulse: 330,           // px/s @ref. Velocity kick delivered by a jolt.
-      scoreEach: 12,          // Flat score per jolted ball, before multipliers.
+      scoreEach: 4,           // Flat score per jolted ball, before multipliers.
       arcTime: 0.28,          // s. Lifetime of the drawn lightning arc (render only).
       hopDelay: 0.05,         // s. Visual delay between links (render only).
     },
@@ -247,7 +262,7 @@ export const CONFIG = {
       frozenDrag: 7.5,        // 1/s. Heavy damping while frozen; they barely move.
       frozenRestitution: 0.55,// Frozen balls thud instead of bouncing.
       shatterImpulse: 190,    // px/s @ref. Outward pop when the freeze breaks.
-      scoreEach: 10,          // Flat score per frozen ball, before multipliers.
+      scoreEach: 3,           // Flat score per frozen ball, before multipliers.
       immuneTime: 1.6,        // s. Post-thaw immunity, so a ball cannot be chain-frozen forever.
     },
     GOLD: {
@@ -257,7 +272,7 @@ export const CONFIG = {
       comboJump: 4,           // Combo steps granted by a gold hard impact.
       neverDespawn: true,     // Gold is never quietly removed by the population manager.
       glitterRate: 22,        // Glints per second (render only).
-      scoreFlat: 260,         // Flat bonus on a gold hard impact, before multipliers.
+      scoreFlat: 150,         // Flat bonus on a gold hard impact, before multipliers.
     },
   },
 
@@ -294,7 +309,7 @@ export const CONFIG = {
 
   /* --------------------------------------------------------------- scoring -- */
   score: {
-    energyScale: 42,          // Score per unit of normalised impact energy. The master score knob.
+    energyScale: 10,          // Score per unit of normalised impact energy. The master score knob.
     refSpeed: 300,            // px/s @ref. Impact speed that counts as "1 unit" of energy. Sets the
                               // whole score economy: energy is (vn/refSpeed)^2 * (massRatio).
     energyExp: 0.86,          // Exponent on impact energy; <1 keeps huge hits from dwarfing everything.
@@ -306,9 +321,18 @@ export const CONFIG = {
     comboDecayFrac: 0.12,     // Fraction of the REMAINING combo shed per tick (minimum one step).
                               // A flat one-per-tick would take an hour to unwind a 7000 combo;
                               // proportional decay unwinds any size in about the same wall time.
-    comboMultScale: 0.42,     // Coefficient in mult = 1 + scale * count^exp.
-    comboMultExp: 0.62,       // Sublinear growth exponent. Uncapped, but never runaway.
+    comboMultScale: 0.55,     // Coefficient in mult = 1 + scale * count^exp.
+    comboMultExp: 0.34,       // Sublinear growth exponent. Uncapped, but deliberately shallow:
+                              // a busy screen lands a hard impact almost every frame, so the
+                              // combo climbs into five figures during a long rally. At 0.62 that
+                              // compounded into billions of points a minute and levels flew past
+                              // faster than the unlock celebrations could play.
     comboStepPerHit: 1,       // Combo steps per hard impact.
+    comboMaxPerStep: 1,       // Ceiling on combo growth per simulation step. The combo counts
+                              // moments of contact, not individual collisions — a cascade fires
+                              // hundreds of hard impacts per second, and tallying each one turned
+                              // the combo into a five-figure collision counter. GOLD's jump is
+                              // exempt from this cap.
     popupMinScore: 1,         // Smallest score that spawns a floating popup.
     popupMerge: 0.09,         // s. Popups at nearly the same spot inside this window merge.
     rollTau: 0.16,            // s. Counter roll time constant. The counter never snaps.
@@ -317,9 +341,10 @@ export const CONFIG = {
 
   /* ---------------------------------------------------------------- levels -- */
   levels: {
-    base: 240,                // XP for level 2. Small so the first unlock lands inside ~15s.
-    exp: 1.62,                // Threshold growth exponent. threshold(n) = base * n^exp + linear*n.
-    linear: 130,              // Linear term, keeps early levels from being trivially close together.
+    base: 6000,               // XP for level 2. Sized so the first unlock lands around 12s of
+                              // engaged play, and the remaining six spread across ~4 minutes.
+    exp: 2.4,                 // Threshold growth exponent. threshold(n) = base * n^exp + linear*n.
+    linear: 2000,             // Linear term, keeps early levels from being trivially close together.
     maxCelebrated: 999,       // Levels above this celebrate quietly (never reached in practice).
     capNudgeStart: 8,         // Level at which each level-up starts nudging the ball soft cap upward.
     capNudgePerLevel: 1.6,    // Soft-cap increase per level past capNudgeStart.
@@ -330,9 +355,11 @@ export const CONFIG = {
   /* ------------------------------------------------------------ milestones -- */
   milestones: {
     // Lifetime-score milestones. Generated as m * 10^k for each mantissa, ascending.
-    mantissas: [1, 2.5, 5],   // 1k, 2.5k, 5k, 10k, 25k, 50k, 100k...
-    startExp: 3,              // First decade: 10^3 = 1,000.
-    maxExp: 12,               // Last decade tracked: 10^12.
+    mantissas: [1, 1.6, 2.5, 4, 6.3],  // Five per decade, log-even: 10k, 16k, 25k, 40k, 63k, 100k...
+    startExp: 4,              // First decade: 10^4 = 10,000. Starting at 1,000 fired four
+                              // celebrations in the first fifteen seconds, which is not a milestone.
+    maxExp: 15,               // Last decade tracked: 10^15. Sixty rungs, so a regular can
+                              // plausibly fill the 88-star sky over months (comets count too).
     celebrateTime: 2.8,       // s. Length of a milestone celebration.
     cometMilestone: true,     // Breaking a comet also counts as a milestone.
   },
@@ -383,15 +410,19 @@ export const CONFIG = {
   /* ---------------------------------------------------------------- render -- */
   render: {
     dprCap: 2,                // devicePixelRatio ceiling. Above 2 costs fill rate and buys nothing.
-    trailFade: 0.115,         // Per-frame alpha erased from the trail layer with 'destination-out'.
+    trailFade: 0.17,          // Per-frame alpha erased from the trail layer with 'destination-out'.
                               // A translucent black rect over a dark scene ghosts grey; this does not.
-    trailFadeCalm: 0.055,     // Slower trail fade in CALM: long, lazy streaks.
-    trailFadeFrenzy: 0.18,    // Faster fade in FRENZY, or the screen turns to soup.
+                              // Too LOW and the additive layer saturates to white, which then ghosts
+                              // grey on its way out — same symptom, different cause.
+    trailFadeCalm: 0.11,      // Slower trail fade in CALM: longer, lazier streaks.
+    trailFadeFrenzy: 0.24,    // Faster fade in FRENZY, or the screen turns to soup.
     bloomScale: 0.25,         // Bloom buffer size relative to the stage. The resample IS the blur.
     bloomPasses: 2,           // Upscale-composite passes with 'lighter'.
-    bloomStrength: 0.85,      // Alpha of the bloom composite.
-    bloomStrengthCalm: 0.55,  // Gentler bloom when quiet.
-    bloomStrengthFrenzy: 1.0, // Full bloom when loud.
+    bloomStrength: 0.42,      // Alpha of the bloom composite. This is added ON TOP of an already
+                              // additive layer, so it saturates to flat white far sooner than it looks
+                              // like it should.
+    bloomStrengthCalm: 0.28,  // Gentler bloom when quiet.
+    bloomStrengthFrenzy: 0.62,// Full bloom when loud.
     starTwinkle: 0.35,        // Amplitude of star twinkle.
     hudMargin: 16,            // px. HUD inset, applied *inside* env(safe-area-inset-*).
     hudAlphaCalm: 0.5,        // HUD opacity when calm — the numbers recede when nothing is happening.
@@ -496,7 +527,9 @@ export const CONFIG = {
   /* -------------------------------------------------------------- filigree -- */
   // Lifetime best-combo tiers add permanent ornament to the finger ring. Cosmetic only.
   filigree: {
-    tiers: [8, 20, 40, 75, 130, 220, 400],  // Best-combo thresholds. Tier = count of thresholds passed.
+    tiers: [40, 150, 600, 2500, 10000, 35000, 100000],  // Best-combo thresholds; tier = how many passed.
+                              // Scaled to the real combo range: a busy rally reaches five figures,
+                              // so tiers topping out at 400 would all unlock in the first minute.
     arcCount: [0, 3, 4, 5, 6, 8, 10, 12],   // Ornament arcs per tier (index = tier).
     spinRate: 0.25,           // rad/s. Ornament rotation.
     alpha: 0.55,              // Ornament opacity.
@@ -513,8 +546,8 @@ export const CONFIG = {
     radius: 15,               // px @ref. Comet body radius.
     hp: 5,                    // Hard impacts needed to break it.
     chipSpeed: 240,           // px/s @ref. Minimum impact speed that chips it.
-    scorePerChip: 420,        // Flat score per chip, before multipliers.
-    scoreBreak: 5200,         // Flat score for breaking it.
+    scorePerChip: 250,        // Flat score per chip, before multipliers.
+    scoreBreak: 3000,         // Flat score for breaking it.
     lifetime: 26,             // s. Time to cross and leave.
     tailLength: 20,           // Tail samples kept (render only).
   },

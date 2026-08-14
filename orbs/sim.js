@@ -313,6 +313,7 @@ export function createSim(opts = {}) {
     comboMult: 1,
     comboTimer: 0,
     comboDecayAcc: 0,
+    _comboAdded: 0,
     bestCombo: save.bestCombo,
     sessionBestCombo: 0,
 
@@ -341,6 +342,7 @@ export function createSim(opts = {}) {
     comet: null,
     cometTimer: config.comet.minGap * 0.5,
 
+    activeFields: 0,
     sanitizerHits: 0,
     stepCount: 0,
 
@@ -570,6 +572,7 @@ function makeField(sim, id, x, y) {
     spin: 0,
     down: true,
     releasing: 0,
+    releaseAmp: 0,
     age: 0,
   };
 }
@@ -608,11 +611,18 @@ function updatePointers(sim, dt, input) {
     f.down = true;
   }
 
-  // Anything no longer reported has been released: sling, then remove.
+  // Anything no longer reported has been released: sling, then fade the field out over
+  // field.releaseFade rather than cutting it dead. A hard cut reads as the world flinching.
   for (const [id, f] of sim.pointers) {
-    if (!seen.has(id)) {
+    if (!seen.has(id) && f.down) {
       slingField(sim, f);
-      sim.pointers.delete(id);
+      f.down = false;
+      f.releaseAmp = f.amp;
+      f.releasing = C.field.releaseFade;
+      f.gather = 0;          // a lifted finger stops attracting immediately
+      f.spin = 0;
+      f.vx = 0; f.vy = 0;    // and stops flinging
+      if (!(f.releasing > 0)) sim.pointers.delete(id);
     }
   }
 
@@ -620,7 +630,17 @@ function updatePointers(sim, dt, input) {
   const kPos = smoothK(C.field.smoothTau, dt);
   const kVel = smoothK(C.field.velTau, dt);
   const maxSpeed = C.field.maxFieldSpeed * s;
+  const expired = sim._expired || (sim._expired = []);
+  expired.length = 0;
   for (const f of sim.pointers.values()) {
+    if (!f.down) {
+      // Released: coast to nothing, then disappear.
+      f.releasing -= dt;
+      if (f.releasing <= 0) { expired.push(f.id); continue; }
+      f.amp = f.releaseAmp * (f.releasing / Math.max(1e-6, C.field.releaseFade));
+      f.age += dt;
+      continue;
+    }
     const prevX = f.sx, prevY = f.sy;
     f.sx += (f.x - f.sx) * kPos;
     f.sy += (f.y - f.sy) * kPos;
@@ -651,6 +671,12 @@ function updatePointers(sim, dt, input) {
       : (f.gather > 0 ? 1 : 0);
     if (f.gather <= 0) f.spin = 0;
   }
+  for (const id of expired) sim.pointers.delete(id);
+
+  // Only fields still under a finger count as "being touched".
+  let live = 0;
+  for (const f of sim.pointers.values()) if (f.down) live++;
+  sim.activeFields = live;
 }
 
 const EMPTY = [];
@@ -1053,10 +1079,23 @@ function addScore(sim, amount, x, y, kind) {
   return gained;
 }
 
-function bumpCombo(sim, steps) {
+/**
+ * Grow the combo. `steps` is clamped by score.comboMaxPerStep unless `exempt` is set:
+ * a cascade fires hundreds of hard impacts per second, and counting each one made the
+ * combo a collision tally (86,000 after five minutes) rather than a rally length. Capping
+ * it per step means the combo counts MOMENTS of contact, which is what a player reads it as.
+ */
+function bumpCombo(sim, steps, exempt) {
   const C = sim.config;
-  sim.comboCount += steps;
+  let add = steps;
+  if (!exempt) {
+    const room = Math.max(0, C.score.comboMaxPerStep - sim._comboAdded);
+    add = Math.min(steps, room);
+    sim._comboAdded += add;
+  }
   sim.comboTimer = C.score.comboWindow;
+  if (add <= 0) { sim.comboDecayAcc = 0; return; }
+  sim.comboCount += add;
   sim.comboDecayAcc = 0;
   sim.comboMult = comboMultiplier(sim.comboCount, C);
   if (sim.comboCount > sim.sessionBestCombo) sim.sessionBestCombo = sim.comboCount;
@@ -1112,11 +1151,15 @@ function processImpacts(sim) {
 
     // Gold: flat bonus and a combo jump.
     let comboSteps = C.score.comboStepPerHit;
+    let goldHit = false;
     const goldCfg = C.types.GOLD;
-    if (a.type === 'GOLD') { flat += goldCfg.scoreFlat; comboSteps = Math.max(comboSteps, goldCfg.comboJump); }
-    if (b && b.type === 'GOLD') { flat += goldCfg.scoreFlat; comboSteps = Math.max(comboSteps, goldCfg.comboJump); }
+    if (a.type === 'GOLD') { flat += goldCfg.scoreFlat; goldHit = true; }
+    if (b && b.type === 'GOLD') { flat += goldCfg.scoreFlat; goldHit = true; }
+    // Gold is ~2% of the pool, so its combo jump bypasses the per-step cap: that jump is
+    // the whole point of finding one.
+    if (goldHit) comboSteps = Math.max(comboSteps, goldCfg.comboJump);
 
-    bumpCombo(sim, comboSteps);
+    bumpCombo(sim, comboSteps, goldHit);
 
     const wallScale = im.wall ? C.collision.wallScoreScale : 1;
     const raw = (C.score.energyScale * Math.pow(energy, C.score.energyExp) * mult + flat)
@@ -1763,7 +1806,7 @@ function progression(sim, dt) {
 function updateIntensity(sim, dt) {
   const C = sim.config.intensity;
   let target = 0;
-  target += sim.pointers.size > 0 ? C.touchWeight : 0;
+  target += sim.activeFields > 0 ? C.touchWeight : 0;
   // Only a LIVE combo counts. A big number sitting there decaying is not excitement, and
   // treating it as such pinned the screen in FRENZY minutes after everything had stopped.
   if (sim.comboTimer > 0) {
@@ -1778,7 +1821,7 @@ function updateIntensity(sim, dt) {
   sim.intensity += (target - sim.intensity) * smoothK(tau, dt);
   sim.intensity = clamp(fin(sim.intensity, 0), 0, 1);
 
-  if (sim.pointers.size > 0) sim.untouchedTime = 0;
+  if (sim.activeFields > 0) sim.untouchedTime = 0;
   else sim.untouchedTime += dt;
 
   sim.mode = sim.intensity < C.calmBelow ? 'CALM'
@@ -1895,6 +1938,7 @@ export function step(sim, dtRaw, input) {
   sim.scoreThisStep = 0;
   sim.hardImpactsThisStep = 0;
   sim.effectsThisStep = 0;
+  sim._comboAdded = 0;
   sim._impacts.length = 0;
 
   if (input && input.scatter) scatter(sim);
