@@ -687,6 +687,7 @@ let converts = [];         // a ball changing type: old colour collapsing, new c
 let tracers = [];          // a line from the announcement to the thing it names
 let capGlory = 0;          // countdown on the level-100 display
 let particleBudget = CFG.effects.maxParticles;
+let uiDt = 1 / 60;            // real seconds this frame, for hold timers (see frame())
 let shakeX = 0, shakeY = 0;   // this frame's shake offset, so the sky can lag behind it
 // Atmosphere detail tier, shed before physics ever is: 2 = everything, 1 = no FRENZY cloud
 // flare, 0 = also no CALM desaturation pass, fewer stars, no constellation lines. The vignette
@@ -3148,6 +3149,7 @@ function drawDemo(P) {
 /* ---- debug overlay -------------------------------------------------------- */
 
 const wipeRect = { x: 0, y: 0, w: 0, h: 0 };
+const dbgCloseRect = { x: 0, y: 0, w: 0, h: 0 };  // the debug overlay's close cross
 const upgBtnRect = { x: 0, y: 0, w: 0, h: 0 };   // "UPGRADES" button in the debug overlay
 const lv1BtnRect = { x: 0, y: 0, w: 0, h: 0 };   // "RESET TO LV 1" button beside it
 let lv1Done = 0;                                 // brief confirmation timer on that button
@@ -3222,6 +3224,21 @@ function drawUpgradeMenu(P) {
   ctx.fillText('UPGRADES  page ' + (upgradeMenu.page + 1) + '/' + pages
     + '   lv ' + sim.level + (sim.atLevelCap ? ' MAX' : '') + '   tap to fire', x, top + headH / 2);
 
+  // A close cross of its own. This panel covers the corner you would hold to get out, and it
+  // swallows every touch inside itself — so without this the only ways out were a keyboard and
+  // a three-finger tap that iOS is entitled to eat. That is a trap.
+  const cs = 26;
+  const cx0 = x + w - cs;
+  const cy0 = top - 2;
+  btns.push({ x: cx0, y: cy0, w: cs, h: cs, act: 'close' });
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 1.6;
+  const kx = cx0 + cs / 2, ky = cy0 + cs / 2;
+  ctx.beginPath();
+  ctx.moveTo(kx - 5, ky - 5); ctx.lineTo(kx + 5, ky + 5);
+  ctx.moveTo(kx + 5, ky - 5); ctx.lineTo(kx - 5, ky + 5);
+  ctx.stroke();
+
   const start = upgradeMenu.page * UPG_PER_PAGE;
   for (let i = 0; i < UPG_PER_PAGE; i++) {
     const up = list[start + i];
@@ -3260,7 +3277,8 @@ function upgradeMenuHit(px, py) {
   if (!upgradeMenu.open) return false;
   for (const b of upgradeMenu.buttons) {
     if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
-      if (b.act === 'prev') upgradeMenu.page--;
+      if (b.act === 'close') upgradeMenu.open = false;
+      else if (b.act === 'prev') upgradeMenu.page--;
       else if (b.act === 'next') upgradeMenu.page++;
       else if (b.act === 'lv1') grantLevels(1);
       else if (b.act === 'lv10') grantLevels(10);
@@ -3325,6 +3343,18 @@ function drawDebug(P, physMs, fps) {
   ctx.fillStyle = 'rgba(0,0,0,0.62)';
   ctx.fillRect(x - 5, y - 5, maxW + 16, boxH);
 
+  // A close cross. The corner hold that opened this is a toggle, but a hold is a thing you can
+  // get wrong and a panel with no visible way out is a panel people get stuck in.
+  const cs = 30;
+  dbgCloseRect.x = x - 5 + maxW + 16 - cs; dbgCloseRect.y = y - 5; dbgCloseRect.w = cs; dbgCloseRect.h = cs;
+  ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+  ctx.lineWidth = 1.8;
+  const kx = dbgCloseRect.x + cs / 2, ky = dbgCloseRect.y + cs / 2;
+  ctx.beginPath();
+  ctx.moveTo(kx - 6, ky - 6); ctx.lineTo(kx + 6, ky + 6);
+  ctx.moveTo(kx + 6, ky - 6); ctx.lineTo(kx - 6, ky + 6);
+  ctx.stroke();
+
   ctx.fillStyle = '#9fe8c0';
   for (const l of lines) { ctx.fillText(l, x, y); y += lh; }
   y += 4;
@@ -3379,6 +3409,7 @@ function resetToLevelOne() {
 function debugButtonHit(px, py) {
   if (!debugOn || upgradeMenu.open) return false;
   const hit = (r) => r.w > 0 && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  if (hit(dbgCloseRect)) { debugOn = false; upgradeMenu.open = false; return true; }
   if (hit(upgBtnRect)) { upgradeMenu.open = true; return true; }
   if (hit(lv1BtnRect)) { resetToLevelOne(); return true; }
   return false;
@@ -3500,6 +3531,12 @@ function frame(now) {
     if (paused) return;
     if (needFirstDtClamp) { dt = CFG.world.resumeDt; needFirstDtClamp = false; }
     if (!Number.isFinite(dt) || dt <= 0) dt = 1 / 60;
+    // Hold gestures count REAL seconds. dt below is clamped to world.maxDt so that one long
+    // frame cannot integrate a huge physics step — but feeding that clamped value to a
+    // "hold for 1.5 seconds" timer means the timer runs slow exactly when the scene is busy.
+    // Measured: a 1.5s hold needed 2.0s of wall clock at 22fps, and longer once the debug
+    // overlay itself was drawing. The gesture felt broken because it WAS taking longer.
+    uiDt = Math.min(dt, CFG.world.uiMaxDt);
     dt = Math.min(dt, CFG.world.maxDt);
 
     fpsSamples.push(dt);
@@ -3551,9 +3588,9 @@ function render(dt) {
 
   consumeEvents(P);
   updateEffects(dt);
-  updateWipe(dt);
-  updateDebugCorner(dt);
-  updateHelpCorner(dt);
+  updateWipe(uiDt);
+  updateDebugCorner(uiDt);
+  updateHelpCorner(uiDt);
   updateHelp(dt);
   if (lv1Done > 0) { lv1Done += dt; if (lv1Done > 1.6) lv1Done = 0; }
   adaptQuality();
@@ -3711,6 +3748,7 @@ try {
     helpSections() { return HELP.map((h) => h.id); },
     get seenHelp() { return sim.seenHelp === true; },
     proofCount() { return proofs.length; },
+    dbgCloseRect() { return { cx: dbgCloseRect.x + dbgCloseRect.w/2, cy: dbgCloseRect.y + dbgCloseRect.h/2 }; },
     menu(open) { upgradeMenu.open = open !== false; debugOn = debugOn || upgradeMenu.open; },
     // The menu's live hit-boxes, so an automated check can press the same pixels a thumb would.
     get menuState() {

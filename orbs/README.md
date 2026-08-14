@@ -120,7 +120,7 @@ thing without a CLI.
 The first line of real code in `sw.js` is:
 
 ```js
-const CACHE_VERSION = 'orbs-v5';
+const CACHE_VERSION = 'orbs-v6';
 ```
 
 **Bump it on every deploy.** The browser decides a service worker has changed by
@@ -248,7 +248,14 @@ fingertip as you hold, so the gesture shows you it is working rather than being 
 have to know. That is the only entry point that can be relied on: there is no `D` key on a
 phone, and iOS reserves three- and four-finger gestures for the system, so a multi-finger tap
 may simply never reach the page. A hold anywhere else on the screen is an ordinary gather and
-does nothing to the overlay. Holding the corner again closes it.
+does nothing to the overlay. Holding the corner again closes it — **or tap the ✕** in the panel's
+top-right, which is the way out that does not depend on getting a hold right.
+
+Hold timers count **real** seconds, not the frame delta the physics integrates. That delta is
+clamped to `world.maxDt` so one long frame cannot integrate a huge step, and feeding the clamped
+value to a "hold for 1.5 seconds" timer made the timer run slow exactly when the scene was busy:
+measured at 2.4–2.8s of wall clock for a 1.5s hold, worse once the overlay itself was drawing,
+and inconsistent between attempts. It now fires at 1.57s.
 
 The debug overlay shows fps, physics and draw milliseconds, ball and particle counts,
 sanitizer hits, dropped effect events, soft resets, the error ring buffer, and three
@@ -260,7 +267,10 @@ targets you can press:
 | `UPGRADES` | Opens the upgrade menu. |
 | `RESET TO LV 1` | One tap. Back to a clean level 1 — no upgrades, no score, starting population — and it is written to storage immediately, so it survives a reload. |
 
-The **upgrade menu** lists all 99 upgrades as tappable buttons — level, name and kind, with
+The **upgrade menu** has a ✕ of its own in its top-right. It covers the corner you would
+otherwise hold, and it swallows every touch inside itself, so without that cross the only ways
+out were a keyboard and a three-finger tap that iOS is entitled to eat. It lists all 99 upgrades
+as tappable buttons — level, name and kind, with
 the ones you already own marked. Tapping one fires it immediately, so any upgrade can be seen
 without playing to it. `+1 LV` / `+10 LV` advance levels properly (granting each upgrade on
 the way), `ALL` applies everything, `RESET` is the same clean level 1 as above.

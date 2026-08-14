@@ -40,6 +40,13 @@ export const CONFIG = {
     speedClamp: 1250,         // px/s @ref. Hard velocity ceiling. Nothing ever exceeds this.
     substeps: 2,              // Physics substeps per frame. 2 keeps fast balls from tunnelling.
     maxDt: 1 / 30,            // s. Longest dt a single step will integrate; longer frames are clipped.
+    uiMaxDt: 0.10,            // s. The same clamp for hold-gesture timers, which count REAL time.
+                              // Looser than maxDt so that an ordinary frame — even a bad one at
+                              // 10fps — passes through unclamped and a 1.5s hold really does take
+                              // 1.5s. Not much looser, though: while the page is stalled it has
+                              // drawn no progress arc, so the player has had no feedback, and
+                              // crediting a long stall as hold time makes the gesture fire out of
+                              // nowhere on resume.
     resumeDt: 1 / 60,         // s. dt forced on the first step after a pause/resume/visibility change.
     wallRestitution: 0.9,     // Bounciness against the screen edges.
     wallFriction: 0.995,      // Tangential velocity retained in a wall bounce (slight scrub).
