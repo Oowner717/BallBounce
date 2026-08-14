@@ -28,6 +28,15 @@ Then open **http://localhost:8080/**.
 reload works. You can prove it: load the page, wait a few seconds for the precache, turn
 off the network, and reload.
 
+Being *offline* is the easy case — the fetch fails instantly and the cached shell is
+served in well under a second. The case worth knowing about is **connected but dead**: a
+captive portal, one bar of signal, a VPN reconnecting. There the socket is accepted and
+nothing ever comes back, so navigation races a 2.5s deadline (`NAV_TIMEOUT_MS` in `sw.js`)
+and paints from cache when the network loses. Without that, the platform's own timeout is
+the only thing that ends the black screen — measured at 45s+ against a server that accepts
+and never replies. The deadline is only armed when a cached shell exists, so a genuinely
+slow first load is never turned into a failure.
+
 ### From your phone on the same WiFi — quick look only
 
 ```sh
