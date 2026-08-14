@@ -1157,6 +1157,7 @@ function onPointerMove(e) {
   try {
     if (SOAK) return;
     if (help.open) { const [hx, hy] = canvasPos(e); helpMove(hx, hy); e.preventDefault(); return; }
+    if (upgradeMenu.drag) { const [mx, my] = canvasPos(e); upgradeMenuMove(mx, my); e.preventDefault(); return; }
     const p = pointers.get(e.pointerId);
     if (!p) return;
     const [x, y] = canvasPos(e);
@@ -1170,6 +1171,7 @@ function endPointer(e, isCancel) {
   try {
     if (SOAK) return;
     if (help.open) { helpUp(); e.preventDefault(); return; }
+    if (upgradeMenu.drag) { upgradeMenuUp(); e.preventDefault(); return; }
     if (!pointers.has(e.pointerId)) return;
     pointers.delete(e.pointerId);
     // pointercancel (iOS system gestures), pointerleave and blur must CLEAR the field
@@ -1216,6 +1218,8 @@ function endPointer(e, isCancel) {
 }
 
 function clearAllFields() {
+  upgradeMenu.drag = null;
+  upgradeMenu.dragY = 0;
   for (const id of pointers.keys()) cancelled.push(id);
   pointers.clear();
   gestureMaxDown = 0;
@@ -2445,6 +2449,9 @@ const help = {
   scroll: 0,
   vel: 0,
   drag: null,       // { id, lastY, moved, t0 }
+  dragY: 0,         // px the sheet has been pulled down toward being dismissed
+  dragV: 0,         // px/s of that pull, carried to the release
+  closing: false,   // dismissed by a swipe: animate out from wherever the finger left it
   hit: [],          // tappable rows laid out this frame: { x, y, w, h, act, arg }
   demo: null,       // { row, t }
   eraseHold: 0,
@@ -2470,6 +2477,9 @@ function helpPanel() {
 
 function openHelp(sectionId, scrollTo) {
   help.open = true;
+  help.dragY = 0;
+  help.dragV = 0;
+  help.closing = false;
   help.section = sectionId || null;
   help.scroll = scrollTo || 0;
   help.vel = 0;
@@ -2487,6 +2497,9 @@ function closeHelp() {
   help.section = null;
   help.demo = null;
   help.drag = null;
+  help.dragY = 0;
+  help.dragV = 0;
+  help.closing = false;
 }
 
 /* -- the door: a hold in the bottom-right corner ---------------------------- */
@@ -2713,7 +2726,10 @@ function drawHelp(P, dt) {
   if (e <= 0.001) return;
   const pan = helpPanel();
   const u = helpUnit();
-  const slide = (1 - e) * 16;
+  const slide = (1 - e) * 16 + help.dragY;
+  // The veil thins as the sheet is pulled away, so the toy underneath comes back as you drag —
+  // the dismissal is legible before you have committed to it.
+  const pull = Math.max(0, Math.min(1, help.dragY / Math.max(1, pan.h)));
 
   ctx.save();
   // No shadow inside the sheet: the HUD needs its halo because it floats over bright orbs with
@@ -2721,7 +2737,7 @@ function drawHelp(P, dt) {
   // pure waste on the device this is meant to run well on.
   ctx.shadowBlur = 0;
   const sheetA = help.demo ? (H.demoSheetAlpha + (1 - H.demoSheetAlpha) * (1 - help.demoFadeK)) : 1;
-  ctx.fillStyle = 'rgba(0,0,0,' + (H.veilAlpha * e * sheetA) + ')';
+  ctx.fillStyle = 'rgba(0,0,0,' + (H.veilAlpha * e * sheetA * (1 - pull)) + ')';
   ctx.fillRect(0, 0, cssW, cssH);
   ctx.globalAlpha = e * sheetA;
   ctx.translate(0, slide);
@@ -2740,7 +2756,15 @@ function drawHelp(P, dt) {
   ctx.textBaseline = 'middle';
   ctx.font = '600 ' + (u * 1.05) + 'px ' + CFG.render.fontStack;
   ctx.fillStyle = rgba(P.hud, 0.95);
-  ctx.fillText(sec ? sec.title : 'help', pan.x + pan.w / 2, pan.y + H.headerH / 2);
+  ctx.fillText(sec ? sec.title : 'help', pan.x + pan.w / 2, pan.y + H.headerH / 2 + 3);
+
+  // The grab handle. There was a full-width rule here before, which reads as a handle to anyone
+  // who has used a phone — and was not one. An affordance that promises a gesture it does not
+  // have is worse than no affordance, so now it is a handle and the gesture is real.
+  ctx.fillStyle = rgba(P.hudDim, help.dragY > 0 ? 0.85 : 0.55);
+  roundRect(ctx, pan.x + pan.w / 2 - H.grabW / 2, pan.y + 7, H.grabW, H.grabH, H.grabH / 2);
+  ctx.fill();
+
   ctx.strokeStyle = rgba(P.hudDim, 0.35);
   ctx.beginPath();
   ctx.moveTo(pan.x + u, pan.y + H.headerH);
@@ -2991,7 +3015,14 @@ function helpDown(x, y) {
       return true;
     }
   }
-  help.drag = { id: -1, lastY: y, y0: y, moved: 0, tapY: y, hitAct: null, hitArg: null };
+  // A drag that starts on the header is always a dismiss. One that starts in the body is a
+  // scroll until the list runs out of travel at the top — then it becomes a dismiss. That is the
+  // only way both gestures can live on the same axis without fighting each other.
+  const onHeader = y < pan.y + H.headerH;
+  help.drag = {
+    id: -1, lastY: y, y0: y, moved: 0, tapY: y, hitAct: null, hitArg: null,
+    dismiss: onHeader, canDismiss: true,
+  };
   // Which content row is under the finger, resolved now and only acted on if this turns out
   // to be a tap rather than a scroll.
   const bodyY = pan.y + H.headerH;
@@ -3008,26 +3039,46 @@ function helpDown(x, y) {
 
 function helpMove(x, y) {
   if (!help.open || !help.drag) return help.open;
+  const H = CFG.help;
   const d = help.drag;
   const dy = y - d.lastY;
   d.lastY = y;
   d.moved += Math.abs(dy);
-  if (d.moved > 6) {
-    const over = help.scroll < 0 || help.scroll > help.maxScroll;
-    help.scroll -= dy * (over ? CFG.help.overscroll : 1);
-    help.vel = -dy * 60;
-    help.scrollGlow = 1;
-  } else if (d.hitAct === 'erase') {
-    // stay put: the erase target is a hold, not a drag
+  if (d.moved <= 6) return true;
+
+  // Pulling down with the list already at its top hands the gesture over to the sheet itself.
+  if (!d.dismiss && d.canDismiss && dy > 0 && help.scroll <= 0) d.dismiss = true;
+
+  if (d.dismiss) {
+    help.dragY = Math.max(0, help.dragY + dy * H.dragRubber);
+    help.dragV = dy * 60;
+    help.scroll = 0;
+    help.vel = 0;
+    return true;
   }
+  const over = help.scroll < 0 || help.scroll > help.maxScroll;
+  help.scroll -= dy * (over ? H.overscroll : 1);
+  help.vel = -dy * 60;
+  help.scrollGlow = 1;
   return true;
 }
 
 function helpUp() {
   if (!help.open) return false;
+  const H = CFG.help;
   const d = help.drag;
   help.drag = null;
   if (!d) return true;
+  if (d.dismiss) {
+    // Far enough, or fast enough. A short sharp flick is how people actually dismiss a sheet,
+    // so distance alone would feel unresponsive.
+    if (help.dragY > H.dismissDistance || help.dragV > H.dismissVelocity) {
+      help.closing = true;
+      help.open = false;
+    }
+    help.eraseHold = 0;
+    return true;
+  }
   if (d.moved <= 6) {
     if (d.hitAct === 'section') { help.section = d.hitArg; help.scroll = 0; help.vel = 0; layoutCache.clear(); }
     else if (d.hitAct === 'demo') startDemo(d.hitArg);
@@ -3043,7 +3094,23 @@ function updateHelp(dt) {
   const want = help.open ? 1 : 0;
   const step = dt / Math.max(1e-6, H.openTime);
   help.t += Math.max(-step, Math.min(step, want - help.t));
-  if (!help.open) { help.eraseHold = 0; return; }
+  if (!help.open) {
+    help.eraseHold = 0;
+    // A swiped-away sheet keeps going in the direction it was thrown rather than fading in
+    // place, so the gesture and the animation are obviously the same movement.
+    if (help.closing) {
+      help.dragY += Math.max(H.dismissVelocity, help.dragV) * dt;
+      if (help.t <= 0.001) { help.closing = false; help.dragY = 0; help.dragV = 0; help.section = null; }
+    } else if (help.dragY !== 0) {
+      help.dragY = 0;
+    }
+    return;
+  }
+  // Not dismissed: spring back to where it was.
+  if (!help.drag && help.dragY > 0) {
+    help.dragY -= help.dragY * Math.min(1, H.dragSpring * dt);
+    if (help.dragY < 0.5) { help.dragY = 0; help.dragV = 0; }
+  }
 
   // Momentum, then a spring back out of overscroll.
   if (!help.drag) {
@@ -3156,7 +3223,7 @@ let lv1Done = 0;                                 // brief confirmation timer on 
 
 /* ---- upgrade menu: every upgrade, one tappable button each -------------- */
 
-const upgradeMenu = { open: false, page: 0, rows: [], buttons: [] };
+const upgradeMenu = { open: false, page: 0, rows: [], buttons: [], drag: null, dragY: 0 };
 const UPG_PER_PAGE = 13;
 
 function upgradePages() {
@@ -3211,11 +3278,16 @@ function drawUpgradeMenu(P) {
   const h = headH + UPG_PER_PAGE * rowH + footH;
 
   ctx.save();
+  ctx.translate(0, upgradeMenu.dragY);
   ctx.fillStyle = 'rgba(0,0,0,0.86)';
   ctx.fillRect(x - 4, top - 4, w + 8, h + 8);
   ctx.strokeStyle = rgba(P.ring, 0.5);
   ctx.lineWidth = 1;
   ctx.strokeRect(x - 4, top - 4, w + 8, h + 8);
+  // The same grab handle the help sheet has, because it is the same gesture.
+  ctx.fillStyle = rgba(P.hudDim, upgradeMenu.dragY > 0 ? 0.85 : 0.5);
+  roundRect(ctx, x + w / 2 - CFG.help.grabW / 2, top - 1, CFG.help.grabW, CFG.help.grabH, CFG.help.grabH / 2);
+  ctx.fill();
 
   ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
   ctx.textAlign = 'left';
@@ -3273,35 +3345,63 @@ function drawUpgradeMenu(P) {
 }
 
 /** Returns true if the point landed on the menu and was handled. */
+/** Is this point inside the menu panel at all? */
+function upgradeMenuInside(px, py) {
+  const rows = upgradeMenu.rows;
+  if (!rows.length) return false;
+  const first = rows[0];
+  const lastB = upgradeMenu.buttons[upgradeMenu.buttons.length - 1];
+  return px >= first.x - 6 && px <= first.x + first.w + 6
+    && py >= safe.t && py <= (lastB ? lastB.y + lastB.h + 6 : first.y + first.h);
+}
+
+/**
+ * Press: remember what is under the finger. Nothing fires yet.
+ *
+ * Actions moved from press to release when this panel gained swipe-to-dismiss, because firing on
+ * press means the first few pixels of every swipe also fire whatever row the swipe started on —
+ * and on this panel that row applies an upgrade.
+ */
 function upgradeMenuHit(px, py) {
   if (!upgradeMenu.open) return false;
+  if (!upgradeMenuInside(px, py)) return false;
+  upgradeMenu.drag = { y0: py, y: py, moved: 0, act: null, up: null };
   for (const b of upgradeMenu.buttons) {
-    if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
-      if (b.act === 'close') upgradeMenu.open = false;
-      else if (b.act === 'prev') upgradeMenu.page--;
-      else if (b.act === 'next') upgradeMenu.page++;
-      else if (b.act === 'lv1') grantLevels(1);
-      else if (b.act === 'lv10') grantLevels(10);
-      else if (b.act === 'all') for (const u of (CFG.upgrades || [])) applyUpgrade(sim, u, false);
-      else if (b.act === 'reset') resetToLevelOne();
-      return true;
-    }
+    if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) { upgradeMenu.drag.act = b.act; return true; }
   }
   for (const r of upgradeMenu.rows) {
-    if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
-      triggerUpgrade(r.up);
-      return true;
-    }
+    if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { upgradeMenu.drag.up = r.up; return true; }
   }
-  // Anywhere else inside the panel is swallowed, so the menu is not also playing the game.
-  const rows = upgradeMenu.rows;
-  if (rows.length) {
-    const first = rows[0];
-    const lastB = upgradeMenu.buttons[upgradeMenu.buttons.length - 1];
-    if (px >= first.x - 6 && px <= first.x + first.w + 6
-      && py >= safe.t && py <= (lastB ? lastB.y + lastB.h + 6 : first.y + first.h)) return true;
-  }
-  return false;
+  return true;   // swallowed either way: the menu is not also playing the game
+}
+
+function upgradeMenuMove(px, py) {
+  const d = upgradeMenu.drag;
+  if (!d) return false;
+  d.moved += Math.abs(py - d.y);
+  d.y = py;
+  upgradeMenu.dragY = Math.max(0, (py - d.y0) * CFG.help.dragRubber);
+  return true;
+}
+
+function upgradeMenuUp() {
+  const d = upgradeMenu.drag;
+  upgradeMenu.drag = null;
+  if (!d) return false;
+  const pulled = upgradeMenu.dragY;
+  upgradeMenu.dragY = 0;
+  // This panel does not scroll, so a downward drag anywhere on it is unambiguous.
+  if (pulled > CFG.help.dismissDistance * 0.6) { upgradeMenu.open = false; return true; }
+  if (d.moved > 8) return true;                      // a swipe that fell short is not a tap
+  if (d.act === 'close') upgradeMenu.open = false;
+  else if (d.act === 'prev') upgradeMenu.page--;
+  else if (d.act === 'next') upgradeMenu.page++;
+  else if (d.act === 'lv1') grantLevels(1);
+  else if (d.act === 'lv10') grantLevels(10);
+  else if (d.act === 'all') for (const u of (CFG.upgrades || [])) applyUpgrade(sim, u, false);
+  else if (d.act === 'reset') resetToLevelOne();
+  else if (d.up) triggerUpgrade(d.up);
+  return true;
 }
 
 function drawDebug(P, physMs, fps) {

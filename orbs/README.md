@@ -120,7 +120,7 @@ thing without a CLI.
 The first line of real code in `sw.js` is:
 
 ```js
-const CACHE_VERSION = 'orbs-v7';
+const CACHE_VERSION = 'orbs-v8';
 ```
 
 **Bump it on every deploy.** The browser decides a service worker has changed by
@@ -268,6 +268,22 @@ locked ones dim. That is the first time the palette upgrades are visible as obje
 a word over an unchanged screen. Then every upgrade you have earned, newest first, each in the
 colour of the thing it changed, with its description — plus exactly one locked row, the next.
 The rest are not listed: a toy that keeps its secrets should not publish a schedule of its gifts.
+
+Three ways out, and they are the three people reach for: the **✕**, a **tap outside** the sheet,
+or **swipe it down**. The handle at the top is a real handle now — there used to be a full-width
+rule there, which reads as one to anyone who has used a phone and was not, and an affordance that
+promises a gesture it does not have is worse than no affordance at all.
+
+Swipe and scroll share an axis, so they are resolved by where the drag starts and where the list
+is: a drag beginning on the header always dismisses, and a drag in the body scrolls until the list
+runs out of travel at the top, at which point it hands the gesture over to the sheet. The sheet
+follows your finger with some resistance, the veil thins as it goes so the toy comes back before
+you have committed, and on release it either flies out in the direction you threw it or springs
+back. Distance or speed will do it — a short sharp flick is how people actually dismiss a sheet.
+
+The upgrade menu takes the same swipe. Its actions had to move from press to release to get it:
+firing on press means the first few pixels of every swipe also fire whatever row the swipe started
+on, and on that panel the row applies an upgrade.
 
 The simulation keeps running at full physics behind the sheet and receives no input, so it
 settles into CALM within ten seconds and demonstrations play against a quiet field.

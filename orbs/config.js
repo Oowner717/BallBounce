@@ -750,6 +750,17 @@ export const CONFIG = {
                               // Low: a legible list behind a demonstration is two things competing
                               // for the same glance, and the demonstration is the one that matters.
     eraseHoldTime: 1.8,       // s. Hold to erase everything, from inside help.
+    grabW: 38,                // px. Width of the grab handle at the top of the sheet. There was a
+                              // plain rule there before, which read as a handle and was not one —
+                              // an affordance that promises a gesture it does not have is worse
+                              // than no affordance at all.
+    grabH: 4,                 // px. Its thickness.
+    dismissDistance: 110,     // px. Drag the sheet down past this and it goes.
+    dismissVelocity: 620,     // px/s. Or flick it faster than this, from any distance — a short
+                              // sharp flick is how people actually dismiss a sheet.
+    dragRubber: 0.55,         // Resistance on a downward drag, so the sheet feels weighted rather
+                              // than stuck to the finger.
+    dragSpring: 16,           // 1/s. Snap-back rate when a drag does not go far enough.
   },
 
   /* ------------------------------------------------------------------ proof -- */
