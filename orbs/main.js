@@ -370,6 +370,8 @@ let flashMax = 0;
 let shake = 0;
 let celebration = null;    // { text, sub, t, life, big }
 let vortexRings = [];      // live double-tap wells, drawn as counter-rotating arcs
+let converts = [];         // a ball changing type: old colour collapsing, new colour blooming out
+let tracers = [];          // a line from the announcement to the thing it names
 let capGlory = 0;          // countdown on the level-100 display
 let particleBudget = CFG.effects.maxParticles;
 
@@ -381,6 +383,8 @@ function softResetEffects() {
   waves.length = 0;
   arcs.length = 0;
   vortexRings.length = 0;
+  converts.length = 0;
+  tracers.length = 0;
   flash = 0; shake = 0;
   celebration = null;
   // A throw between ctx.save() and ctx.restore() leaks state-stack entries every frame.
@@ -554,10 +558,10 @@ function consumeEvents(P) {
         addFlash(0.12);
         break;
       case 'levelup':
-        if (ev.level <= CFG.levels.maxCelebrated && !celebration) {
-          celebrate('LEVEL ' + ev.level, '', false);
-          addFlash(0.05);
-        }
+        // Deliberately nothing. sim.js pushes `levelup` immediately AFTER `upgrade`, and every
+        // level from 2 to the cap has an upgrade, so the celebration this used to raise was
+        // always stomped by the one already on screen — it had never once run. The level number
+        // now lives in the persistent line under the bar, where it can be read at leisure.
         break;
       case 'upgrade': {
         // Every level hands over something with a name. Ball types and colour worlds get
@@ -567,6 +571,21 @@ function consumeEvents(P) {
           (ev.kind === 'palette' ? 'new sky' : 'upgrade'), loud);
         addFlash(loud ? 0.14 : 0.07);
         if (loud) addShake(3 * scale());
+        break;
+      }
+      case 'convert': {
+        // An ORB becoming something else. Drawn as a transmutation rather than a spawn, because
+        // that is exactly what it is: the same ball, now a different kind of ball.
+        const col = P.type[ev.ballType] || P.hud;
+        if (converts.length > 12) converts.shift();
+        converts.push({ x: ev.x, y: ev.y, r: ev.r, t: 0, life: CFG.proof.convertTime, col });
+        addWave(ev.x, ev.y, 26 * scale(), 0.8, col);
+        spawnParticles(ev.x, ev.y, Math.round(12 * qualityMul()), 200 * scale(), col, 0.6, 1.9 * scale());
+        // While the name is still on screen, draw the eye from the word to the thing it names.
+        if (celebration) {
+          if (tracers.length > 12) tracers.shift();
+          tracers.push({ x: ev.x, y: ev.y, t: 0, life: CFG.proof.tracerTime, col });
+        }
         break;
       }
       case 'levelcap':
@@ -667,6 +686,25 @@ function updateEffects(dt) {
 
   popupBudget = Math.min(CFG.effects.popupRate, popupBudget + CFG.effects.popupRate * dt);
   if (hintFade > 0) hintFade = Math.max(0, hintFade - dt);
+  if (lastUpShown) lastUpT += dt;
+  w = 0;
+  for (let i = 0; i < converts.length; i++) {
+    const c = converts[i];
+    c.t += dt;
+    if (c.t >= c.life) continue;
+    converts[w++] = c;
+  }
+  converts.length = w;
+
+  w = 0;
+  for (let i = 0; i < tracers.length; i++) {
+    const tr = tracers[i];
+    tr.t += dt;
+    if (tr.t >= tr.life) continue;
+    tracers[w++] = tr;
+  }
+  tracers.length = w;
+
   let vw = 0;
   for (let i = 0; i < vortexRings.length; i++) {
     const v = vortexRings[i];
@@ -1309,6 +1347,83 @@ function drawFields(P) {
 let displayScore = 0;
 let hintFade = 0;
 
+/**
+ * The colour an upgrade announces itself in.
+ *
+ * The point is to link the word to the thing: WIDER BLAST arrives in volatile-red, DEEP FREEZE
+ * in frost-blue, so the name is attached to the ball it changes before you have finished reading
+ * it. Anything without a thing of its own falls back to a role colour.
+ */
+function upgradeTint(P, up) {
+  if (!up) return P.hud;
+  if (up.kind === 'type' && up.type) return P.type[up.type] || P.hud;
+  if (up.kind === 'palette') {
+    const nx = CFG.palettes[Math.min(sim.palettesUnlocked - 1, CFG.palettes.length - 1)];
+    return nx ? nx.ring : P.ring;
+  }
+  if (up.path && up.path.indexOf('types.') === 0) {
+    const k = up.path.split('.')[1];
+    if (P.type[k]) return P.type[k];
+  }
+  if (up.kind === 'gesture') return P.ring;
+  if (up.kind === 'visual') return P.star;
+  if (up.kind === 'score') return P.type.GOLD;
+  return P.hud;
+}
+
+// The just-earned upgrade, held under the level bar long enough to be read. Tracked from
+// sim.lastUpgrade rather than latched off the event, so the line is right even on a frame where
+// the event itself was dropped.
+let lastUpShown = null;
+let lastUpT = 0;
+const lastUpRect = { x: 0, y: 0, w: 0, h: 0 };
+
+/** The transmutation: the old colour collapsing inward, the new one blooming out of it. */
+function drawConverts(P) {
+  if (!converts.length) return;
+  ctx.save();
+  const old = P.orbHues[0];
+  for (const c of converts) {
+    const k = Math.min(1, c.t / c.life);
+    const e = 1 - (1 - k) * (1 - k);
+    ctx.lineWidth = 2.0 * scale();
+    ctx.strokeStyle = rgba(old, 0.7 * (1 - k));
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.r * (3.0 - 2.0 * e), 0, 6.283);
+    ctx.stroke();
+    ctx.strokeStyle = rgba(c.col, 0.85 * (1 - k));
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.r * (1.0 + 1.2 * e), 0, 6.283);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** A bowed line from the announcement to the ball it is announcing. */
+function drawTracers(P) {
+  if (!tracers.length) return;
+  const sx = cssW / 2;
+  const sy = cssH * 0.42 + 26;
+  ctx.save();
+  ctx.lineWidth = 1;
+  for (const t of tracers) {
+    const k = Math.min(1, t.t / t.life);
+    const a = Math.sin(k * Math.PI) * 0.5;
+    if (a <= 0.01) continue;
+    const dx = t.x - sx, dy = t.y - sy;
+    const len = Math.max(1, Math.hypot(dx, dy));
+    const bow = CFG.proof.tracerBow * scale();
+    const mx = (sx + t.x) / 2 - (dy / len) * bow;
+    const my = (sy + t.y) / 2 + (dx / len) * bow;
+    ctx.strokeStyle = rgba(t.col, a);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.quadraticCurveTo(mx, my, t.x, t.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawHud(P, calm) {
   const F = CFG.render;
   const alpha = calm * F.hudAlphaCalm + (1 - calm) * F.hudAlphaActive;
@@ -1360,6 +1475,22 @@ function drawHud(P, calm) {
   ctx.font = '500 ' + ls + 'px ' + F.fontStack;
   ctx.fillStyle = rgba(P.hudDim, alpha);
   ctx.fillText(sim.atLevelCap ? 'LV ' + sim.level + ' — MAX' : 'LV ' + sim.level, cx, y + barH + 5);
+
+  // What you were just given, in its own colour, for as long as it takes to look up.
+  if (sim.lastUpgrade && sim.lastUpgrade !== lastUpShown) { lastUpShown = sim.lastUpgrade; lastUpT = 0; }
+  if (lastUpShown && lastUpT < F.lastUpgradeTime) {
+    const out = lastUpT > F.lastUpgradeTime - F.lastUpgradeFade
+      ? (F.lastUpgradeTime - lastUpT) / F.lastUpgradeFade : 1;
+    const us = ls * F.lastUpgradeScale;
+    ctx.font = '600 ' + us + 'px ' + F.fontStack;
+    ctx.fillStyle = rgba(upgradeTint(P, lastUpShown), alpha * out * 0.95);
+    const ly = y + barH + 5 + ls * 1.35;
+    ctx.fillText(lastUpShown.label, cx, ly);
+    const w = ctx.measureText(lastUpShown.label).width + 24;
+    lastUpRect.x = cx - w / 2; lastUpRect.y = ly - 4; lastUpRect.w = w; lastUpRect.h = us + 10;
+  } else {
+    lastUpRect.w = 0;
+  }
 
   // Floating score popups.
   ctx.textBaseline = 'middle';
@@ -1494,6 +1625,7 @@ function upgradePages() {
 function triggerUpgrade(up) {
   if (!up) return;
   applyUpgrade(sim, up, true);            // forced: debug may re-apply deliberately
+  sim.lastUpgrade = up;                   // so the debug menu shows the same line real play does
   const P = palette.cur;
   celebrate(up.label, up.kind === 'type' ? 'new ball'
     : (up.kind === 'palette' ? 'new sky' : 'upgrade'), up.kind === 'type' || up.kind === 'palette');
@@ -1921,6 +2053,8 @@ function render(dt) {
   drawComet(P);
   drawVortices(P);
   drawBallDetail(P);
+  drawConverts(P);
+  drawTracers(P);
   drawFields(P);
   drawHud(P, calmT);
 

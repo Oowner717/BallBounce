@@ -1850,6 +1850,77 @@ test('reaching a level grants exactly that level\'s upgrade', () => {
   }
 });
 
+test('unlocking a ball type actually puts that type on screen', () => {
+  // The worst thing this game did: levels 2..8 announce seven ball types and spawn none of them,
+  // because population() only spawns below the soft cap and the cap does not move until level 9.
+  // Measured over a 14-minute run: VOLATILE was announced at 46s and first existed 13 minutes
+  // later; MAGNET, CHAIN and FROST were announced and NEVER appeared at all. The player was
+  // being told about balls that did not exist.
+  for (const [level, key] of [[2, 'VOLATILE'], [3, 'SPLITTER'], [4, 'MAGNET'], [7, 'FROST']]) {
+    const sim = freshSim(null, 4242);
+    for (let i = 0; i < 120; i++) step(sim, 1 / 60, null);   // let the opening settle
+    const before = sim.aliveCount;
+    applyUpgradesTo(sim, level);
+    for (let i = 0; i < 120; i++) step(sim, 1 / 60, null);   // two seconds, untouched
+    assert.ok(sim.balls.some((b) => b.alive && b.type === key),
+      key + ' was unlocked at level ' + level + ' and never appeared on screen');
+    // Retyped in place, never spawned: the population must not have moved, or the energy,
+    // CALM and hard-cap gates would all be reading a different world than they think.
+    assert.equal(sim.aliveCount, before, 'the unlock changed the population from ' + before + ' to ' + sim.aliveCount);
+  }
+});
+
+test('a conversion never retypes more than its share of the screen', () => {
+  const sim = freshSim(null, 99);
+  for (let i = 0; i < 120; i++) step(sim, 1 / 60, null);
+  const alive = sim.aliveCount;
+  applyUpgradesTo(sim, 2);
+  for (let i = 0; i < 600; i++) step(sim, 1 / 60, null);
+  const converted = sim.balls.filter((b) => b.alive && b.type === 'VOLATILE').length;
+  const ceiling = Math.floor(alive * CONFIG.population.convertMaxFrac);
+  assert.ok(converted <= Math.max(ceiling, CONFIG.population.unlockBurst),
+    converted + ' balls were retyped out of ' + alive + ', ceiling was ' + ceiling);
+});
+
+test('a wipe clears a conversion that was still owed', () => {
+  const sim = freshSim(null, 7);
+  for (let i = 0; i < 60; i++) step(sim, 1 / 60, null);
+  applyUpgradesTo(sim, 2);
+  assert.ok(sim.pendingConvert, 'nothing was queued, so this proves nothing');
+  applySave(sim, defaultSave(CONFIG));
+  assert.equal(sim.pendingConvert, null, 'a wiped save still owed the previous run a conversion');
+});
+
+test('a level-up during an effect storm still announces its upgrade', () => {
+  // The failure this locks out: the cascade that EARNS a level fills the per-frame event buffer,
+  // so by the time progression runs there is no room left to say what you just got. The upgrade
+  // applies silently. Measured at 12.2% of level-ups with everything unlocked — the single worst
+  // case being the loudest, most rewarding moments on screen, which is exactly backwards.
+  const sim = createSim({ width: 390, height: 844, seed: 777, config: CONFIG });
+  applyUpgradesTo(sim, 100);
+  const input = { pointers: [], taps: [], scatter: false };
+  let gained = 0, silent = 0, overBudget = 0;
+  for (let round = 0; round < 120; round++) {
+    for (let i = 0; i < 30; i++) {
+      const t = round * 0.5 + i / 60;
+      input.pointers = [{ id: 1, x: 195 + 150 * Math.sin(t * 3), y: 420 + 300 * Math.cos(t * 2.6), down: true }];
+      step(sim, 1 / 60, input);
+      if (sim.events.length > CONFIG.effects.maxPerFrame) overBudget++;
+    }
+    if (sim.atLevelCap) break;
+    sim.xp = sim.xpNeeded;
+    step(sim, 1 / 60, input);
+    gained++;
+    if (!sim.events.some((e) => e.type === 'upgrade')) silent++;
+    if (sim.events.length > CONFIG.effects.maxPerFrame) overBudget++;
+  }
+  assert.ok(gained > 40, 'the storm never levelled up, so this proves nothing: ' + gained);
+  assert.ok(sim.eventsDroppedTotal > 500, 'the buffer never actually filled, so this proves nothing');
+  assert.equal(silent, 0, silent + ' of ' + gained + ' level-ups announced nothing');
+  // The reserve must come out of the existing ceiling, never on top of it.
+  assert.equal(overBudget, 0, 'the reserve pushed a step past effects.maxPerFrame');
+});
+
 test('progression survives a save/load round trip, upgrades and all', () => {
   const sim = freshSim(null, 909);
   applyUpgradesTo(sim, 60);

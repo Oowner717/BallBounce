@@ -203,6 +203,11 @@ export function applyUpgrade(sim, up, force) {
 
   if (up.kind === 'type') {
     if (C.types[up.type] && sim.unlocked.indexOf(up.type) < 0) sim.unlocked.push(up.type);
+    // Announcing a ball type and then not showing one is the single worst thing this game does.
+    // Measured before this existed: VOLATILE was announced at 46s and first existed 13 minutes
+    // later; MAGNET, CHAIN and FROST were announced and never appeared at all in a 14-minute run,
+    // because population() only spawns below the soft cap and the cap does not move until level 9.
+    queueConvert(sim, up.type, C.population.unlockBurst);
   } else if (up.kind === 'palette') {
     sim.palettesUnlocked = Math.min(C.palettes.length, sim.palettesUnlocked + 1);
   } else if (up.path) {
@@ -222,8 +227,49 @@ export function applyUpgrade(sim, up, force) {
     if (!Number.isFinite(next)) return false;
     node[key] = INTEGER_PATHS[up.path] ? Math.max(0, Math.round(next)) : next;
   }
+  // Any upgrade may ask for a handful of an already-unlocked type, so that a retune of something
+  // rare is not announced to a screen with none of it on.
+  if (up.convert && sim.unlocked.indexOf(up.convert.type) >= 0) {
+    queueConvert(sim, up.convert.type, up.convert.n);
+  }
   refreshDerived(sim);
   return true;
+}
+
+/**
+ * Queue N live ORBs to be retyped.
+ *
+ * Retype in place: never spawn, never despawn, never add velocity. That keeps the population,
+ * the energy budget, the hard cap and the GOLD spawn share exactly where they were, so an
+ * untouched screen still goes quiet and none of the physics gates move.
+ */
+function queueConvert(sim, type, n) {
+  const cap = Math.floor(sim.aliveCount * sim.config.population.convertMaxFrac);
+  const want = Math.max(0, Math.min(n | 0, cap));
+  if (want > 0) sim.pendingConvert = { type: type, n: want, t: 0 };
+}
+
+/**
+ * The live ORB furthest from every finger — so the change happens where you are looking at the
+ * screen as a whole, not under your thumb. Deterministic: no RNG, ties broken by id.
+ */
+function pickConvertTarget(sim) {
+  let best = null;
+  let bestScore = -Infinity;
+  for (const b of sim.balls) {
+    if (!b.alive || b.dying || b.fade < 1) continue;
+    if (b.type !== 'ORB' || b.frozenT > 0) continue;
+    let d = Infinity;
+    for (const f of sim.pointers.values()) {
+      const dx = b.x - f.sx, dy = b.y - f.sy;
+      const dd = Math.sqrt(dx * dx + dy * dy);
+      if (dd < d) d = dd;
+    }
+    if (!Number.isFinite(d)) d = 1e6;
+    const sc = d - b.id * 1e-9;
+    if (sc > bestScore) { bestScore = sc; best = b; }
+  }
+  return best;
 }
 
 /** Re-apply every upgrade from level 2 up to `level`, in order. Used on load. */
@@ -402,6 +448,7 @@ export function applySave(sim, raw) {
   sim.appliedUpgrades = new Set();
   sim.palettesUnlocked = 1;
   sim.lastUpgrade = null;
+  sim.pendingConvert = null;
   refreshDerived(sim);
   applyUpgradesTo(sim, sim.level);
   sim.atLevelCap = sim.level >= sim.config.levels.cap;
@@ -503,6 +550,7 @@ export function createSim(opts = {}) {
     appliedUpgrades: new Set(),
     palettesUnlocked: 1,
     lastUpgrade: null,
+    pendingConvert: null,   // { type, n, t } — ORBs still owed a retype after an unlock
     atLevelCap: false,
     capCelebrated: save.capCelebrated === true,
     vortices: [],
@@ -730,8 +778,18 @@ export function scatter(sim) {
 /* Events (budgeted; excess is dropped, never queued)                         */
 /* ========================================================================== */
 
-function pushEvent(sim, ev) {
-  if (sim.events.length >= sim.config.effects.maxPerFrame) {
+function pushEvent(sim, ev, reserved) {
+  // Ordinary effects stop short of the ceiling; progression events may use the whole budget.
+  // Measured before this existed: with everything unlocked and the screen full, 12.2% of
+  // level-ups emitted no `upgrade` event at all, because the cascade that earned the XP had
+  // already filled the buffer by the time progression ran. The player was told nothing, and
+  // the upgrade still applied — the worst possible pairing. A dropped spark is cheaper than a
+  // silent level-up, so the last few slots are held back for the things that only happen once.
+  const E = sim.config.effects;
+  const limit = reserved
+    ? E.maxPerFrame
+    : Math.max(1, E.maxPerFrame - (E.reservedForProgression || 0));
+  if (sim.events.length >= limit) {
     sim.eventsDropped++;
     sim.eventsDroppedTotal++;
     return false;
@@ -1466,7 +1524,12 @@ function processImpacts(sim) {
     // the whole point of finding one.
     if (goldHit) comboSteps = Math.max(comboSteps, goldCfg.comboJump);
 
-    bumpCombo(sim, comboSteps, goldHit);
+    // A combo is a chain you caused. An impact with no charge on either ball is two things
+    // drifting into each other long after you let go — it scores, but it must not hold the combo
+    // window open, or one stray click every couple of seconds keeps a 600-combo alive forever
+    // and the wind-down the CALM state depends on never starts.
+    const live = a.chargeT > 0 || (b && b.chargeT > 0);
+    if (live) bumpCombo(sim, comboSteps, goldHit);
 
     const wallScale = im.wall ? C.collision.wallScoreScale : 1;
     const raw = (C.score.energyScale * Math.pow(energy, C.score.energyExp) * mult + flat)
@@ -1887,6 +1950,14 @@ function shatter(sim, b, forced) {
 
 function updateTimers(sim, dt) {
   const C = sim.config;
+  // Charge is "energy traceable to a finger". Once there has been no finger for a while there is
+  // nothing feeding it, so it bleeds away instead of coasting — that is what ends a cascade.
+  // The grace window matters: a sling is thrown and THEN the finger lifts, so hurrying the decay
+  // immediately would cut short the one payoff the player deliberately set up.
+  const past = sim.untouchedTime - C.charge.untouchedGrace;
+  const chargeDecay = (sim.pointers.size > 0 || past <= 0)
+    ? 1
+    : 1 + (C.charge.untouchedDecay - 1) * clamp(past, 0, 1);
   for (const b of sim.balls) {
     if (!b.alive) continue;
     if (b.effectT > 0) b.effectT = Math.max(0, b.effectT - dt);
@@ -1896,7 +1967,7 @@ function updateTimers(sim, dt) {
     if (b.spikeT > 0) b.spikeT = Math.max(0, b.spikeT - dt);
     if (b.immuneT > 0) b.immuneT = Math.max(0, b.immuneT - dt);
     if (b.magnetT > 0) b.magnetT = Math.max(0, b.magnetT - dt);
-    if (b.chargeT > 0) b.chargeT = Math.max(0, b.chargeT - dt);
+    if (b.chargeT > 0) b.chargeT = Math.max(0, b.chargeT - dt * chargeDecay);
     if (b.pulse > 0) b.pulse = Math.max(0, b.pulse - dt * 4);
     if (b.frozenT > 0) {
       b.frozenT -= dt;
@@ -2001,6 +2072,25 @@ function population(sim, dt) {
   const C = sim.config.population;
   const s = sim.scale;
 
+  // Drained BEFORE the cap checks: a conversion changes no counts, so it must not be gated on
+  // there being room to spawn — there never is, at the levels where the type unlocks happen.
+  const pc = sim.pendingConvert;
+  if (pc) {
+    pc.t -= dt;
+    if (pc.t <= 0) {
+      const b = pickConvertTarget(sim);
+      if (b) {
+        b.type = pc.type;
+        b.effectT = 0; b.inertT = 0; b.frozenT = 0; b.splitT = 0; b.magnetT = 0;
+        b.pulse = Math.max(b.pulse, C.convertPulse);
+        pushEvent(sim, { type: 'convert', x: b.x, y: b.y, r: b.r, ballType: pc.type, id: b.id }, true);
+      }
+      pc.n--;
+      pc.t = C.unlockBurstSpread;
+      if (pc.n <= 0 || !b) sim.pendingConvert = null;
+    }
+  }
+
   if (sim.aliveCount < sim.softCap) {
     sim.respawnTimer -= dt;
     if (sim.respawnTimer <= 0) {
@@ -2088,16 +2178,16 @@ function progression(sim, dt) {
         typeKey: up.type || null,
         palette: up.kind === 'palette' && sim.palettesUnlocked > beforePalettes
           ? C.palettes[sim.palettesUnlocked - 1].name : null,
-      });
+      }, true);
     }
-    pushEvent(sim, { type: 'levelup', level: sim.level, cap: sim.softCap, mult: sim.globalMult });
+    pushEvent(sim, { type: 'levelup', level: sim.level, cap: sim.softCap, mult: sim.globalMult }, true);
 
     if (sim.level >= C.levels.cap) {
       sim.atLevelCap = true;
       sim.xp = sim.xpNeeded;                       // the bar sits full from here on
       if (!sim.capCelebrated) {
         sim.capCelebrated = true;
-        pushEvent(sim, { type: 'levelcap', level: sim.level });
+        pushEvent(sim, { type: 'levelcap', level: sim.level }, true);
       }
       break;
     }
@@ -2114,7 +2204,7 @@ function progression(sim, dt) {
     if (!sim._milestoneSet.has(id)) {
       sim._milestoneSet.add(id);
       sim.milestones.push(id);
-      pushEvent(sim, { type: 'milestone', id, value: v, kind: 'score' });
+      pushEvent(sim, { type: 'milestone', id, value: v, kind: 'score' }, true);
     }
   }
 
@@ -2187,7 +2277,7 @@ function updateComet(sim, dt) {
           if (sim.config.milestones.cometMilestone && !sim._milestoneSet.has(id)) {
             sim._milestoneSet.add(id);
             sim.milestones.push(id);
-            pushEvent(sim, { type: 'milestone', id, value: sim.cometsBroken, kind: 'comet' });
+            pushEvent(sim, { type: 'milestone', id, value: sim.cometsBroken, kind: 'comet' }, true);
           }
           pushEvent(sim, { type: 'cometBreak', x: c.x, y: c.y });
           sim.comet = null;

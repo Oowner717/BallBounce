@@ -163,6 +163,15 @@ export const CONFIG = {
     impactTransfer: 0.72,     // Fraction of the charge passed along by a hard impact.
     effectTransfer: 0.8,      // Fraction passed to every ball an effect catches.
     minTransfer: 0.16,        // s. Below this the chain is over and the charge drops to zero.
+    untouchedDecay: 2.6,      // Charge bleeds this much faster once the screen has been untouched
+                              // for `untouchedGrace`. Charge means "energy traceable to a finger",
+                              // so with no finger it should be going away — otherwise the toy keeps
+                              // detonating itself long into what is supposed to be silence.
+    untouchedGrace: 3.0,      // s after the last touch during which charge decays at the normal
+                              // rate. This is the sling's payoff window: you throw an orbit into
+                              // the crowd and lift your finger, and the cascade you just paid for
+                              // has to be allowed to land in full. Only after that does the world
+                              // start actively forgetting.
   },
 
   /* ------------------------------------------------------------ population -- */
@@ -175,6 +184,16 @@ export const CONFIG = {
                               // rather than an invisible drift.
     softCapPerLevel: 0,       // No automatic per-level growth; see softCapBase above.
     hardCap: 150,             // Absolute ceiling. Splitters may never push the count past this.
+    unlockBurst: 5,           // Balls of a newly unlocked type made by RETYPING existing ORBs the
+                              // moment it unlocks. Never spawned: no ball enters or leaves, so no
+                              // energy enters the world and an untouched screen still goes quiet.
+                              // Without this, levels 2..8 announced seven ball types and put none
+                              // of them on screen — three of them never appeared at all.
+    unlockBurstSpread: 0.35,  // s between conversions, so they arrive as a sequence you can follow
+                              // with your eyes rather than a single frame where five things change.
+    convertMaxFrac: 0.2,      // Hard ceiling: never retype more than this fraction of the live
+                              // population, however many an upgrade asks for.
+    convertPulse: 0.6,        // Render-only pulse given to a ball at the moment it changes type.
     respawnDelay: 0.22,       // s. Gap between a despawn and the matching fade-in respawn.
     spawnFade: 0.9,           // s. Fade-in time for a new ball (also its collision ramp).
     despawnFade: 0.75,        // s. Fade-out time for a quiet edge despawn.
@@ -646,10 +665,25 @@ export const CONFIG = {
     calmSettleTime: 10.0,     // s. Untouched time at which "genuinely quiet" is asserted (used by tests).
   },
 
+  /* ------------------------------------------------------------------ proof -- */
+  // Upgrades that change a distance draw themselves at that distance, and upgrades that add a
+  // ball show you the ball. The one legibility pattern this game already had that worked was the
+  // tap pulse: the event carries its radius and the renderer draws exactly that, so you can see
+  // what "WIDE PULSE" bought you. Everything here is that idea, generalised.
+  proof: {
+    convertTime: 0.5,         // s. Length of one transmutation flourish.
+    tracerTime: 0.9,          // s. The line drawn from the announcement to the ball it names.
+    tracerBow: 40,            // px @ref. How far that line bows out from the straight chord.
+  },
+
   /* ---------------------------------------------------------------- effects -- */
   effects: {
     maxPerFrame: 48,          // Hard budget on sim-emitted effect events per step. Excess is DROPPED,
                               // never queued — a queued backlog is how a phone dies.
+    reservedForProgression: 6, // Slots of that budget held back for events that happen once and
+                              // matter: upgrades, level-ups, milestones, unlock conversions, the
+                              // cap. Ordinary effects stop at maxPerFrame minus this. Without it,
+                              // a busy screen ate 12.2% of all upgrade announcements.
     maxParticles: 900,        // Renderer particle ceiling at full quality.
     particleShedFps: 48,      // fps below which particles start being shed.
     particleShedFloor: 0.25,  // Minimum fraction of the particle budget when shedding hard.
@@ -699,6 +733,12 @@ export const CONFIG = {
     ringWidth: 3.0,           // px @ref. Combo ring stroke width.
     fieldRingAlpha: 0.5,      // Base opacity of the finger ring.
     levelBarHeight: 3.0,      // px. Thickness of the level bar.
+    lastUpgradeTime: 6.0,     // s. How long the name of the upgrade you just earned lingers under
+                              // the level bar. Deliberately much longer than the 1.1s flash: the
+                              // flash is for the player who was looking, this is for the one who
+                              // looked up half a second late and wants to know what just happened.
+    lastUpgradeFade: 1.0,     // s. Fade-out at the end of that.
+    lastUpgradeScale: 0.85,   // Size relative to the 'LV n' label. Smaller — it is an aside.
     fontStack: 'ui-rounded, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
   },
 
