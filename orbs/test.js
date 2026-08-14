@@ -287,6 +287,37 @@ test('injected NaN and escaped balls are repaired by the sanitizer and counted',
   }
 });
 
+test('resize rescales velocities with the world, not just positions and radii', () => {
+  // Everything in the sim is expressed in px/s at the current scale, so a scale change has
+  // to carry velocities with it. Miss this and balls move at the old screen's speed on the
+  // new one: sluggish on a bigger screen, frantic on a smaller one.
+  const sim = freshSim({ 'world.idleDriftStrength': 0, 'world.gravityY': 0 }, 606);
+  const script = makeScript(909, { pointers: 2 });
+  for (let i = 0; i < 300; i++) step(sim, 1 / 60, script(i, 1 / 60));
+
+  const before = sim.balls.filter((b) => b.alive).map((b) => Math.hypot(b.vx, b.vy) / sim.scale);
+  const meanBefore = before.reduce((a, v) => a + v, 0) / before.length;
+  assert.ok(meanBefore > 1, 'nothing was moving, so this test proves nothing');
+
+  const oldScale = sim.scale;
+  resize(sim, W * 2, H * 2);                       // a genuine scale change
+  assert.ok(Math.abs(sim.scale / oldScale - 2) < 1e-9, 'scale did not actually change');
+
+  const after = sim.balls.filter((b) => b.alive).map((b) => Math.hypot(b.vx, b.vy) / sim.scale);
+  const meanAfter = after.reduce((a, v) => a + v, 0) / after.length;
+  assert.ok(Math.abs(meanAfter - meanBefore) / meanBefore < 0.02,
+    'scale-normalised mean speed changed across a resize: '
+      + meanBefore.toFixed(1) + ' -> ' + meanAfter.toFixed(1) + ' px/s @ref');
+
+  // Radii must travel with it too, so ball size relative to the screen is unchanged.
+  for (const b of sim.balls) {
+    if (!b.alive) continue;
+    assert.ok(b.r / sim.scale >= CONFIG.balls.minSplitRadius * 0.49
+      && b.r / sim.scale <= CONFIG.balls.radiusMax * 1.01, 'radius ' + (b.r / sim.scale).toFixed(2) + ' @ref');
+  }
+  assert.equal(allFinite(sim), null);
+});
+
 test('resize / rotation re-clamps every ball into the new bounds', () => {
   const sim = freshSim(null, 11);
   const script = makeScript(77);

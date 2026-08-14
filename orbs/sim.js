@@ -443,6 +443,12 @@ export function resize(sim, width, height) {
       b.x = fin(b.x * sx, w * 0.5);
       b.y = fin(b.y * sy, h * 0.5);
       b.r = Math.max(1, fin(b.r * rs, 6));
+      // Velocities are in px/s and every force scales with sim.scale, so they have to be
+      // rescaled alongside the radii. Missing this leaves balls moving at the OLD screen's
+      // speed on the new one — sluggish going to a larger screen, frantic going to a
+      // smaller one — until drag eventually washes it out. (Shards below already did this.)
+      b.vx = fin(b.vx * rs, 0);
+      b.vy = fin(b.vy * rs, 0);
       b.mass = C.balls.density * Math.pow(b.r, C.balls.densityExp);
       b.invMass = 1 / b.mass;
       clampIntoBounds(sim, b);
