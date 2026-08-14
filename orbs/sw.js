@@ -8,8 +8,14 @@
  *               deliberately NOT used because it is all-or-nothing.
  *   activate   : drop every cache that is not the current CACHE_NAME, then claim clients
  *               so the very first load is controlled without a second refresh.
- *   navigations: network-first, falling back to the cached './index.html' (then './').
- *               This is what makes an offline reload of the installed PWA work.
+ *   navigations: network-first WITH A DEADLINE (NAV_TIMEOUT_MS), falling back to the
+ *               cached './index.html' (then './'). This is what makes an offline reload of
+ *               the installed PWA work. The deadline matters because hard offline is the
+ *               easy case — fetch rejects at once — whereas a connected-but-dead network
+ *               (captive portal, one bar, VPN reconnecting) accepts the socket and never
+ *               answers, and without our own deadline the platform's timeout is the only
+ *               thing that ends the black screen. The deadline is armed only when a cached
+ *               shell exists, so a slow FIRST load is never turned into a failure.
  *   other GETs : cache-first with background revalidation (stale-while-revalidate). A hit
  *               is returned immediately and a fresh copy is fetched into the cache for
  *               next time; a miss goes to the network and is cached when the response is
@@ -26,6 +32,10 @@
 
 // BUMP THIS ON EVERY DEPLOY — the browser byte-diffs this file to detect updates.
 const CACHE_VERSION = 'orbs-v1';
+
+// How long a navigation may wait for the network before the cached shell is painted
+// instead. Only ever armed when a cached shell actually exists.
+const NAV_TIMEOUT_MS = 2500;
 
 // CacheStorage is scoped to the ORIGIN, not to this worker's scope. On GitHub Pages every
 // repo shares one origin, so activate() must only ever delete caches carrying this prefix —
@@ -121,23 +131,58 @@ function revalidate(request) {
     .catch(function () {});
 }
 
-async function handleNavigate(request, event) {
+async function cachedShell() {
   try {
-    const fresh = await fetch(request);
-    if (isCacheable(fresh) && event) {
-      event.waitUntil(putInCache(request, fresh.clone()));
-    }
-    return fresh;
+    return (await caches.match('./index.html')) || (await caches.match('./')) || null;
   } catch (err) {
-    // Offline (or the network hiccuped) — serve the cached shell.
+    return null;
   }
+}
+
+async function handleNavigate(request, event) {
+  // Look the shell up FIRST. The deadline below may only be armed when there is something
+  // to fall back to, so a genuinely slow first load is never turned into a 504.
+  const shell = await cachedShell();
+
+  if (!shell) {
+    try {
+      const fresh = await fetch(request);
+      if (isCacheable(fresh) && event) event.waitUntil(putInCache(request, fresh.clone()));
+      return fresh;
+    } catch (err) {}
+    return OFFLINE_RESPONSE();
+  }
+
+  // Hard offline is easy: fetch rejects immediately and the catch serves the shell. The
+  // nasty case is CONNECTED BUT DEAD — a captive portal, one bar of signal, a VPN
+  // reconnecting. The socket is accepted and then nothing ever comes back, and without a
+  // deadline of our own the platform's timeout (tens of seconds) is the only thing that
+  // ends the black screen, with a complete working copy of the app sitting in the cache.
+  let timer = null;
+  const network = fetch(request).catch(function () { return null; });
+  const deadline = new Promise(function (resolve) {
+    timer = setTimeout(function () { resolve(null); }, NAV_TIMEOUT_MS);
+  });
+
+  let fresh = null;
   try {
-    const shell = await caches.match('./index.html');
-    if (shell) return shell;
-    const root = await caches.match('./');
-    if (root) return root;
+    fresh = await Promise.race([network, deadline]);
   } catch (err) {}
-  return OFFLINE_RESPONSE();
+  if (timer !== null) clearTimeout(timer);
+
+  if (fresh) {
+    if (isCacheable(fresh) && event) event.waitUntil(putInCache(request, fresh.clone()));
+    return fresh;
+  }
+
+  // The network lost the race. Paint from cache now, and let the request finish in the
+  // background so the shell is fresh next launch.
+  if (event) {
+    event.waitUntil(network.then(function (late) {
+      if (late && isCacheable(late)) return putInCache(request, late.clone());
+    }).catch(function () {}));
+  }
+  return shell;
 }
 
 async function handleAsset(request, event) {

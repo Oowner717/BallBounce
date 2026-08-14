@@ -291,11 +291,21 @@ function measure() {
   return [Math.max(1, Math.round(w)), Math.max(1, Math.round(h))];
 }
 
-function resizeLayers() {
+let lastW = -1, lastH = -1, lastDpr = -1;
+
+function resizeLayers(force) {
   const [w, h] = measure();
-  dpr = Math.max(1, Math.min(CONFIG.render.dprCap, window.devicePixelRatio || 1));
-  cssW = w; cssH = h;
+  const d = Math.max(1, Math.min(CONFIG.render.dprCap, window.devicePixelRatio || 1));
+  // Insets can change without the size changing, so read them before the guard.
   readSafeArea();
+  // iOS fires resize and visualViewport-resize liberally — scrolling chrome, the keyboard,
+  // rotation settling — and most of them report the same size. Assigning canvas.width at
+  // all resets the bitmap even to the same value, which would wipe the accumulated trail
+  // layer and reallocate four backing stores for nothing.
+  if (!force && w === lastW && h === lastH && d === lastDpr) return;
+  lastW = w; lastH = h; lastDpr = d;
+  dpr = d;
+  cssW = w; cssH = h;
 
   canvas.width = Math.max(1, Math.round(w * dpr));
   canvas.height = Math.max(1, Math.round(h * dpr));
