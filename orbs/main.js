@@ -31,7 +31,7 @@ function logError(kind, msg) {
     if (last && last.kind === kind && last.msg === text) { last.count++; return; }
     errorBuffer.push({ n: ++errorSeq, kind, msg: text, count: 1 });
     let cap = 12;
-    try { cap = CONFIG.debug.errorBufferSize || 12; } catch (_) {}
+    try { cap = CFG.debug.errorBufferSize || 12; } catch (_) {}
     while (errorBuffer.length > cap) errorBuffer.shift();
   } catch (_) { /* logging must never be the thing that breaks */ }
 }
@@ -47,16 +47,22 @@ try {
   });
 } catch (_) {}
 
-import { CONFIG } from './config.js';
+import { CONFIG as BASE_CONFIG } from './config.js';
 import {
   createSim, step as simStep, resize as simResize, scatter as simScatter,
   makeRng, loadSave, serializeSave, defaultSave, applySave, deriveStars, filigreeTier,
+  applyUpgrade, upgradeForLevel,
   palettesUnlockedAt,
 } from './sim.js';
 
 /* ========================================================================== */
 /* Query flags                                                                */
 /* ========================================================================== */
+
+// Reads go through CFG, not the imported config. createSim deep-clones what it is handed
+// and level upgrades MUTATE that clone, so the renderer must read the same live object the
+// simulation does — otherwise every visual upgrade would silently do nothing.
+let CFG = BASE_CONFIG;
 
 const params = (() => {
   try { return new URLSearchParams(location.search); } catch (_) { return new URLSearchParams(''); }
@@ -85,9 +91,9 @@ const store = {
 };
 
 function readSave() {
-  const raw = store.get(CONFIG.save.key);
-  if (raw == null) return defaultSave(CONFIG);
-  return loadSave(raw, CONFIG);
+  const raw = store.get(CFG.save.key);
+  if (raw == null) return defaultSave(CFG);
+  return loadSave(raw, CFG);
 }
 
 let saveTimer = 0;
@@ -98,7 +104,7 @@ function writeSave(force) {
   try {
     const payload = serializeSave(sim);
     payload.seenHint = seenHint;
-    store.set(CONFIG.save.key, JSON.stringify(payload));
+    store.set(CFG.save.key, JSON.stringify(payload));
     saveTimer = 0;
   } catch (e) {
     logError('save', e.message);
@@ -112,13 +118,13 @@ function writeSave(force) {
  * un-happens. The running session has to be reset too.
  */
 function wipeSave() {
-  store.remove(CONFIG.save.key);
+  store.remove(CFG.save.key);
   try {
-    applySave(sim, defaultSave(CONFIG));
+    applySave(sim, defaultSave(CFG));
     seenHint = false;
     hintFade = 0;
     displayScore = 0;
-    sky = deriveStars(defaultSave(CONFIG), CONFIG);
+    sky = deriveStars(defaultSave(CFG), CFG);
     palette.cur = null;
     palette.key = '';
     palette.from = palette.to = 0;
@@ -163,7 +169,7 @@ function rgba(hex, alpha) {
 /* -- the active palette: blended between two unlocked colour worlds --------- */
 
 const palette = {
-  from: 0, to: 0, t: 0, hold: CONFIG.paletteRules.driftHold, cur: null, key: '',
+  from: 0, to: 0, t: 0, hold: CFG.paletteRules.driftHold, cur: null, key: '',
 };
 
 function blendPalettes(A, B, t) {
@@ -179,19 +185,19 @@ function blendPalettes(A, B, t) {
   for (let i = 0; i < n; i++) {
     out.orbHues.push(mixHex(A.orbHues[i % A.orbHues.length], B.orbHues[i % B.orbHues.length], t));
   }
-  for (const k of CONFIG.unlockOrder) out.type[k] = mixHex(A.type[k], B.type[k], t);
+  for (const k of CFG.unlockOrder) out.type[k] = mixHex(A.type[k], B.type[k], t);
   return out;
 }
 
 function updatePalette(dt) {
-  const R = CONFIG.paletteRules;
-  const unlocked = palettesUnlockedAt(sim.level, CONFIG);
+  const R = CFG.paletteRules;
+  const unlocked = palettesUnlockedAt(sim.level, CFG);
   if (palette.cur === null) {
     palette.from = Math.min(sim.paletteIndex, unlocked - 1);
     palette.to = palette.from;
     palette.t = 0;
   }
-  const driftAllowed = !CONFIG.paletteRules.driftOnlyWhenCalm || sim.mode === 'CALM';
+  const driftAllowed = !CFG.paletteRules.driftOnlyWhenCalm || sim.mode === 'CALM';
   if (unlocked > 1 && driftAllowed) {
     if (palette.hold > 0) {
       palette.hold -= dt;
@@ -210,8 +216,8 @@ function updatePalette(dt) {
     palette.from = palette.to = 0;
     palette.t = 0;
   }
-  const A = CONFIG.palettes[Math.min(palette.from, CONFIG.palettes.length - 1)];
-  const B = CONFIG.palettes[Math.min(palette.to, CONFIG.palettes.length - 1)];
+  const A = CFG.palettes[Math.min(palette.from, CFG.palettes.length - 1)];
+  const B = CFG.palettes[Math.min(palette.to, CFG.palettes.length - 1)];
   const key = palette.from + ':' + palette.to + ':' + Math.round(palette.t * 40);
   // `|| !palette.cur` is load-bearing: a wipe resets from/to/t to values that can produce
   // the SAME key, so a key-only check would never rebuild and every later frame would throw
@@ -267,7 +273,7 @@ const bloomB = document.createElement('canvas');
 const bloomBCtx = bloomB.getContext('2d');
 
 let cssW = 1, cssH = 1, dpr = 1;
-let bloomScale = CONFIG.render.bloomScale;
+let bloomScale = CFG.render.bloomScale;
 const safe = { t: 0, r: 0, b: 0, l: 0 };
 
 function readSafeArea() {
@@ -295,7 +301,7 @@ let lastW = -1, lastH = -1, lastDpr = -1;
 
 function resizeLayers(force) {
   const [w, h] = measure();
-  const d = Math.max(1, Math.min(CONFIG.render.dprCap, window.devicePixelRatio || 1));
+  const d = Math.max(1, Math.min(CFG.render.dprCap, window.devicePixelRatio || 1));
   // Insets can change without the size changing, so read them before the guard.
   readSafeArea();
   // iOS fires resize and visualViewport-resize liberally — scrolling chrome, the keyboard,
@@ -340,13 +346,14 @@ let seenHint = savedState.seenHint === true;
 
 const [iw, ih] = measure();
 const sim = createSim({
-  config: CONFIG,
+  config: BASE_CONFIG,
   rng: makeRng(seed),
   width: iw, height: ih,
   save: savedState,
 });
 
-let sky = deriveStars(savedState, CONFIG);
+CFG = sim.config;                 // from here on, the live upgraded config
+let sky = deriveStars(savedState, CFG);
 
 resizeLayers();
 
@@ -362,7 +369,9 @@ let flash = 0;
 let flashMax = 0;
 let shake = 0;
 let celebration = null;    // { text, sub, t, life, big }
-let particleBudget = CONFIG.effects.maxParticles;
+let vortexRings = [];      // live double-tap wells, drawn as counter-rotating arcs
+let capGlory = 0;          // countdown on the level-100 display
+let particleBudget = CFG.effects.maxParticles;
 
 let softResets = 0;
 
@@ -371,6 +380,7 @@ function softResetEffects() {
   popups.length = 0;
   waves.length = 0;
   arcs.length = 0;
+  vortexRings.length = 0;
   flash = 0; shake = 0;
   celebration = null;
   // A throw between ctx.save() and ctx.restore() leaks state-stack entries every frame.
@@ -415,40 +425,53 @@ function spawnParticles(x, y, count, speed, color, life, size) {
   }
 }
 
-function addPopup(x, y, text, color, big) {
-  if (popups.length > 40) popups.shift();
-  // Merge popups landing on nearly the same spot in the same instant.
+let popupBudget = 0;
+
+function addPopup(x, y, text, color, big, amount) {
+  // Merge first: a cascade lands dozens of hits in one small area, and one growing number
+  // reads far better than forty overlapping ones.
+  const r = CFG.effects.popupMergeRadius * scale();
   for (const p of popups) {
-    if (p.t < CONFIG.score.popupMerge && Math.abs(p.x - x) < 22 && Math.abs(p.y - y) < 22) {
-      p.merged = (p.merged || 1) + 1;
-      p.size = Math.min(p.size * 1.06, 34);
+    if (p.t < CFG.score.popupMerge * 4 && Math.abs(p.x - x) < r && Math.abs(p.y - y) < r) {
+      p.amount = (p.amount || 0) + (amount || 0);
+      p.text = formatScore(p.amount);
+      p.size = Math.min(p.size * 1.05, 30);
+      p.t = Math.min(p.t, CFG.effects.popupLife * 0.25);   // restart its rise
       return;
     }
   }
-  popups.push({ x, y, text, color, t: 0, life: CONFIG.effects.popupLife, size: big ? 21 : 15 });
+  // Then rate-limit. Score here is mostly aesthetic, so past the budget only the big ones
+  // are worth interrupting the picture for.
+  if (popupBudget <= 0 && !big) return;
+  popupBudget -= 1;
+  if (popups.length >= CFG.effects.popupMax) popups.shift();
+  popups.push({
+    x, y, text, color, amount: amount || 0, t: 0,
+    life: CFG.effects.popupLife, size: big ? 21 : 15,
+  });
 }
 
 function addWave(x, y, r, strength, color) {
   if (waves.length > 28) waves.shift();
-  waves.push({ x, y, r0: r * 0.18, r1: r, t: 0, life: CONFIG.effects.shockwaveTime, strength, color });
+  waves.push({ x, y, r0: r * 0.18, r1: r, t: 0, life: CFG.effects.shockwaveTime, strength, color });
 }
 
 function addArc(x1, y1, x2, y2, color, depth) {
   if (arcs.length > 60) arcs.shift();
   arcs.push({
-    x1, y1, x2, y2, t: 0, life: CONFIG.types.CHAIN.arcTime, color,
-    delay: (depth || 0) * CONFIG.types.CHAIN.hopDelay,
+    x1, y1, x2, y2, t: 0, life: CFG.types.CHAIN.arcTime, color,
+    delay: (depth || 0) * CFG.types.CHAIN.hopDelay,
     seed: Math.random() * 1000,
   });
 }
 
 function addFlash(amount) {
-  flashMax = Math.max(flashMax, Math.min(CONFIG.effects.flashMaxAlpha, amount));
-  flash = CONFIG.effects.flashTime;
+  flashMax = Math.max(flashMax, Math.min(CFG.effects.flashMaxAlpha, amount));
+  flash = CFG.effects.flashTime;
 }
 
 function addShake(amount) {
-  shake = Math.min(CONFIG.effects.shakeMax * scale(), shake + amount);
+  shake = Math.min(CFG.effects.shakeMax * scale(), shake + amount);
 }
 
 function scale() { return sim.scale; }
@@ -457,20 +480,21 @@ function scale() { return sim.scale; }
 
 function consumeEvents(P) {
   const inten = sim.intensity;
-  const loud = inten > CONFIG.intensity.frenzyAbove;
+  const loud = inten > CFG.intensity.frenzyAbove;
   for (const ev of sim.events) {
     switch (ev.type) {
       case 'impact': {
-        const n = Math.round(CONFIG.effects.impactSparks * (0.4 + Math.min(2.2, ev.speed)) * qualityMul());
+        const n = Math.round(CFG.effects.impactSparks * (0.4 + Math.min(2.2, ev.speed)) * qualityMul());
         spawnParticles(ev.x, ev.y, n, 120 * scale() * Math.min(3, ev.speed), P.fog, 0.42, 1.7 * scale());
         if (ev.speed > 2.2) addShake(1.1 * scale() * Math.min(2.5, ev.speed - 1.5));
         break;
       }
       case 'score':
-        addPopup(ev.x, ev.y, formatScore(ev.amount), ev.amount > 900 ? P.ring : P.hud, ev.amount > 900);
+        addPopup(ev.x, ev.y, formatScore(ev.amount), ev.amount > 900 ? P.ring : P.hud,
+          ev.amount > 900, ev.amount);
         break;
       case 'detonate':
-        spawnParticles(ev.x, ev.y, Math.round(CONFIG.effects.detonateSparks * qualityMul()),
+        spawnParticles(ev.x, ev.y, Math.round(CFG.effects.detonateSparks * qualityMul()),
           520 * scale(), ev.nova ? P.type.FROST : P.type.VOLATILE, 0.7, 2.3 * scale());
         addFlash(ev.nova ? 0.16 : 0.10);
         addShake(4.5 * scale());
@@ -491,7 +515,7 @@ function consumeEvents(P) {
         addWave(ev.x, ev.y, ev.r, 0.7, P.type.FROST);
         break;
       case 'shatter':
-        spawnParticles(ev.x, ev.y, Math.round(CONFIG.effects.shatterSparks * qualityMul()),
+        spawnParticles(ev.x, ev.y, Math.round(CFG.effects.shatterSparks * qualityMul()),
           260 * scale(), P.type.FROST, 0.55, 1.9 * scale());
         break;
       case 'prism':
@@ -504,8 +528,23 @@ function consumeEvents(P) {
         spawnParticles(ev.x, ev.y, Math.round(14 * qualityMul()), 300 * scale(), P.type.GOLD, 0.8, 2.1 * scale());
         addFlash(0.09);
         break;
+      case 'pulse':
+        addWave(ev.x, ev.y, ev.r, 1.5, P.ring);
+        addWave(ev.x, ev.y, ev.r * 0.55, 1.1, P.hud);
+        spawnParticles(ev.x, ev.y, Math.round(22 * qualityMul()), 520 * scale(), P.ring, 0.5, 2.1 * scale());
+        addShake(CFG.tap.pulseShake * scale());
+        addFlash(0.07);
+        break;
+      case 'vortex':
+        vortexRings.push({ x: ev.x, y: ev.y, r: ev.r, t: 0, life: ev.life });
+        spawnParticles(ev.x, ev.y, Math.round(16 * qualityMul()), 180 * scale(), P.type.MAGNET, 0.8, 1.9 * scale());
+        break;
+      case 'vortexEnd':
+        addWave(ev.x, ev.y, CFG.tap.vortexRadius * scale() * 0.8, 1.0, P.type.MAGNET);
+        spawnParticles(ev.x, ev.y, Math.round(18 * qualityMul()), 420 * scale(), P.type.MAGNET, 0.6, 2 * scale());
+        break;
       case 'sling':
-        addWave(ev.x, ev.y, CONFIG.gather.captureRadius * scale(), 1.2, P.ring);
+        addWave(ev.x, ev.y, CFG.gather.captureRadius * scale(), 1.2, P.ring);
         spawnParticles(ev.x, ev.y, Math.round(Math.min(30, ev.count * 2) * qualityMul()),
           420 * scale(), P.ring, 0.6, 2 * scale());
         addShake(2.4 * scale());
@@ -515,25 +554,35 @@ function consumeEvents(P) {
         addFlash(0.12);
         break;
       case 'levelup':
-        if (ev.level <= CONFIG.levels.maxCelebrated) {
+        if (ev.level <= CFG.levels.maxCelebrated && !celebration) {
           celebrate('LEVEL ' + ev.level, '', false);
-          addFlash(0.08);
+          addFlash(0.05);
         }
         break;
-      case 'unlock':
-        celebrate(ev.label, 'unlocked', true);
-        addFlash(0.14);
-        addShake(3 * scale());
+      case 'upgrade': {
+        // Every level hands over something with a name. Ball types and colour worlds get
+        // the loud treatment; the rest still announce themselves.
+        const loud = ev.kind === 'type' || ev.kind === 'palette';
+        celebrate(ev.palette || ev.label, ev.kind === 'type' ? 'new ball' :
+          (ev.kind === 'palette' ? 'new sky' : 'upgrade'), loud);
+        addFlash(loud ? 0.14 : 0.07);
+        if (loud) addShake(3 * scale());
         break;
-      case 'palette':
-        celebrate(ev.name, 'new sky', false);
+      }
+      case 'levelcap':
+        // Drawn by its own pass, not through `celebration` — an ordinary level flourish
+        // arriving in the same frame would otherwise stomp the one moment that matters.
+        capGlory = CFG.levels.capCelebrateTime;
+        celebration = null;
+        addFlash(0.22);
+        addShake(9 * scale());
         break;
       case 'milestone':
         celebrate(ev.kind === 'comet' ? 'COMET' : formatScore(ev.value), 'milestone', true,
-          CONFIG.milestones.celebrateTime);
+          CFG.milestones.celebrateTime);
         addFlash(0.18);
         addShake(5 * scale());
-        sky = deriveStars(serializeSave(sim), CONFIG);
+        sky = deriveStars(serializeSave(sim), CFG);
             writeSave(true);
         break;
       case 'filigree':
@@ -571,7 +620,7 @@ function celebrate(text, sub, big, life) {
   if (celebration && celebration.big && !big && celebration.t < celebration.life * 0.5) return;
   celebration = {
     text, sub, t: 0, big,
-    life: life || (big ? CONFIG.levels.unlockCelebrateTime : CONFIG.levels.levelCelebrateTime),
+    life: life || (big ? CFG.levels.unlockCelebrateTime : CFG.levels.levelCelebrateTime),
   };
 }
 
@@ -616,10 +665,20 @@ function updateEffects(dt) {
   }
   arcs.length = w;
 
+  popupBudget = Math.min(CFG.effects.popupRate, popupBudget + CFG.effects.popupRate * dt);
   if (hintFade > 0) hintFade = Math.max(0, hintFade - dt);
+  let vw = 0;
+  for (let i = 0; i < vortexRings.length; i++) {
+    const v = vortexRings[i];
+    v.t += dt;
+    if (v.t >= v.life) continue;
+    vortexRings[vw++] = v;
+  }
+  vortexRings.length = vw;
+  if (capGlory > 0) capGlory = Math.max(0, capGlory - dt);
   if (flash > 0) flash = Math.max(0, flash - dt);
   if (flash === 0) flashMax = 0;
-  if (shake > 0) shake = Math.max(0, shake - shake * CONFIG.effects.shakeDecay * dt - 0.01);
+  if (shake > 0) shake = Math.max(0, shake - shake * CFG.effects.shakeDecay * dt - 0.01);
   if (celebration) {
     celebration.t += dt;
     if (celebration.t >= celebration.life) celebration = null;
@@ -627,7 +686,7 @@ function updateEffects(dt) {
 }
 
 function qualityMul() {
-  return particleBudget / Math.max(1, CONFIG.effects.maxParticles);
+  return particleBudget / Math.max(1, CFG.effects.maxParticles);
 }
 
 /* ========================================================================== */
@@ -669,7 +728,12 @@ let gestureMaxDown = 0;
 let gestureMoved = 0;
 let lastTwoFingerTap = -99;
 let twoFingerTapCount = 0;
-let debugOn = FORCE_DEBUG || CONFIG.debug.enabled;
+// One-finger tap powers. Recognition lives here because it needs a clock; the sim just
+// receives the resulting taps and stays deterministic.
+const pendingTaps = [];
+let lastTapTime = -99;
+let lastTapX = 0, lastTapY = 0;
+let debugOn = FORCE_DEBUG || CFG.debug.enabled;
 let wipeHold = 0;
 let wipeDone = 0;
 
@@ -683,10 +747,11 @@ function onPointerDown(e) {
   try {
     if (SOAK) return;
     const [x, y] = canvasPos(e);
+    if (upgradeMenuHit(x, y)) { e.preventDefault(); return; }
     if (pointers.size === 0) { gestureStart = nowSec(); gestureMaxDown = 0; gestureMoved = 0; }
     pointers.set(e.pointerId, { x, y });
     gestureMaxDown = Math.max(gestureMaxDown, pointers.size);
-    if (!seenHint) { seenHint = true; hintFade = CONFIG.input.hintFadeTime; writeSave(true); }
+    if (!seenHint) { seenHint = true; hintFade = CFG.input.hintFadeTime; writeSave(true); }
     try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
     e.preventDefault();
   } catch (err) { logError('input', err.message); }
@@ -717,15 +782,26 @@ function endPointer(e, isCancel) {
     if (pointers.size === 0) {
       const dur = nowSec() - gestureStart;
       const still = gestureMoved < 26;
-      if (dur < CONFIG.input.debugTapMaxTime && still) {
-        if (gestureMaxDown >= CONFIG.input.debugFingers) {
+      // ONE finger, quick, barely moved: a tap power rather than a flick of the field.
+      if (gestureMaxDown === 1 && dur < CFG.tap.maxTime && gestureMoved < CFG.tap.maxMove) {
+        const [tx, ty] = canvasPos(e);
+        const t = nowSec();
+        const near = Math.hypot(tx - lastTapX, ty - lastTapY) < CFG.tap.maxMove * 4;
+        const isDouble = (t - lastTapTime) < CFG.tap.doubleWindow && near;
+        pendingTaps.push({ x: tx, y: ty, double: isDouble });
+        // Consume the pair, so a triple tap is tap + vortex + tap rather than two vortices.
+        lastTapTime = isDouble ? -99 : t;
+        lastTapX = tx; lastTapY = ty;
+      }
+      if (dur < CFG.input.debugTapMaxTime && still) {
+        if (gestureMaxDown >= CFG.input.debugFingers) {
           debugOn = !debugOn;
           twoFingerTapCount = 0;
-        } else if (gestureMaxDown === CONFIG.input.scatterFingers) {
+        } else if (gestureMaxDown === CFG.input.scatterFingers) {
           const t = nowSec();
-          twoFingerTapCount = (t - lastTwoFingerTap < CONFIG.input.scatterTapWindow) ? twoFingerTapCount + 1 : 1;
+          twoFingerTapCount = (t - lastTwoFingerTap < CFG.input.scatterTapWindow) ? twoFingerTapCount + 1 : 1;
           lastTwoFingerTap = t;
-          if (twoFingerTapCount >= CONFIG.input.scatterTapCount) {
+          if (twoFingerTapCount >= CFG.input.scatterTapCount) {
             twoFingerTapCount = 0;
             scatterRequest = true;
           }
@@ -758,7 +834,10 @@ try {
   canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
   window.addEventListener('keydown', (e) => {
     if (e.key === 'd' || e.key === 'D') debugOn = !debugOn;
+    else if (e.key === 'u' || e.key === 'U') { upgradeMenu.open = !upgradeMenu.open; if (upgradeMenu.open) debugOn = true; }
     else if (e.key === 'r' || e.key === 'R') scatterRequest = true;
+    else if (e.key === 'ArrowRight') upgradeMenu.page++;
+    else if (e.key === 'ArrowLeft') upgradeMenu.page--;
   });
 } catch (e) { logError('input', 'listener setup: ' + e.message); }
 
@@ -766,7 +845,7 @@ try {
 
 const soakPointers = [];
 if (SOAK) {
-  for (let i = 0; i < CONFIG.input.soakPointers; i++) {
+  for (let i = 0; i < CFG.input.soakPointers; i++) {
     soakPointers.push({
       id: 900 + i, x: Math.random() * iw, y: Math.random() * ih,
       tx: Math.random() * iw, ty: Math.random() * ih,
@@ -779,18 +858,18 @@ function updateSoak(dt) {
   for (const p of soakPointers) {
     p.timer -= dt;
     if (p.timer <= 0) {
-      p.timer = 0.3 + Math.random() * (2 / Math.max(0.01, CONFIG.input.soakChangeRate));
+      p.timer = 0.3 + Math.random() * (2 / Math.max(0.01, CFG.input.soakChangeRate));
       if (!p.down) {
         p.down = true;
         p.x = Math.random() * cssW; p.y = Math.random() * cssH;
-        p.hold = Math.random() < CONFIG.input.soakHoldChance ? 0.6 + Math.random() * 1.8 : 0;
+        p.hold = Math.random() < CFG.input.soakHoldChance ? 0.6 + Math.random() * 1.8 : 0;
       } else if (Math.random() < 0.42) {
         p.down = false;
         // Exercise the pointercancel path too, not only clean releases.
         if (Math.random() < 0.3) cancelled.push(p.id);
       } else {
         p.tx = Math.random() * cssW; p.ty = Math.random() * cssH;
-        p.hold = Math.random() < CONFIG.input.soakHoldChance ? 0.6 + Math.random() * 1.8 : 0;
+        p.hold = Math.random() < CFG.input.soakHoldChance ? 0.6 + Math.random() * 1.8 : 0;
       }
     }
     if (!p.down) continue;
@@ -805,6 +884,9 @@ function updateSoak(dt) {
     }
   }
   if (Math.random() < 0.0008) scatterRequest = true;
+  if (Math.random() < 0.012) {
+    pendingTaps.push({ x: Math.random() * cssW, y: Math.random() * cssH, double: Math.random() < 0.35 });
+  }
 }
 
 function buildInput() {
@@ -817,9 +899,11 @@ function buildInput() {
   const input = {
     pointers: list,
     cancelled: cancelled.length ? cancelled.slice() : null,
+    taps: pendingTaps.length ? pendingTaps.slice() : null,
     scatter: scatterRequest,
   };
   cancelled.length = 0;
+  pendingTaps.length = 0;
   scatterRequest = false;
   return input;
 }
@@ -832,7 +916,7 @@ function drawBackground(P, calm) {
   // Overfill by the shake amplitude: the whole scene is drawn under a translate during a
   // shake, so filling exactly (0,0,cssW,cssH) leaves an unpainted strip at the trailing
   // edge which smears last frame's pixels.
-  const m = CONFIG.effects.shakeMax * scale() + 2;
+  const m = CFG.effects.shakeMax * scale() + 2;
   const g = ctx.createLinearGradient(0, -m, 0, cssH + m);
   g.addColorStop(0, P.bg0);
   g.addColorStop(1, P.bg1);
@@ -840,12 +924,12 @@ function drawBackground(P, calm) {
   ctx.fillRect(-m, -m, cssW + m * 2, cssH + m * 2);
 
   // The sky: permanent, save-derived, and best seen when nothing is happening.
-  const skyAlpha = calm + (1 - calm) * CONFIG.sky.calmOnlyAlpha;
+  const skyAlpha = calm + (1 - calm) * CFG.sky.calmOnlyAlpha;
   if (sky.stars.length && skyAlpha > 0.02) {
     const t = sim.time;
     ctx.save();
     if (sky.links.length) {
-      ctx.strokeStyle = rgba(P.star, CONFIG.sky.linkAlpha * skyAlpha);
+      ctx.strokeStyle = rgba(P.star, CFG.sky.linkAlpha * skyAlpha);
       ctx.lineWidth = 0.6;
       ctx.beginPath();
       for (const [i, j] of sky.links) {
@@ -856,7 +940,7 @@ function drawBackground(P, calm) {
       ctx.stroke();
     }
     for (const s of sky.stars) {
-      const tw = 1 + CONFIG.render.starTwinkle * Math.sin(t * CONFIG.sky.twinkleRate * 6.28 + (s.seed % 1000) * 0.017);
+      const tw = 1 + CFG.render.starTwinkle * Math.sin(t * CFG.sky.twinkleRate * 6.28 + (s.seed % 1000) * 0.017);
       const a = Math.min(1, s.mag * tw) * skyAlpha;
       if (a <= 0.01) continue;
       const r = 0.7 + s.mag * 1.4;
@@ -878,7 +962,7 @@ function ballColor(P, b) {
 function drawBallsToTrail(P) {
   const g = trailCtx;
   g.globalCompositeOperation = 'lighter';
-  const gs = CONFIG.balls.glowScale;
+  const gs = CFG.balls.glowScale;
   for (const b of sim.balls) {
     if (!b.alive) continue;
     const fade = b.fade;
@@ -909,7 +993,7 @@ function drawShardsAndParticlesToTrail(P) {
   const g = trailCtx;
   g.globalCompositeOperation = 'lighter';
 
-  const sr = CONFIG.types.PRISM.shardRadius * scale();
+  const sr = CFG.types.PRISM.shardRadius * scale();
   g.strokeStyle = rgba(P.type.PRISM, 0.9);
   g.lineWidth = Math.max(1, sr * 0.8);
   g.beginPath();
@@ -993,7 +1077,7 @@ function drawBallDetail(P) {
       case 'VOLATILE': {
         if (b.inertT > 0) {
           // Visible recharge: the arc fills as the ball comes back online.
-          const k = 1 - b.inertT / CONFIG.types.VOLATILE.inertTime;
+          const k = 1 - b.inertT / CFG.types.VOLATILE.inertTime;
           ctx.strokeStyle = rgba(P.type.VOLATILE, 0.75 * a);
           ctx.lineWidth = 1.6;
           ctx.beginPath();
@@ -1022,7 +1106,7 @@ function drawBallDetail(P) {
         const spike = b.spikeT > 0 ? 1 : 0.45;
         ctx.strokeStyle = rgba(P.type.MAGNET, 0.3 * a * spike);
         ctx.lineWidth = 1;
-        const lines = CONFIG.types.MAGNET.fieldLines;
+        const lines = CFG.types.MAGNET.fieldLines;
         for (let i = 1; i <= lines; i++) {
           const rr = b.r * (1.5 + i * 0.9) * (1 + (b.spikeT > 0 ? 0.12 : 0));
           ctx.beginPath();
@@ -1065,7 +1149,7 @@ function drawBallDetail(P) {
         ctx.lineWidth = 1.1;
         for (let i = 0; i < glints; i++) {
           const A = t * 1.4 + b.phase + (i / glints) * 6.283;
-          const r0 = b.r * 1.25, r1 = b.r * (1.75 + 0.35 * Math.sin(t * CONFIG.types.GOLD.glitterRate * 0.3 + i));
+          const r0 = b.r * 1.25, r1 = b.r * (1.75 + 0.35 * Math.sin(t * CFG.types.GOLD.glitterRate * 0.3 + i));
           ctx.beginPath();
           ctx.moveTo(b.x + Math.cos(A) * r0, b.y + Math.sin(A) * r0);
           ctx.lineTo(b.x + Math.cos(A) * r1, b.y + Math.sin(A) * r1);
@@ -1092,10 +1176,37 @@ function drawBallDetail(P) {
   ctx.restore();
 }
 
+function drawVortices(P) {
+  if (vortexRings.length === 0) return;
+  const t = sim.time;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const v of vortexRings) {
+    const k = v.t / Math.max(1e-6, v.life);
+    const a = Math.min(1, Math.sin(Math.min(1, k * 1.02) * Math.PI) * 2.2);
+    if (a <= 0.01) continue;
+    // Three arcs winding inward: reads as something actively pulling, not a static ring.
+    for (let i = 0; i < 3; i++) {
+      const rr = v.r * (1 - i * 0.22) * (1 - k * 0.45);
+      const spin = t * (2.6 + i * 0.9) * (i % 2 ? -1 : 1);
+      ctx.strokeStyle = rgba(i === 1 ? P.ring : P.type.MAGNET, a * (0.5 - i * 0.11));
+      ctx.lineWidth = Math.max(1, (2.6 - i * 0.6) * scale());
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, Math.max(2, rr), spin, spin + 2.1);
+      ctx.stroke();
+    }
+    ctx.fillStyle = rgba(P.ring, a * 0.5);
+    ctx.beginPath();
+    ctx.arc(v.x, v.y, Math.max(1, 4 * scale() * (1 - k)), 0, 6.283);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawComet(P) {
   const c = sim.comet;
   if (!c) return;
-  const r = CONFIG.comet.radius * scale();
+  const r = CFG.comet.radius * scale();
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i + 1 < c.tail.length / 2; i++) {
@@ -1114,7 +1225,7 @@ function drawComet(P) {
   ctx.strokeStyle = rgba(P.star, 0.8);
   ctx.lineWidth = 1.6;
   ctx.beginPath();
-  ctx.arc(c.x, c.y, r, -Math.PI / 2, -Math.PI / 2 + 6.283 * (c.hp / CONFIG.comet.hp));
+  ctx.arc(c.x, c.y, r, -Math.PI / 2, -Math.PI / 2 + 6.283 * (c.hp / CFG.comet.hp));
   ctx.stroke();
   ctx.restore();
 }
@@ -1126,7 +1237,7 @@ function drawComet(P) {
  * Drawing the ring anywhere else makes a working attractor look broken.
  */
 function orbitShellRadius() {
-  const G = CONFIG.gather;
+  const G = CFG.gather;
   const k = G.orbitSpring;
   const r0 = G.orbitRadius * scale();
   const v = G.orbitSpin * scale();
@@ -1135,19 +1246,19 @@ function orbitShellRadius() {
 }
 
 function drawFields(P) {
-  const tier = filigreeTier(sim.bestCombo, CONFIG);
-  const arcCount = CONFIG.filigree.arcCount[Math.min(tier, CONFIG.filigree.arcCount.length - 1)] || 0;
+  const tier = filigreeTier(sim.bestCombo, CFG);
+  const arcCount = CFG.filigree.arcCount[Math.min(tier, CFG.filigree.arcCount.length - 1)] || 0;
   const t = sim.time;
-  const comboK = sim.comboCount > 0 ? Math.min(1, sim.comboTimer / CONFIG.score.comboWindow) : 0;
+  const comboK = sim.comboCount > 0 ? Math.min(1, sim.comboTimer / CFG.score.comboWindow) : 0;
 
   ctx.save();
   for (const f of sim.pointers.values()) {
-    const idleR = CONFIG.render.ringRadius * scale();
+    const idleR = CFG.render.ringRadius * scale();
     const R = idleR + (orbitShellRadius() - idleR) * f.gather;
-    const alpha = CONFIG.render.fieldRingAlpha * f.amp;
+    const alpha = CFG.render.fieldRingAlpha * f.amp;
 
     ctx.strokeStyle = rgba(P.ring, alpha * (0.5 + 0.5 * f.gather));
-    ctx.lineWidth = CONFIG.render.ringWidth * scale() * (0.6 + f.gather * 0.8);
+    ctx.lineWidth = CFG.render.ringWidth * scale() * (0.6 + f.gather * 0.8);
     ctx.beginPath();
     ctx.arc(f.sx, f.sy, R, 0, 6.283);
     ctx.stroke();
@@ -1155,7 +1266,7 @@ function drawFields(P) {
     // Combo ring: how much of the window is left before the combo starts shedding.
     if (comboK > 0) {
       ctx.strokeStyle = rgba(P.hud, 0.85 * f.amp);
-      ctx.lineWidth = CONFIG.render.ringWidth * scale() * 0.7;
+      ctx.lineWidth = CFG.render.ringWidth * scale() * 0.7;
       ctx.beginPath();
       ctx.arc(f.sx, f.sy, R * 1.28, -Math.PI / 2, -Math.PI / 2 + 6.283 * comboK);
       ctx.stroke();
@@ -1163,9 +1274,9 @@ function drawFields(P) {
 
     // Filigree: permanent ornament earned by lifetime best combo. Cosmetic only.
     if (arcCount > 0) {
-      ctx.strokeStyle = rgba(P.ring, CONFIG.filigree.alpha * f.amp * 0.8);
+      ctx.strokeStyle = rgba(P.ring, CFG.filigree.alpha * f.amp * 0.8);
       ctx.lineWidth = 1;
-      const spin = t * CONFIG.filigree.spinRate;
+      const spin = t * CFG.filigree.spinRate;
       for (let i = 0; i < arcCount; i++) {
         const a0 = spin + (i / arcCount) * 6.283;
         ctx.beginPath();
@@ -1179,7 +1290,7 @@ function drawFields(P) {
       ctx.strokeStyle = rgba(P.ring, 0.10 * f.gather);
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(f.sx, f.sy, CONFIG.gather.radiusGather * scale() * f.gather, 0, 6.283);
+      ctx.arc(f.sx, f.sy, CFG.gather.radiusGather * scale() * f.gather, 0, 6.283);
       ctx.stroke();
     }
   }
@@ -1192,7 +1303,7 @@ let displayScore = 0;
 let hintFade = 0;
 
 function drawHud(P, calm) {
-  const F = CONFIG.render;
+  const F = CFG.render;
   const alpha = calm * F.hudAlphaCalm + (1 - calm) * F.hudAlphaActive;
   const left = safe.l + F.hudMargin;
   const right = cssW - safe.r - F.hudMargin;
@@ -1219,7 +1330,7 @@ function drawHud(P, calm) {
   if (sim.comboCount > 0) {
     const cs = Math.max(12, size * 0.38);
     ctx.font = '600 ' + cs + 'px ' + F.fontStack;
-    const pulse = 0.7 + 0.3 * Math.min(1, sim.comboTimer / CONFIG.score.comboWindow);
+    const pulse = 0.7 + 0.3 * Math.min(1, sim.comboTimer / CFG.score.comboWindow);
     ctx.fillStyle = rgba(P.ring, alpha * pulse);
     ctx.fillText('×' + sim.comboMult.toFixed(2) + '   ' + sim.comboCount, cx, y);
     y += cs * 1.25;
@@ -1230,7 +1341,7 @@ function drawHud(P, calm) {
   // Level bar.
   const barW = Math.min(200, (right - left) * 0.55);
   const barH = F.levelBarHeight;
-  const prog = Math.max(0, Math.min(1, sim.xp / Math.max(1, sim.xpNeeded)));
+  const prog = sim.atLevelCap ? 1 : Math.max(0, Math.min(1, sim.xp / Math.max(1, sim.xpNeeded)));
   ctx.fillStyle = rgba(P.hudDim, alpha * 0.5);
   roundRect(ctx, cx - barW / 2, y, barW, barH, barH / 2);
   ctx.fill();
@@ -1241,7 +1352,7 @@ function drawHud(P, calm) {
   const ls = Math.max(10, size * 0.27);
   ctx.font = '500 ' + ls + 'px ' + F.fontStack;
   ctx.fillStyle = rgba(P.hudDim, alpha);
-  ctx.fillText('LV ' + sim.level, cx, y + barH + 5);
+  ctx.fillText(sim.atLevelCap ? 'LV ' + sim.level + ' — MAX' : 'LV ' + sim.level, cx, y + barH + 5);
 
   // Floating score popups.
   ctx.textBaseline = 'middle';
@@ -1250,7 +1361,7 @@ function drawHud(P, calm) {
     const a = Math.min(1, (1 - k) * 2.2);
     ctx.font = '600 ' + p.size + 'px ' + F.fontStack;
     ctx.fillStyle = rgba(p.color, a * 0.95);
-    ctx.fillText(p.text, p.x, p.y - CONFIG.effects.popupRise * scale() * k);
+    ctx.fillText(p.text, p.x, p.y - CFG.effects.popupRise * scale() * k);
   }
 
   // Celebration.
@@ -1271,10 +1382,71 @@ function drawHud(P, calm) {
     }
   }
 
+  // Level 100: the one moment this thing shouts. Its own pass, above everything, driven
+  // only by capGlory so no other celebration can interrupt it.
+  if (capGlory > 0) {
+    const k = 1 - capGlory / Math.max(1e-6, CFG.levels.capCelebrateTime);
+    // Swell in fast, hold, ease out — rather than a symmetric blip that is dim at both ends.
+    const a = k < 0.12 ? k / 0.12 : (k > 0.78 ? Math.max(0, (1 - k) / 0.22) : 1);
+    const cx2 = cssW / 2, cy2 = cssH * 0.44;
+    const spread = 0.35 + 0.9 * Math.min(1, k * 1.6);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const rays = 24;
+    for (let i = 0; i < rays; i++) {
+      const ang = (i / rays) * 6.283 + sim.time * 0.28;
+      const len = Math.max(cssW, cssH) * spread;
+      const grad = ctx.createLinearGradient(cx2, cy2, cx2 + Math.cos(ang) * len, cy2 + Math.sin(ang) * len);
+      grad.addColorStop(0, rgba(i % 2 ? P.ring : P.hud, a * 0.55));
+      grad.addColorStop(1, rgba(P.ring, 0));
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = (i % 2 ? 2.0 : 3.4) * scale();
+      ctx.beginPath();
+      ctx.moveTo(cx2, cy2);
+      ctx.lineTo(cx2 + Math.cos(ang) * len, cy2 + Math.sin(ang) * len);
+      ctx.stroke();
+    }
+    for (let i = 0; i < 4; i++) {
+      const rr = (0.08 + 0.42 * k + i * 0.11) * Math.max(cssW, cssH);
+      ctx.strokeStyle = rgba(i % 2 ? P.hud : P.ring, a * (0.7 - i * 0.15));
+      ctx.lineWidth = (4.0 - i * 0.8) * scale();
+      ctx.beginPath();
+      ctx.arc(cx2, cy2, rr, 0, 6.283);
+      ctx.stroke();
+    }
+    const halo = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, Math.max(cssW, cssH) * 0.45);
+    halo.addColorStop(0, rgba(P.hud, a * 0.30));
+    halo.addColorStop(1, rgba(P.hud, 0));
+    ctx.fillStyle = halo;
+    ctx.fillRect(0, 0, cssW, cssH);
+    ctx.restore();
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,0.9)';
+    ctx.shadowBlur = 18;
+    const big = Math.max(52, Math.min(112, cssW * 0.27));
+    ctx.font = '700 ' + big + 'px ' + F.fontStack;
+    ctx.fillStyle = rgba('#ffffff', a);
+    ctx.fillText('100', cx2, cy2);
+    ctx.font = '700 ' + big * 0.21 + 'px ' + F.fontStack;
+    ctx.fillStyle = rgba(P.ring, a);
+    ctx.fillText('LEVEL CAP', cx2, cy2 - big * 0.62);
+    ctx.font = '600 ' + big * 0.17 + 'px ' + F.fontStack;
+    ctx.fillStyle = rgba(P.hud, a * 0.95);
+    ctx.fillText('EVERY UPGRADE UNLOCKED', cx2, cy2 + big * 0.58);
+    ctx.font = '500 ' + big * 0.135 + 'px ' + F.fontStack;
+    ctx.fillStyle = rgba(P.hudDim, a * 0.95);
+    ctx.fillText('KEEP PLAYING — THE NUMBER NEVER STOPS', cx2, cy2 + big * 0.82);
+    ctx.restore();
+  }
+
   // First run only: a pulsing hint that dies on first contact.
   if ((!seenHint || hintFade > 0) && !SOAK) {
-    const out = seenHint ? Math.max(0, hintFade / Math.max(1e-6, CONFIG.input.hintFadeTime)) : 1;
-    const pulse = (0.35 + 0.35 * (0.5 + 0.5 * Math.sin(sim.time * 6.283 / CONFIG.input.hintPulsePeriod))) * out;
+    const out = seenHint ? Math.max(0, hintFade / Math.max(1e-6, CFG.input.hintFadeTime)) : 1;
+    const pulse = (0.35 + 0.35 * (0.5 + 0.5 * Math.sin(sim.time * 6.283 / CFG.input.hintPulsePeriod))) * out;
     ctx.font = '500 ' + Math.max(15, cssW * 0.045) + 'px ' + F.fontStack;
     ctx.fillStyle = rgba(P.hud, pulse);
     ctx.textAlign = 'center';
@@ -1299,6 +1471,133 @@ function roundRect(c, x, y, w, h, r) {
 
 const wipeRect = { x: 0, y: 0, w: 0, h: 0 };
 
+/* ---- upgrade menu: every upgrade, one tappable button each -------------- */
+
+const upgradeMenu = { open: false, page: 0, rows: [], buttons: [] };
+const UPG_PER_PAGE = 13;
+
+function upgradePages() {
+  return Math.max(1, Math.ceil((CFG.upgrades || []).length / UPG_PER_PAGE));
+}
+
+/** Fire an upgrade directly, as if the level that grants it had just been reached. */
+function triggerUpgrade(up) {
+  if (!up) return;
+  applyUpgrade(sim, up, true);            // forced: debug may re-apply deliberately
+  const P = palette.cur;
+  celebrate(up.label, up.kind === 'type' ? 'new ball'
+    : (up.kind === 'palette' ? 'new sky' : 'upgrade'), up.kind === 'type' || up.kind === 'palette');
+  addFlash(0.1);
+  if (P) spawnParticles(cssW / 2, cssH * 0.42, 24, 380 * scale(), P.ring, 0.7, 2.2 * scale());
+}
+
+function grantLevels(n) {
+  for (let i = 0; i < n; i++) {
+    if (sim.atLevelCap) break;
+    sim.xp = sim.xpNeeded;                // the next step() levels up and applies the upgrade
+    simStep(sim, 1 / 60, null);
+  }
+}
+
+function drawUpgradeMenu(P) {
+  const rows = upgradeMenu.rows; rows.length = 0;
+  const btns = upgradeMenu.buttons; btns.length = 0;
+  const list = CFG.upgrades || [];
+  const pages = upgradePages();
+  upgradeMenu.page = ((upgradeMenu.page % pages) + pages) % pages;
+
+  const x = safe.l + 8;
+  const w = Math.min(cssW - safe.l - safe.r - 16, 320);
+  const top = safe.t + 8;
+  const rowH = 22;
+  const headH = 26;
+  const footH = 30;
+  const h = headH + UPG_PER_PAGE * rowH + footH;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.86)';
+  ctx.fillRect(x - 4, top - 4, w + 8, h + 8);
+  ctx.strokeStyle = rgba(P.ring, 0.5);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - 4, top - 4, w + 8, h + 8);
+
+  ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#9fe8c0';
+  ctx.fillText('UPGRADES  page ' + (upgradeMenu.page + 1) + '/' + pages
+    + '   lv ' + sim.level + (sim.atLevelCap ? ' MAX' : '') + '   tap to fire', x, top + headH / 2);
+
+  const start = upgradeMenu.page * UPG_PER_PAGE;
+  for (let i = 0; i < UPG_PER_PAGE; i++) {
+    const up = list[start + i];
+    if (!up) break;
+    const ry = top + headH + i * rowH;
+    const applied = sim.appliedUpgrades.has(up.id);
+    ctx.fillStyle = applied ? 'rgba(60,110,80,0.55)' : 'rgba(40,44,60,0.55)';
+    ctx.fillRect(x, ry, w, rowH - 2);
+    ctx.fillStyle = applied ? '#bdf5d2' : '#dfe4f0';
+    ctx.fillText(String(up.level).padStart(3) + '  ' + up.label, x + 6, ry + (rowH - 2) / 2);
+    ctx.fillStyle = '#7f8aa0';
+    ctx.textAlign = 'right';
+    ctx.fillText(up.kind, x + w - 6, ry + (rowH - 2) / 2);
+    ctx.textAlign = 'left';
+    rows.push({ x, y: ry, w, h: rowH - 2, up });
+  }
+
+  const by = top + headH + UPG_PER_PAGE * rowH + 4;
+  const labels = ['< PREV', 'NEXT >', '+1 LV', '+10 LV', 'ALL', 'RESET'];
+  const acts = ['prev', 'next', 'lv1', 'lv10', 'all', 'reset'];
+  const bw = (w - 5 * 3) / labels.length;
+  for (let i = 0; i < labels.length; i++) {
+    const bx = x + i * (bw + 3);
+    ctx.fillStyle = 'rgba(70,80,110,0.75)';
+    ctx.fillRect(bx, by, bw, 22);
+    ctx.fillStyle = '#e6ecff';
+    ctx.textAlign = 'center';
+    ctx.fillText(labels[i], bx + bw / 2, by + 11);
+    btns.push({ x: bx, y: by, w: bw, h: 22, act: acts[i] });
+  }
+  ctx.restore();
+}
+
+/** Returns true if the point landed on the menu and was handled. */
+function upgradeMenuHit(px, py) {
+  if (!upgradeMenu.open) return false;
+  for (const b of upgradeMenu.buttons) {
+    if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
+      if (b.act === 'prev') upgradeMenu.page--;
+      else if (b.act === 'next') upgradeMenu.page++;
+      else if (b.act === 'lv1') grantLevels(1);
+      else if (b.act === 'lv10') grantLevels(10);
+      else if (b.act === 'all') for (const u of (CFG.upgrades || [])) applyUpgrade(sim, u, false);
+      else if (b.act === 'reset') {
+        applySave(sim, defaultSave(BASE_CONFIG));
+        CFG = sim.config;
+        palette.cur = null; palette.key = '';
+        spriteCache.clear();
+        sky = deriveStars(serializeSave(sim), CFG);
+      }
+      return true;
+    }
+  }
+  for (const r of upgradeMenu.rows) {
+    if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+      triggerUpgrade(r.up);
+      return true;
+    }
+  }
+  // Anywhere else inside the panel is swallowed, so the menu is not also playing the game.
+  const rows = upgradeMenu.rows;
+  if (rows.length) {
+    const first = rows[0];
+    const lastB = upgradeMenu.buttons[upgradeMenu.buttons.length - 1];
+    if (px >= first.x - 6 && px <= first.x + first.w + 6
+      && py >= safe.t && py <= (lastB ? lastB.y + lastB.h + 6 : first.y + first.h)) return true;
+  }
+  return false;
+}
+
 function drawDebug(P, physMs, fps) {
   const x = safe.l + 8;
   let y = safe.t + 8;
@@ -1306,7 +1605,7 @@ function drawDebug(P, physMs, fps) {
   const lines = [
     'fps ' + fps.toFixed(0) + '   phys ' + physMs.toFixed(2) + 'ms   draw ' + renderMs.toFixed(2)
       + 'ms   dpr ' + dpr.toFixed(2),
-    'balls ' + sim.aliveCount + '/' + sim.softCap + ' (cap ' + CONFIG.population.hardCap + ')'
+    'balls ' + sim.aliveCount + '/' + sim.softCap + ' (cap ' + CFG.population.hardCap + ')'
       + '   shards ' + sim.shards.length,
     'parts ' + particles.length + '/' + particleBudget + '   bloom ' + bloomScale.toFixed(2)
       + '   evDrop ' + sim.eventsDropped + '/' + sim.eventsDroppedTotal,
@@ -1346,7 +1645,7 @@ function drawDebug(P, physMs, fps) {
   // Save-wipe target: hold a finger on it to erase everything.
   y += 6;
   wipeRect.x = x; wipeRect.y = y; wipeRect.w = 128; wipeRect.h = 20;
-  const k = Math.min(1, wipeHold / CONFIG.debug.wipeHoldTime);
+  const k = Math.min(1, wipeHold / CFG.debug.wipeHoldTime);
   ctx.fillStyle = 'rgba(120,20,20,0.75)';
   ctx.fillRect(wipeRect.x, wipeRect.y, wipeRect.w, wipeRect.h);
   ctx.fillStyle = 'rgba(255,70,70,0.9)';
@@ -1364,7 +1663,7 @@ function updateWipe(dt) {
   for (const p of pointers.values()) if (check(p.x, p.y)) inside = true;
   if (inside) {
     wipeHold += dt;
-    if (wipeHold >= CONFIG.debug.wipeHoldTime && wipeDone === 0) {
+    if (wipeHold >= CFG.debug.wipeHoldTime && wipeDone === 0) {
       wipeSave();
       wipeDone = 1;
       logError('save', 'save wiped by debug overlay');
@@ -1393,7 +1692,7 @@ function nowSec() {
 }
 
 function adaptQuality() {
-  const E = CONFIG.effects;
+  const E = CFG.effects;
   if (fps < E.particleShedFps) {
     const target = Math.max(E.particleShedFloor, fps / E.particleShedFps);
     particleBudget = Math.max(
@@ -1405,8 +1704,8 @@ function adaptQuality() {
   }
 
   const wantBloom = fps < E.bloomShedFps
-    ? Math.max(E.bloomMinScale, CONFIG.render.bloomScale * 0.5)
-    : CONFIG.render.bloomScale;
+    ? Math.max(E.bloomMinScale, CFG.render.bloomScale * 0.5)
+    : CFG.render.bloomScale;
   if (Math.abs(wantBloom - bloomScale) > 0.02) {
     bloomScale = wantBloom;
     rebuildBloom();
@@ -1422,12 +1721,12 @@ function frame(now) {
     let dt = lastTime === 0 ? 1 / 60 : t - lastTime;
     lastTime = t;
     if (paused) return;
-    if (needFirstDtClamp) { dt = CONFIG.world.resumeDt; needFirstDtClamp = false; }
+    if (needFirstDtClamp) { dt = CFG.world.resumeDt; needFirstDtClamp = false; }
     if (!Number.isFinite(dt) || dt <= 0) dt = 1 / 60;
-    dt = Math.min(dt, CONFIG.world.maxDt);
+    dt = Math.min(dt, CFG.world.maxDt);
 
     fpsSamples.push(dt);
-    if (fpsSamples.length > CONFIG.debug.fpsWindow) fpsSamples.shift();
+    if (fpsSamples.length > CFG.debug.fpsWindow) fpsSamples.shift();
     let sum = 0;
     for (const s of fpsSamples) sum += s;
     fps = fpsSamples.length ? fpsSamples.length / sum : 60;
@@ -1453,14 +1752,14 @@ function frame(now) {
       frameFails++;
       logError('frame', err.message);
       // Two consecutive render throws: drop the effects layer and keep the sim going.
-      if (frameFails >= CONFIG.debug.frameFailSoftReset) {
+      if (frameFails >= CFG.debug.frameFailSoftReset) {
         frameFails = 0;
         softResetEffects();
       }
     }
 
     saveTimer += dt;
-    if (saveTimer >= CONFIG.save.writeInterval) writeSave(false);
+    if (saveTimer >= CFG.save.writeInterval) writeSave(false);
   } catch (err) {
     logError('loop', err && err.message);
   }
@@ -1468,9 +1767,9 @@ function frame(now) {
 
 function render(dt) {
   const P = updatePalette(dt);
-  const calmT = 1 - Math.min(1, sim.intensity / Math.max(1e-6, CONFIG.intensity.calmBelow));
-  const frenzyT = Math.min(1, Math.max(0, (sim.intensity - CONFIG.intensity.frenzyAbove)
-    / Math.max(1e-6, 1 - CONFIG.intensity.frenzyAbove)));
+  const calmT = 1 - Math.min(1, sim.intensity / Math.max(1e-6, CFG.intensity.calmBelow));
+  const frenzyT = Math.min(1, Math.max(0, (sim.intensity - CFG.intensity.frenzyAbove)
+    / Math.max(1e-6, 1 - CFG.intensity.frenzyAbove)));
 
   consumeEvents(P);
   updateEffects(dt);
@@ -1478,14 +1777,14 @@ function render(dt) {
   adaptQuality();
 
   // Rolling score counter.
-  const k = 1 - Math.exp(-dt / Math.max(1e-6, CONFIG.score.rollTau));
+  const k = 1 - Math.exp(-dt / Math.max(1e-6, CFG.score.rollTau));
   displayScore += (sim.score - displayScore) * k;
-  if (Math.abs(sim.score - displayScore) < CONFIG.score.rollSnapBelow) displayScore = sim.score;
+  if (Math.abs(sim.score - displayScore) < CFG.score.rollSnapBelow) displayScore = sim.score;
 
   // --- trail layer: fade with destination-out, then draw the glowing stuff -----------
   const fadeBase = calmT > 0
-    ? CONFIG.render.trailFadeCalm + (CONFIG.render.trailFade - CONFIG.render.trailFadeCalm) * (1 - calmT)
-    : CONFIG.render.trailFade + (CONFIG.render.trailFadeFrenzy - CONFIG.render.trailFade) * frenzyT;
+    ? CFG.render.trailFadeCalm + (CFG.render.trailFade - CFG.render.trailFadeCalm) * (1 - calmT)
+    : CFG.render.trailFade + (CFG.render.trailFadeFrenzy - CFG.render.trailFade) * frenzyT;
   trailCtx.save();
   trailCtx.setTransform(1, 0, 0, 1, 0, 0);
   trailCtx.globalCompositeOperation = 'destination-out';
@@ -1498,12 +1797,12 @@ function render(dt) {
 
   // --- bloom: downscale the trail, then composite it back with 'lighter' ------------
   const strength = calmT > 0
-    ? CONFIG.render.bloomStrengthCalm + (CONFIG.render.bloomStrength - CONFIG.render.bloomStrengthCalm) * (1 - calmT)
-    : CONFIG.render.bloomStrength + (CONFIG.render.bloomStrengthFrenzy - CONFIG.render.bloomStrength) * frenzyT;
+    ? CFG.render.bloomStrengthCalm + (CFG.render.bloomStrength - CFG.render.bloomStrengthCalm) * (1 - calmT)
+    : CFG.render.bloomStrength + (CFG.render.bloomStrengthFrenzy - CFG.render.bloomStrength) * frenzyT;
   bloomACtx.setTransform(1, 0, 0, 1, 0, 0);
   bloomACtx.clearRect(0, 0, bloomA.width, bloomA.height);
   bloomACtx.drawImage(trail, 0, 0, bloomA.width, bloomA.height);
-  if (CONFIG.render.bloomPasses > 1) {
+  if (CFG.render.bloomPasses > 1) {
     bloomBCtx.setTransform(1, 0, 0, 1, 0, 0);
     bloomBCtx.clearRect(0, 0, bloomB.width, bloomB.height);
     bloomBCtx.drawImage(bloomA, 0, 0, bloomB.width, bloomB.height);
@@ -1523,7 +1822,7 @@ function render(dt) {
 
   ctx.globalAlpha = strength;
   ctx.drawImage(bloomA, 0, 0, cssW, cssH);
-  if (CONFIG.render.bloomPasses > 1) {
+  if (CFG.render.bloomPasses > 1) {
     ctx.globalAlpha = strength * 0.7;
     ctx.drawImage(bloomB, 0, 0, cssW, cssH);
   }
@@ -1531,19 +1830,22 @@ function render(dt) {
   ctx.globalCompositeOperation = 'source-over';
 
   drawComet(P);
+  drawVortices(P);
   drawBallDetail(P);
   drawFields(P);
   drawHud(P, calmT);
 
   if (flash > 0) {
-    const a = flashMax * (flash / CONFIG.effects.flashTime);
+    const a = flashMax * (flash / CFG.effects.flashTime);
     ctx.fillStyle = rgba(P.fog, a);
     ctx.fillRect(-8, -8, cssW + 16, cssH + 16);
   }
 
   ctx.restore();
 
-  if (debugOn) drawDebug(P, physMs, fps);
+  // The two debug panels occupy the same corner, so only one shows at a time.
+  if (debugOn && !upgradeMenu.open) drawDebug(P, physMs, fps);
+  if (upgradeMenu.open) drawUpgradeMenu(P);
 }
 
 /* ========================================================================== */
@@ -1564,21 +1866,23 @@ try {
     if (document.hidden) {
       paused = true;
       clearAllFields();
-      if (CONFIG.save.writeOnHide) writeSave(true);
+      if (CFG.save.writeOnHide) writeSave(true);
     } else {
       paused = false;
       needFirstDtClamp = true;   // clamp the first dt after resume, or everything teleports
       lastTime = 0;
     }
   });
-  window.addEventListener('pagehide', () => { if (CONFIG.save.writeOnHide) writeSave(true); });
+  window.addEventListener('pagehide', () => { if (CFG.save.writeOnHide) writeSave(true); });
 } catch (e) { logError('life', e.message); }
 
 // Expose a small handle for the headless harness and for poking around in Safari's
 // inspector. Nothing in the app reads this.
 try {
   window.ORBS = {
-    sim, CONFIG,
+    sim,
+    get CONFIG() { return sim.config; },
+    BASE_CONFIG,
     get errors() { return errorBuffer.slice(); },
     get stats() {
       return {
@@ -1594,6 +1898,14 @@ try {
     wipe() { wipeSave(); },
     save() { writeSave(true); },
     toggleDebug() { debugOn = !debugOn; },
+    upgrades() { return (CFG.upgrades || []).map((u) => ({ ...u, applied: sim.appliedUpgrades.has(u.id) })); },
+    trigger(id) {
+      const up = (CFG.upgrades || []).find((u) => u.id === id);
+      if (up) triggerUpgrade(up);
+      return !!up;
+    },
+    grantLevels,
+    menu(open) { upgradeMenu.open = open !== false; debugOn = debugOn || upgradeMenu.open; },
   };
 } catch (_) {}
 

@@ -167,9 +167,13 @@ export const CONFIG = {
 
   /* ------------------------------------------------------------ population -- */
   population: {
-    startCount: 74,           // Balls present on a brand-new save.
-    softCapBase: 86,          // Target population at level 1. Levels nudge this up.
-    softCapPerLevel: 1.6,     // Extra target population per level beyond the first.
+    startCount: 30,           // Balls present on a brand-new save. Deliberately sparse: the
+                              // screen should feel roomy at level 1 and crowded at level 100.
+    softCapBase: 30,          // Target population at level 1. Raised ONLY by 'MORE ORBS'
+                              // upgrades (twenty of them, +6 each, reaching the hard cap of
+                              // 150 by level 93) so every increase is a visible reward
+                              // rather than an invisible drift.
+    softCapPerLevel: 0,       // No automatic per-level growth; see softCapBase above.
     hardCap: 150,             // Absolute ceiling. Splitters may never push the count past this.
     respawnDelay: 0.22,       // s. Gap between a despawn and the matching fade-in respawn.
     spawnFade: 0.9,           // s. Fade-in time for a new ball (also its collision ramp).
@@ -358,16 +362,253 @@ export const CONFIG = {
 
   /* ---------------------------------------------------------------- levels -- */
   levels: {
-    base: 6000,               // XP for level 2. Sized so the first unlock lands around 12s of
-                              // engaged play, and the remaining six spread across ~4 minutes.
-    exp: 2.4,                 // Threshold growth exponent. threshold(n) = base * n^exp + linear*n.
-    linear: 2000,             // Linear term, keeps early levels from being trivially close together.
-    maxCelebrated: 999,       // Levels above this celebrate quietly (never reached in practice).
+    // XP needed to leave each level, as ANCHOR POINTS with power-law interpolation between
+    // them (see levelThreshold in sim.js). A single base*n^exp formula cannot fit the real
+    // shape: earnings sit almost flat through the early levels (few balls, few ball types)
+    // and then climb steeply once the population and the multipliers open up. Fitting one
+    // curve to both made the first ten levels either trivial or a wall.
+    //
+    // These were MEASURED, not guessed: a simulated engaged player was run for an hour with
+    // levels forced to advance linearly, the score earned inside each level band recorded,
+    // and the result made monotonic by isotonic regression. Cumulative XP over levels 1-99
+    // lands within 0.2% of what that player actually earned in the hour.
+    //
+    // To re-pace the game, move these numbers. Bigger = slower. Past the last anchor the
+    // final segment's exponent continues, so play never runs out of curve.
+    // Scaled to 0.72 of the raw measurement: with the real level loop, upgrades arrive
+    // later than the forced-linear pace assumed, and the lag compounds.
+    // Level 1 is set below the fitted value on purpose: with the population starting at 30
+    // the opening is quieter, and the first ball type should still arrive inside ~15s.
+    curve: [
+      [1, 8468], [2, 32764], [3, 33026], [5, 33557], [8, 34098], [12, 129088],
+      [18, 774284], [26, 4274850], [36, 12592271], [50, 27175653], [68, 51556673],
+      [85, 119678574], [99, 152708833],
+    ],
+    cap: 100,                 // Level cap. Play continues past it, but the level stops rising
+                              // and a one-time grand celebration fires on arrival.
+    capCelebrateTime: 7.0,    // s. Length of the level-100 arrival display.
+    maxCelebrated: 100,       // Levels above this celebrate quietly.
     capNudgeStart: 8,         // Level at which each level-up starts nudging the ball soft cap upward.
     capNudgePerLevel: 1.6,    // Soft-cap increase per level past capNudgeStart.
     unlockCelebrateTime: 2.4, // s. Length of a type-unlock celebration.
     levelCelebrateTime: 1.1,  // s. Length of an ordinary level-up flourish.
   },
+
+
+  /* -------------------------------------------------------------- upgrades -- */
+  // ONE named upgrade per level, 2..100. Every level-up hands the player something with a
+  // name, and most of them are visible on screen rather than a number going up somewhere.
+  //
+  // Each entry is applied by mutating the sim's OWN config copy (createSim deep-clones what
+  // it is given), so an upgrade automatically reaches physics and rendering alike without
+  // any code needing to know it exists. On load, every upgrade up to the saved level is
+  // re-applied in order.
+  //
+  //   kind 'type'    unlock a ball type          kind 'palette' unlock a colour world
+  //   kind 'stat'    population / score numbers  kind 'mod'     retune an existing ball type
+  //   kind 'gesture' retune push / gather / tap  kind 'visual'  purely how it looks
+  //
+  // op is one of: mul (multiply), add (add), set (assign).
+  upgrades: [
+    { level: 2, id: 'type.VOLATILE', kind: 'type', type: 'VOLATILE', label: 'VOLATILE' },
+      // A new kind of ball joins the mix.
+    { level: 3, id: 'type.SPLITTER', kind: 'type', type: 'SPLITTER', label: 'SPLITTER' },
+      // A new kind of ball joins the mix.
+    { level: 4, id: 'type.MAGNET', kind: 'type', type: 'MAGNET', label: 'MAGNET' },
+      // A new kind of ball joins the mix.
+    { level: 5, id: 'type.PRISM', kind: 'type', type: 'PRISM', label: 'PRISM' },
+      // A new kind of ball joins the mix.
+    { level: 6, id: 'type.CHAIN', kind: 'type', type: 'CHAIN', label: 'CHAIN' },
+      // A new kind of ball joins the mix.
+    { level: 7, id: 'type.FROST', kind: 'type', type: 'FROST', label: 'FROST' },
+      // A new kind of ball joins the mix.
+    { level: 8, id: 'type.GOLD', kind: 'type', type: 'GOLD', label: 'GOLD' },
+      // A new kind of ball joins the mix.
+    { level: 9, id: 'palette.1', kind: 'palette', label: 'NEW SKY' },
+      // A new colour world, unlocked forever.
+    { level: 10, id: 'cap.10', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 11, id: 'types.VOLATILE.blastRadius.11', kind: 'mod', path: 'types.VOLATILE.blastRadius', mul: 1.18, label: 'WIDER BLAST' },
+      // Volatile detonations reach further.
+    { level: 12, id: 'render.trailFade.12', kind: 'visual', path: 'render.trailFade', mul: 0.86, label: 'LONG TRAILS' },
+      // Motion leaves longer streaks.
+    { level: 13, id: 'cap.13', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 14, id: 'types.VOLATILE.blastImpulse.14', kind: 'mod', path: 'types.VOLATILE.blastImpulse', mul: 1.2, label: 'HARDER BLAST' },
+      // Detonations shove harder.
+    { level: 15, id: 'palette.2', kind: 'palette', label: 'NEW SKY' },
+      // A new colour world, unlocked forever.
+    { level: 16, id: 'tap.pulseRadius.16', kind: 'gesture', path: 'tap.pulseRadius', mul: 1.22, label: 'WIDE PULSE' },
+      // Your tap pulse reaches further.
+    { level: 17, id: 'cap.17', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 18, id: 'render.bloomStrength.18', kind: 'visual', path: 'render.bloomStrength', mul: 1.15, label: 'BRIGHTER BLOOM' },
+      // Everything glows harder.
+    { level: 19, id: 'types.VOLATILE.inertTime.19', kind: 'mod', path: 'types.VOLATILE.inertTime', mul: 0.78, label: 'FAST RECHARGE' },
+      // Volatiles come back online sooner.
+    { level: 20, id: 'cap.20', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 21, id: 'palette.3', kind: 'palette', label: 'NEW SKY' },
+      // A new colour world, unlocked forever.
+    { level: 22, id: 'score.globalMultBase.22', kind: 'score', path: 'score.globalMultBase', add: 0.15, label: 'VALUE +' },
+      // Everything scores more.
+    { level: 23, id: 'types.VOLATILE.blastRadius.23', kind: 'mod', path: 'types.VOLATILE.blastRadius', mul: 1.15, label: 'WIDER BLAST II' },
+      // Wider still.
+    { level: 24, id: 'cap.24', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 25, id: 'balls.glowScale.25', kind: 'visual', path: 'balls.glowScale', mul: 1.1, label: 'BIGGER HALOS' },
+      // Orbs carry a wider halo.
+    { level: 26, id: 'types.SPLITTER.splitSpeed.26', kind: 'mod', path: 'types.SPLITTER.splitSpeed', mul: 1.25, label: 'SHARP SPLIT' },
+      // Children fly apart faster.
+    { level: 27, id: 'cap.27', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 28, id: 'palette.4', kind: 'palette', label: 'NEW SKY' },
+      // A new colour world, unlocked forever.
+    { level: 29, id: 'tap.pulseImpulse.29', kind: 'gesture', path: 'tap.pulseImpulse', mul: 1.25, label: 'HARD PULSE' },
+      // Your tap pulse shoves harder.
+    { level: 30, id: 'effects.impactSparks.30', kind: 'visual', path: 'effects.impactSparks', add: 4, label: 'MORE SPARKS' },
+      // Impacts throw more sparks.
+    { level: 31, id: 'cap.31', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 32, id: 'types.SPLITTER.cooldown.32', kind: 'mod', path: 'types.SPLITTER.cooldown', mul: 0.7, label: 'RAPID SPLIT' },
+      // Children can split again sooner.
+    { level: 33, id: 'score.globalMultBase.33', kind: 'score', path: 'score.globalMultBase', add: 0.2, label: 'VALUE ++' },
+      // Everything scores more again.
+    { level: 34, id: 'types.SPLITTER.childRadius.34', kind: 'mod', path: 'types.SPLITTER.childRadius', mul: 1.12, label: 'FAT CHILDREN' },
+      // Split children keep more size.
+    { level: 35, id: 'cap.35', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 36, id: 'palette.5', kind: 'palette', label: 'NEW SKY' },
+      // A new colour world, unlocked forever.
+    { level: 37, id: 'render.trailFadeCalm.37', kind: 'visual', path: 'render.trailFadeCalm', mul: 0.82, label: 'CALM TRAILS' },
+      // Quiet moments hold their streaks.
+    { level: 38, id: 'types.SPLITTER.inheritSpeed.38', kind: 'mod', path: 'types.SPLITTER.inheritSpeed', mul: 1.12, label: 'MOMENTUM SPLIT' },
+      // Children keep more of the parent speed.
+    { level: 39, id: 'cap.39', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 40, id: 'tap.vortexTime.40', kind: 'gesture', path: 'tap.vortexTime', mul: 1.3, label: 'LONG VORTEX' },
+      // Vortices spin for longer.
+    { level: 41, id: 'sky.baseMag.41', kind: 'visual', path: 'sky.baseMag', mul: 1.2, label: 'BRIGHT STARS' },
+      // Your constellation burns brighter.
+    { level: 42, id: 'types.MAGNET.pull.42', kind: 'mod', path: 'types.MAGNET.pull', mul: 1.35, label: 'STRONGER PULL' },
+      // Magnets pull harder.
+    { level: 43, id: 'cap.43', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 44, id: 'score.comboMultScale.44', kind: 'score', path: 'score.comboMultScale', mul: 1.12, label: 'COMBO VALUE' },
+      // Combos multiply harder.
+    { level: 45, id: 'palette.6', kind: 'palette', label: 'NEW SKY' },
+      // A new colour world, unlocked forever.
+    { level: 46, id: 'types.MAGNET.pullRadius.46', kind: 'mod', path: 'types.MAGNET.pullRadius', mul: 1.2, label: 'LONG REACH' },
+      // Magnets reach further.
+    { level: 47, id: 'effects.detonateSparks.47', kind: 'visual', path: 'effects.detonateSparks', add: 10, label: 'BLAST SPARKS' },
+      // Detonations throw more debris.
+    { level: 48, id: 'cap.48', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 49, id: 'types.MAGNET.spikePull.49', kind: 'mod', path: 'types.MAGNET.spikePull', mul: 1.3, label: 'MAGNET SPIKE' },
+      // A struck magnet yanks much harder.
+    { level: 50, id: 'tap.vortexSpin.50', kind: 'gesture', path: 'tap.vortexSpin', mul: 1.25, label: 'FAST VORTEX' },
+      // Vortices spin faster.
+    { level: 51, id: 'render.bloomStrengthCalm.51', kind: 'visual', path: 'render.bloomStrengthCalm', mul: 1.25, label: 'CALM GLOW' },
+      // A quiet screen glows more.
+    { level: 52, id: 'cap.52', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 53, id: 'types.MAGNET.fieldLines.53', kind: 'mod', path: 'types.MAGNET.fieldLines', add: 3, label: 'FIELD LINES' },
+      // More visible magnet field lines.
+    { level: 54, id: 'palette.7', kind: 'palette', label: 'NEW SKY' },
+      // A new colour world, unlocked forever.
+    { level: 55, id: 'score.globalMultBase.55', kind: 'score', path: 'score.globalMultBase', add: 0.25, label: 'VALUE +++' },
+      // More still.
+    { level: 56, id: 'types.PRISM.shards.56', kind: 'mod', path: 'types.PRISM.shards', add: 4, label: 'MORE SHARDS' },
+      // Prisms throw more shards.
+    { level: 57, id: 'cap.57', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 58, id: 'sky.linksPerStars.58', kind: 'visual', path: 'sky.linksPerStars', mul: 1.3, label: 'CONSTELLATIONS' },
+      // More lines join your stars.
+    { level: 59, id: 'types.PRISM.shardSpeed.59', kind: 'mod', path: 'types.PRISM.shardSpeed', mul: 1.2, label: 'FAST SHARDS' },
+      // Shards travel faster.
+    { level: 60, id: 'tap.pulseRadius.60', kind: 'gesture', path: 'tap.pulseRadius', mul: 1.2, label: 'WIDE PULSE II' },
+      // Wider still.
+    { level: 61, id: 'cap.61', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 62, id: 'effects.shockwaveTime.62', kind: 'visual', path: 'effects.shockwaveTime', mul: 1.3, label: 'LONG SHOCKWAVE' },
+      // Shockwave rings linger.
+    { level: 63, id: 'palette.8', kind: 'palette', label: 'NEW SKY' },
+      // A new colour world, unlocked forever.
+    { level: 64, id: 'types.PRISM.shardLife.64', kind: 'mod', path: 'types.PRISM.shardLife', mul: 1.35, label: 'LONG SHARDS' },
+      // Shards live longer.
+    { level: 65, id: 'score.comboMultScale.65', kind: 'score', path: 'score.comboMultScale', mul: 1.12, label: 'COMBO VALUE II' },
+      // Combos multiply harder again.
+    { level: 66, id: 'cap.66', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 67, id: 'types.PRISM.shards.67', kind: 'mod', path: 'types.PRISM.shards', add: 5, label: 'MORE SHARDS II' },
+      // A full spray.
+    { level: 68, id: 'filigree.alpha.68', kind: 'visual', path: 'filigree.alpha', mul: 1.3, label: 'BRIGHT FILIGREE' },
+      // Ring ornament stands out.
+    { level: 69, id: 'types.CHAIN.targets.69', kind: 'mod', path: 'types.CHAIN.targets', add: 1, label: 'FOURTH ARC' },
+      // Chains jolt one more ball.
+    { level: 70, id: 'cap.70', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 71, id: 'tap.vortexRadius.71', kind: 'gesture', path: 'tap.vortexRadius', mul: 1.22, label: 'BIG VORTEX' },
+      // Vortices reach further.
+    { level: 72, id: 'palette.9', kind: 'palette', label: 'NEW SKY' },
+      // A new colour world, unlocked forever.
+    { level: 73, id: 'render.starTwinkle.73', kind: 'visual', path: 'render.starTwinkle', mul: 1.4, label: 'TWINKLE' },
+      // Stars shimmer more.
+    { level: 74, id: 'types.CHAIN.range.74', kind: 'mod', path: 'types.CHAIN.range', mul: 1.25, label: 'LONG ARC' },
+      // Chains reach further.
+    { level: 75, id: 'cap.75', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 76, id: 'types.CHAIN.depth.76', kind: 'mod', path: 'types.CHAIN.depth', add: 1, label: 'DEEPER CHAIN' },
+      // Chains hop one more time.
+    { level: 77, id: 'effects.shatterSparks.77', kind: 'visual', path: 'effects.shatterSparks', add: 8, label: 'ICE DEBRIS' },
+      // Shattering ice throws more.
+    { level: 78, id: 'types.CHAIN.impulse.78', kind: 'mod', path: 'types.CHAIN.impulse', mul: 1.3, label: 'HARD JOLT' },
+      // Chain jolts hit harder.
+    { level: 79, id: 'gather.slingBase.79', kind: 'gesture', path: 'gather.slingBase', mul: 1.2, label: 'STRONG SLING' },
+      // Released orbits are thrown harder.
+    { level: 80, id: 'cap.80', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 81, id: 'paletteRules.driftPeriod.81', kind: 'visual', path: 'paletteRules.driftPeriod', mul: 0.8, label: 'FASTER DRIFT' },
+      // Colour worlds blend sooner.
+    { level: 82, id: 'types.FROST.maxTargets.82', kind: 'mod', path: 'types.FROST.maxTargets', add: 3, label: 'DEEP FREEZE' },
+      // Frost catches more neighbours.
+    { level: 83, id: 'types.FROST.radius.83', kind: 'mod', path: 'types.FROST.radius', mul: 1.22, label: 'WIDE FREEZE' },
+      // Frost reaches further.
+    { level: 84, id: 'palette.10', kind: 'palette', label: 'NEW SKY' },
+      // A new colour world, unlocked forever.
+    { level: 85, id: 'render.bloomStrengthFrenzy.85', kind: 'visual', path: 'render.bloomStrengthFrenzy', mul: 1.2, label: 'FRENZY GLOW' },
+      // Chaos burns brighter.
+    { level: 86, id: 'types.FROST.freezeTime.86', kind: 'mod', path: 'types.FROST.freezeTime', mul: 1.3, label: 'LONG FREEZE' },
+      // Ice holds longer.
+    { level: 87, id: 'gather.radiusGather.87', kind: 'gesture', path: 'gather.radiusGather', mul: 1.15, label: 'DEEP GATHER' },
+      // Your attractor reaches further.
+    { level: 88, id: 'cap.88', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 89, id: 'comet.chancePerSec.89', kind: 'visual', path: 'comet.chancePerSec', mul: 2.0, label: 'COMET WATCH' },
+      // Comets appear more often.
+    { level: 90, id: 'types.FROST.shatterImpulse.90', kind: 'mod', path: 'types.FROST.shatterImpulse', mul: 1.4, label: 'HARD SHATTER' },
+      // Thawing balls burst harder.
+    { level: 91, id: 'types.GOLD.weight.91', kind: 'mod', path: 'types.GOLD.weight', mul: 1.6, label: 'MORE GOLD' },
+      // Gold turns up more often.
+    { level: 92, id: 'render.ringRadius.92', kind: 'visual', path: 'render.ringRadius', mul: 1.12, label: 'WIDE RING' },
+      // Your finger ring is larger.
+    { level: 93, id: 'cap.93', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+      // Six more balls on screen.
+    { level: 94, id: 'types.GOLD.comboJump.94', kind: 'mod', path: 'types.GOLD.comboJump', add: 3, label: 'GOLD RUSH' },
+      // Gold jumps the combo further.
+    { level: 95, id: 'field.radius.95', kind: 'gesture', path: 'field.radius', mul: 1.12, label: 'BROAD FIELD' },
+      // Your push field is wider.
+    { level: 96, id: 'palette.11', kind: 'palette', label: 'NEW SKY' },
+      // A new colour world, unlocked forever.
+    { level: 97, id: 'effects.maxParticles.97', kind: 'visual', path: 'effects.maxParticles', add: 250, label: 'DENSE PARTICLES' },
+      // More particles on screen at once.
+    { level: 98, id: 'types.GOLD.scoreFlat.98', kind: 'mod', path: 'types.GOLD.scoreFlat', mul: 1.8, label: 'GOLD VALUE' },
+      // Gold is worth much more.
+    { level: 99, id: 'types.GOLD.weight.99', kind: 'mod', path: 'types.GOLD.weight', mul: 1.5, label: 'MORE GOLD II' },
+      // Gold again.
+    { level: 100, id: 'field.flingGain.100', kind: 'gesture', path: 'field.flingGain', mul: 1.18, label: 'STRONG FLING' },
+      // Swipes carry balls harder.
+  ],
 
   /* ------------------------------------------------------------ milestones -- */
   milestones: {
@@ -423,6 +664,13 @@ export const CONFIG = {
     flashMaxAlpha: 0.20,      // Peak screen-flash alpha at FRENZY. Never blinding.
     shakeMax: 7.5,            // px @ref. Peak screen shake.
     shakeDecay: 7.0,          // 1/s. Shake decay rate.
+    popupRate: 6,             // Popups spawned per second, at most. Score is mostly aesthetic
+                              // here — the point is the feeling of numbers going up, not a
+                              // readout — so the screen stays legible instead of becoming a
+                              // wall of digits during a cascade.
+    popupMax: 12,             // Concurrent popups on screen at once.
+    popupMergeRadius: 46,     // px @ref. Popups landing this close merge into one, and the
+                              // merged one grows, so a cluster reads as one bigger number.
     popupLife: 1.05,          // s. Floating score popup lifetime.
     popupRise: 52,            // px @ref. Distance a popup floats upward.
   },
@@ -525,6 +773,66 @@ export const CONFIG = {
         PRISM: '#fffbe6', CHAIN: '#ffd166', FROST: '#cfe8ff', GOLD: '#fff08a',
       },
     },
+    {
+      name: 'Ultraviolet',    // Blacklight room. Violet dark, everything fluoresces.
+      bg0: '#04030a', bg1: '#150a2b', fog: '#a44bff',
+      hud: '#ead6ff', hudDim: '#7a5a9e', ring: '#b06bff', star: '#e3d1ff',
+      orbHues: ['#8b3dff', '#a855f7', '#6d4dff', '#c07bff'],
+      type: {
+        VOLATILE: '#ff3860', SPLITTER: '#c47bff', MAGNET: '#4f46ff',
+        PRISM: '#f7c9ff', CHAIN: '#3ef0ff', FROST: '#a8c8ff', GOLD: '#ffd24a',
+      },
+    },
+    {
+      name: 'Venom',          // Toxic swamp. Acid light; nothing here is safe.
+      bg0: '#040603', bg1: '#0d1a05', fog: '#9ef01a',
+      hud: '#e8ffc4', hudDim: '#6f8f45', ring: '#b9ff3d', star: '#ddffb0',
+      orbHues: ['#a3e635', '#84cc16', '#c8ff2e', '#7ddf20'],
+      type: {
+        VOLATILE: '#ff4d1f', SPLITTER: '#c2f53f', MAGNET: '#b14dff',
+        PRISM: '#f0ffd0', CHAIN: '#22e0ff', FROST: '#9fd0ff', GOLD: '#ffc61a',
+      },
+    },
+    {
+      name: 'Bloodmoon',      // Eclipse. Arterial reds, no daylight in it.
+      bg0: '#060203', bg1: '#1c0409', fog: '#ff3b30',
+      hud: '#ffd7d9', hudDim: '#9b5158', ring: '#ff4d5e', star: '#ffd0cf',
+      orbHues: ['#e11d48', '#ff3355', '#c1121f', '#ff5c72'],
+      type: {
+        VOLATILE: '#ff5a1f', SPLITTER: '#ff2e63', MAGNET: '#d946ef',
+        PRISM: '#ffe3e8', CHAIN: '#6b8cff', FROST: '#a9e6ff', GOLD: '#ffc42e',
+      },
+    },
+    {
+      name: 'Cobalt',         // Lapis and steel. Cold, hard, jewel-bright.
+      bg0: '#02040c', bg1: '#08132e', fog: '#4d8cff',
+      hud: '#d6e6ff', hudDim: '#5b7699', ring: '#5b9cff', star: '#cfe0ff',
+      orbHues: ['#3b7dff', '#5566ff', '#2a5fe8', '#8aa8ff'],
+      type: {
+        VOLATILE: '#ff5a33', SPLITTER: '#2f6bff', MAGNET: '#b76bff',
+        PRISM: '#f0f6ff', CHAIN: '#00fff0', FROST: '#a9c8ff', GOLD: '#ffcf3d',
+      },
+    },
+    {
+      name: 'Blossom',        // Night orchard. Rose and coral, the gentlest world.
+      bg0: '#0a0407', bg1: '#1e0713', fog: '#ff7aa2',
+      hud: '#ffe0e8', hudDim: '#a9707f', ring: '#ff8fb0', star: '#ffe4ef',
+      orbHues: ['#ff5c8a', '#ff8a6b', '#ff9fbc', '#e94f8a'],
+      type: {
+        VOLATILE: '#ff3b1f', SPLITTER: '#ff6fae', MAGNET: '#b06bff',
+        PRISM: '#fff2fb', CHAIN: '#00d5ff', FROST: '#9ec5ff', GOLD: '#ffc93d',
+      },
+    },
+    {
+      name: 'Jade',           // Imperial jade under brass lanterns.
+      bg0: '#020705', bg1: '#08201a', fog: '#2fd6a0',
+      hud: '#f3ead0', hudDim: '#93855e', ring: '#e8b84b', star: '#f6e7bd',
+      orbHues: ['#12c98a', '#39dfa4', '#0bb07d', '#5ceec0'],
+      type: {
+        VOLATILE: '#ff4d2e', SPLITTER: '#3ee0a8', MAGNET: '#6f7bff',
+        PRISM: '#eafff5', CHAIN: '#c8ff3d', FROST: '#8fd4ff', GOLD: '#ffcf3d',
+      },
+    },
   ],
 
   /* ------------------------------------------------------------------- sky -- */
@@ -578,6 +886,35 @@ export const CONFIG = {
     key: 'orbs.save.v1',      // localStorage key. Version lives *inside* the payload.
     writeInterval: 4.0,       // s. Minimum time between writes; localStorage writes are synchronous.
     writeOnHide: true,        // Also flush on visibilitychange/pagehide.
+  },
+
+  /* ------------------------------------------------------------ tap powers -- */
+  // Two single-finger gestures that sit alongside push and hold-to-gather. Recognition
+  // lives in main.js (it has the clock); the sim just receives `input.taps`.
+  tap: {
+    maxTime: 0.19,            // s. Down-to-up faster than this, with little movement, is a tap.
+    maxMove: 15,              // px @ref. Movement allowed during a tap before it is a drag.
+    doubleWindow: 0.34,       // s. A second tap inside this window becomes a VORTEX instead.
+    cooldown: 0.22,           // s. Minimum gap between two pulses, so tapping cannot machine-gun.
+
+    // TAP -> PULSE: a sharp outward shove. The counterpart to the attractor: instant and
+    // punchy where gather is slow and deliberate.
+    pulseRadius: 155,         // px @ref. Reach of the pulse.
+    pulseImpulse: 660,        // px/s @ref. Peak velocity change at the centre.
+    pulseFalloffExp: 1.35,    // Exponent on the pulse falloff.
+    pulseCharge: 1.3,         // s of charge granted to balls it touches, so pulses start cascades.
+    pulseShake: 3.0,          // px @ref of screen shake.
+
+    // DOUBLE TAP -> VORTEX: a spinning well that outlives the finger, winds balls into a
+    // spiral, then lets go. Gather needs you to hold; this one you throw down and leave.
+    vortexRadius: 200,        // px @ref. Reach.
+    vortexPull: 780,          // px/s^2 @ref. Inward haul.
+    vortexSpin: 540,          // px/s @ref. Tangential speed it drives balls toward.
+    vortexSpinGain: 3.0,      // 1/s. How hard it drives toward that speed.
+    vortexTime: 1.5,          // s. Lifetime.
+    vortexFade: 0.35,         // Fraction of its life spent fading out at the end.
+    vortexCharge: 1.6,        // s of charge granted to balls it holds.
+    vortexMax: 4,             // Live vortices allowed at once; excess replaces the oldest.
   },
 
   /* ----------------------------------------------------------------- input -- */

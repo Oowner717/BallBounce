@@ -1,10 +1,12 @@
 # Orbs
 
 A full-screen canvas of small glowing balls drifting in near-zero gravity. Wherever you
-touch, a soft force field follows your finger and shoves them around. Hold nearly still and
-the field morphs into an attractor that gathers balls into orbit; let go and it slings the
-whole orbit into the crowd. Hard collisions score, and every ball type does something
-different when it gets hit hard.
+touch, a soft force field follows your finger and shoves them around. **Tap** for a pulse,
+**double tap** to drop a vortex, or **hold still** and the field becomes an attractor that
+gathers balls into orbit — let go and it slings the whole orbit into the crowd. Hard
+collisions score, and every ball type does something different when it gets hit hard.
+
+Levelling to the cap of 100 takes about an hour, and every level hands you a named upgrade.
 
 No fail states, no timers, no streaks, no notifications. Nothing punishes you for stopping.
 
@@ -171,6 +173,8 @@ The ones that earn their keep most often:
 |                              | |
 |------------------------------|---|
 | Touch / drag                 | Push balls. Swipe fast to fling them *along* the swipe. |
+| **Tap**                      | **PULSE** — a sharp outward shove. Instant and punchy. |
+| **Double tap**               | **VORTEX** — a spinning well that outlives your finger, winds balls into a spiral, then lets go. |
 | Hold nearly still            | The field becomes an attractor and gathers an orbit. |
 | Release (or flick) a gather  | Slings the whole orbit. This is how you spike big combos. |
 | Multi-touch                  | Every finger is its own independent field. |
@@ -180,10 +184,44 @@ The ones that earn their keep most often:
 | `?soak=1`                    | Synthesises random multi-touch for hands-free stress runs. Does not write to your save. |
 | `?debug=1`                   | Start with the overlay open. |
 | `?seed=12345`                | Fixed PRNG seed, for reproducing something. |
+| `U`                          | Upgrade menu — every upgrade as a button, tap to fire it. |
+| `←` `→`                      | Page through the upgrade menu. |
 
 The debug overlay shows fps, physics and draw milliseconds, ball and particle counts,
-sanitizer hits, dropped effect events, the error ring buffer, and a **hold-to-wipe** target
-for erasing the save.
+sanitizer hits, dropped effect events, soft resets, the error ring buffer, and a
+**hold-to-wipe** target for erasing the save.
+
+The **upgrade menu** (`U`, or four-finger tap then `U`) lists all 99 upgrades as tappable
+buttons — level, name and kind, with the ones you already own marked. Tapping one fires it
+immediately, so any upgrade can be seen without playing to it. `+1 LV` / `+10 LV` advance
+levels properly (granting each upgrade on the way), `ALL` applies everything, `RESET` puts
+the save back to a clean level 1.
+
+---
+
+## Progression
+
+**One upgrade per level, 2 → 100.** Every level-up hands over something with a name, and
+most of them are things you can see rather than a number moving somewhere.
+
+| Levels | What arrives |
+|---|---|
+| 2–8 | The seven ball types, one per level: VOLATILE, SPLITTER, MAGNET, PRISM, CHAIN, FROST, GOLD. |
+| Throughout | 11 more **colour worlds** (twelve in total), 20 **+6 ORBS** steps taking the population from 30 to the hard cap of 150, 28 **retunes of existing types** (wider blasts, deeper chains, longer freezes, more gold), 10 **gesture upgrades** (pulse reach, vortex duration, sling power), 18 **purely visual** ones (longer trails, brighter bloom, denser constellations), and 5 score multipliers. |
+| 100 | The cap. A grand display fires once, and play continues — the level stops, the number does not. |
+
+The level curve lives in `config.js` as `levels.curve`: anchor points with power-law
+interpolation between them. It was **measured, not guessed** — a simulated player was run
+for an hour with levels forced to advance linearly, the score earned inside each level band
+recorded, and the result made monotonic by isotonic regression. A single `base * n^exp`
+formula could not fit the real shape, which is nearly flat through the early levels and
+then climbs steeply once the population and multipliers open up; one curve fitted to both
+ends made the first ten levels either trivial or a wall.
+
+Upgrades work by mutating the sim's **own** copy of the config (`createSim` deep-clones what
+it is handed), so an upgrade reaches physics and rendering alike without either side needing
+to know it exists, and the shared `CONFIG` export is never touched. On load, every upgrade
+up to the saved level is replayed in order.
 
 ---
 

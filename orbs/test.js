@@ -17,6 +17,7 @@ import {
   loadSave, serializeSave, defaultSave, deriveStars,
   levelThreshold, comboMultiplier, milestoneLadder, filigreeTier,
   forceSplitAll, detonateAll, totalKineticEnergy, detonate, applySave,
+  upgradeForLevel, applyUpgrade, applyUpgradesTo, palettesUnlockedAt,
 } from './sim.js';
 
 /* -------------------------------------------------------------------------- */
@@ -860,8 +861,8 @@ test('levels unlock every ball type in order, and the first unlock is reachable 
   for (let i = 0; i < 60 * 60 * 6; i++) {
     step(sim, dt, script(i, dt));
     for (const ev of sim.events) {
-      if (ev.type === 'unlock') {
-        order.push(ev.key);
+      if (ev.type === 'upgrade' && ev.kind === 'type') {
+        order.push(ev.typeKey);
         if (firstUnlockTime === null) firstUnlockTime = sim.time;
       }
     }
@@ -1037,7 +1038,9 @@ test('holding still gathers a real orbit: balls arrive at the shell AND circulat
     if (Math.abs(tan) > 80 * sim.scale) circulating++;
   }
 
-  assert.ok(captured >= 20, 'the attractor only gathered ' + captured + ' balls');
+  const alive = sim.balls.filter((b) => b.alive).length;
+  assert.ok(captured >= alive * 0.35,
+    'the attractor only gathered ' + captured + ' of ' + alive + ' balls');
   assert.ok(nearShell >= captured * 0.7,
     'only ' + nearShell + '/' + captured + ' gathered balls reached the ' + shell.toFixed(0) + 'px shell');
   // Gathered but barely moving means gravity/momentum brought them, not the attractor.
@@ -1068,7 +1071,9 @@ test('the attractor works from anywhere on screen and on any seed', () => {
         sumTan += Math.abs(b.vx * (-dy / d) + b.vy * (dx / d));
       }
       const where = 'seed ' + seed + ' at ' + (fx * 100) + '%,' + (fy * 100) + '%';
-      assert.ok(captured >= 12, where + ': gathered only ' + captured + ' balls');
+      const alive = sim.balls.filter((b) => b.alive).length;
+      assert.ok(captured >= alive * 0.2,
+        where + ': gathered only ' + captured + ' of ' + alive + ' balls');
       assert.ok(sumTan / captured > CONFIG.gather.orbitSpin * sim.scale * 0.4,
         where + ': gathered balls are not circulating (' + (sumTan / captured).toFixed(0) + ' px/s)');
     }
@@ -1604,6 +1609,345 @@ test('slamming balls into a comet chips it, breaks it, and records a milestone',
   const sky = deriveStars(serializeSave(sim));
   assert.ok(sky.stars.some((s) => s.id[0] === 'c'), 'the comet did not put a star in the sky');
   assert.equal(allFinite(sim), null);
+});
+
+/* ========================================================================== */
+group('12b. Tap powers: pulse and vortex');
+/* ========================================================================== */
+
+test('a tap fires a pulse that shoves nearby balls outward', () => {
+  const sim = freshSim({ 'world.idleDriftStrength': 0, 'world.gravityY': 0 }, 808);
+  const cx = sim.width / 2, cy = sim.height / 2;
+  for (let i = 0; i < 30; i++) step(sim, 1 / 60, null);
+  // Park a ring of balls around the tap point at rest.
+  const ring = sim.balls.filter((b) => b.alive).slice(0, 8);
+  ring.forEach((b, i) => {
+    const a = (i / ring.length) * Math.PI * 2;
+    b.x = cx + Math.cos(a) * 60 * sim.scale;
+    b.y = cy + Math.sin(a) * 60 * sim.scale;
+    b.vx = 0; b.vy = 0;
+  });
+
+  step(sim, 1 / 60, { taps: [{ x: cx, y: cy, double: false }] });
+  const ev = sim.events.find((e) => e.type === 'pulse');
+  assert.ok(ev, 'no pulse event');
+  assert.ok(ev.count >= ring.length * 0.8, 'the pulse only reached ' + ev.count + ' balls');
+
+  let outward = 0;
+  for (const b of ring) {
+    if (!b.alive) continue;
+    const dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy) || 1;
+    const radial = b.vx * (dx / d) + b.vy * (dy / d);
+    if (radial > 40 * sim.scale) outward++;
+    assert.ok(b.chargeT > 0, 'a pulsed ball was not charged, so it cannot start a cascade');
+  }
+  assert.ok(outward >= ring.length * 0.8, 'only ' + outward + '/' + ring.length + ' balls were pushed outward');
+  assert.equal(allFinite(sim), null);
+});
+
+test('the pulse has a cooldown, so tapping cannot machine-gun', () => {
+  const sim = freshSim(null, 809);
+  step(sim, 1 / 60, null);
+  let fired = 0;
+  for (let i = 0; i < 6; i++) {
+    step(sim, 1 / 60, { taps: [{ x: 100, y: 200, double: false }] });
+    fired += sim.events.filter((e) => e.type === 'pulse').length;
+  }
+  assert.equal(fired, 1, 'six taps in six frames fired ' + fired + ' pulses');
+  // After the cooldown it works again.
+  for (let i = 0; i < Math.ceil(CONFIG.tap.cooldown * 60) + 2; i++) step(sim, 1 / 60, null);
+  step(sim, 1 / 60, { taps: [{ x: 100, y: 200, double: false }] });
+  assert.equal(sim.events.filter((e) => e.type === 'pulse').length, 1, 'the pulse never recovered');
+});
+
+test('a double tap spawns a vortex that winds balls into a spin, then expires', () => {
+  const sim = freshSim({ 'world.idleDriftStrength': 0, 'world.gravityY': 0 }, 810);
+  const cx = sim.width / 2, cy = sim.height / 2;
+  for (let i = 0; i < 30; i++) step(sim, 1 / 60, null);
+  for (const b of sim.balls) {
+    if (!b.alive) continue;
+    b.x = cx + (sim.rng.float() - 0.5) * 220 * sim.scale;
+    b.y = cy + (sim.rng.float() - 0.5) * 220 * sim.scale;
+    b.vx = 0; b.vy = 0;
+  }
+
+  step(sim, 1 / 60, { taps: [{ x: cx, y: cy, double: true }] });
+  assert.ok(sim.events.some((e) => e.type === 'vortex'), 'no vortex event');
+  assert.equal(sim.vortices.length, 1, 'the vortex was not created');
+
+  // Halfway through its life the caught balls should be circulating.
+  for (let i = 0; i < Math.floor(CONFIG.tap.vortexTime * 0.5 * 60); i++) step(sim, 1 / 60, null);
+  const near = sim.balls.filter((b) => b.alive
+    && Math.hypot(b.x - cx, b.y - cy) < CONFIG.tap.vortexRadius * sim.scale);
+  assert.ok(near.length >= 4, 'the vortex only holds ' + near.length + ' balls');
+  const meanTan = near.reduce((acc, b) => {
+    const dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy) || 1;
+    return acc + Math.abs(b.vx * (-dy / d) + b.vy * (dx / d));
+  }, 0) / near.length;
+  assert.ok(meanTan > CONFIG.tap.vortexSpin * sim.scale * 0.3,
+    'caught balls are not spinning: mean |tangential| = ' + meanTan.toFixed(0)
+      + ' against a target of ' + (CONFIG.tap.vortexSpin * sim.scale).toFixed(0));
+
+  // And it must let go rather than holding them forever.
+  for (let i = 0; i < Math.ceil(CONFIG.tap.vortexTime * 60) + 30; i++) step(sim, 1 / 60, null);
+  assert.equal(sim.vortices.length, 0, 'the vortex outlived its duration');
+  assert.equal(allFinite(sim), null);
+});
+
+test('vortices are capped, and a storm of taps stays finite', () => {
+  const sim = freshSim(null, 811);
+  const rng = makeRng(4);
+  for (let i = 0; i < 900; i++) {
+    const taps = [];
+    for (let k = 0; k < 3; k++) {
+      taps.push({ x: rng.range(0, sim.width), y: rng.range(0, sim.height), double: rng.float() < 0.6 });
+    }
+    step(sim, 1 / 60, { taps });
+    assert.ok(sim.vortices.length <= CONFIG.tap.vortexMax,
+      sim.vortices.length + ' vortices live, cap is ' + CONFIG.tap.vortexMax);
+    assert.equal(allFinite(sim), null, 'tap storm went non-finite at step ' + i);
+    assert.ok(sim.events.length <= CONFIG.effects.maxPerFrame);
+  }
+  assert.ok(sim.score >= 0 && Number.isFinite(sim.score));
+});
+
+test('hostile tap input cannot break anything', () => {
+  const sim = freshSim(null, 812);
+  const junk = [
+    { taps: [{ x: NaN, y: NaN, double: false }] },
+    { taps: [{ x: Infinity, y: -Infinity, double: true }] },
+    { taps: [null, undefined, {}] },
+    { taps: 'not an array' },
+    { taps: Array.from({ length: 200 }, () => ({ x: 1e9, y: -1e9, double: true })) },
+  ];
+  for (let r = 0; r < 20; r++) {
+    for (const inp of junk) {
+      step(sim, 1 / 60, inp);
+      assert.equal(allFinite(sim), null, 'hostile taps produced non-finite state');
+      assert.ok(sim.vortices.length <= CONFIG.tap.vortexMax);
+    }
+  }
+});
+
+test('taps are deterministic: same taps, same seed, same state', () => {
+  const run = () => {
+    const sim = freshSim(null, 4141);
+    const rng = makeRng(77);
+    for (let i = 0; i < 900; i++) {
+      const taps = rng.float() < 0.12
+        ? [{ x: rng.range(0, sim.width), y: rng.range(0, sim.height), double: rng.float() < 0.4 }]
+        : null;
+      step(sim, 1 / 60, { taps });
+    }
+    return hashState(sim);
+  };
+  assert.equal(run(), run(), 'tap powers broke determinism');
+});
+
+/* ========================================================================== */
+group('13. Upgrades');
+/* ========================================================================== */
+
+test('exactly one upgrade per level from 2 to the cap, with unique ids', () => {
+  const ups = CONFIG.upgrades;
+  const cap = CONFIG.levels.cap;
+  assert.ok(Array.isArray(ups) && ups.length > 0, 'no upgrade table');
+  assert.equal(ups.length, cap - 1, 'expected ' + (cap - 1) + ' upgrades, got ' + ups.length);
+
+  const byLevel = new Map();
+  for (const u of ups) {
+    assert.ok(Number.isInteger(u.level) && u.level >= 2 && u.level <= cap, 'bad level ' + u.level);
+    assert.ok(!byLevel.has(u.level), 'two upgrades at level ' + u.level);
+    byLevel.set(u.level, u);
+    assert.ok(typeof u.id === 'string' && u.id.length > 0, 'upgrade at ' + u.level + ' has no id');
+    assert.ok(typeof u.label === 'string' && u.label.length > 0, u.id + ' has no label');
+  }
+  for (let l = 2; l <= cap; l++) assert.ok(byLevel.has(l), 'no upgrade at level ' + l);
+  assert.equal(new Set(ups.map((u) => u.id)).size, ups.length, 'duplicate upgrade ids');
+});
+
+test('every upgrade actually resolves to a real, numeric config value', () => {
+  // An upgrade pointing at a path that does not exist would silently do nothing — exactly
+  // the failure mode that once left the whole attractor inert.
+  for (const u of CONFIG.upgrades) {
+    if (u.kind === 'type') {
+      assert.ok(CONFIG.types[u.type], u.id + ' unlocks a type that does not exist: ' + u.type);
+      continue;
+    }
+    if (u.kind === 'palette') continue;
+    assert.ok(typeof u.path === 'string', u.id + ' has no path');
+    let node = CONFIG;
+    for (const seg of u.path.split('.')) {
+      assert.ok(node != null && typeof node === 'object', u.id + ': path dies at ' + seg);
+      node = node[seg];
+    }
+    assert.equal(typeof node, 'number', u.id + ': ' + u.path + ' is ' + typeof node + ', not a number');
+    assert.ok(Number.isFinite(node), u.id + ': ' + u.path + ' is not finite');
+    const ops = ['mul', 'add', 'set'].filter((k) => typeof u[k] === 'number');
+    assert.equal(ops.length, 1, u.id + ' must have exactly one of mul/add/set, has ' + ops.length);
+  }
+});
+
+test('applying every upgrade never produces a non-finite or negative config value', () => {
+  const sim = freshSim(null, 4242);
+  applyUpgradesTo(sim, CONFIG.levels.cap);
+  const bad = [];
+  (function walk(o, path) {
+    for (const k of Object.keys(o)) {
+      const v = o[k], p = path ? path + '.' + k : k;
+      if (Array.isArray(v)) continue;
+      if (v && typeof v === 'object') { walk(v, p); continue; }
+      if (typeof v === 'number' && (!Number.isFinite(v) || v < 0)) bad.push(p + ' = ' + v);
+    }
+  })(sim.config, '');
+  assert.deepEqual(bad, [], 'upgrades produced invalid config values: ' + bad.join(', '));
+
+  // Counts must stay whole numbers, or loops silently truncate them.
+  for (const p of ['types.PRISM.shards', 'types.CHAIN.targets', 'types.CHAIN.depth',
+    'types.FROST.maxTargets', 'population.softCapBase']) {
+    const v = p.split('.').reduce((o, k) => o[k], sim.config);
+    assert.ok(Number.isInteger(v), p + ' became fractional: ' + v);
+  }
+});
+
+test('upgrades never touch the shared CONFIG object', () => {
+  const before = JSON.stringify(CONFIG);
+  const sim = freshSim(null, 99);
+  applyUpgradesTo(sim, CONFIG.levels.cap);
+  assert.equal(JSON.stringify(CONFIG), before, 'a sim mutated the shared CONFIG');
+  // ...and two sims must not share config either.
+  const a = freshSim(null, 1), b = freshSim(null, 1);
+  applyUpgradesTo(a, CONFIG.levels.cap);
+  assert.notEqual(a.config.population.softCapBase, b.config.population.softCapBase,
+    'two sims are sharing one config object');
+});
+
+test('applying an upgrade twice does not double its effect', () => {
+  const sim = freshSim(null, 7);
+  const up = CONFIG.upgrades.find((u) => typeof u.mul === 'number');
+  const read = () => up.path.split('.').reduce((o, k) => o[k], sim.config);
+  const start = read();
+  applyUpgrade(sim, up, false);
+  const once = read();
+  applyUpgrade(sim, up, false);           // not forced: must be a no-op
+  assert.equal(read(), once, 'a mul upgrade applied twice — the value squared');
+  assert.ok(Math.abs(once / start - up.mul) < 1e-9, 'the multiplier was not applied');
+});
+
+test('reaching a level grants exactly that level\'s upgrade', () => {
+  const sim = freshSim(null, 606);
+  const seen = [];
+  for (let target = 2; target <= 12; target++) {
+    sim.xp = sim.xpNeeded;
+    step(sim, 1 / 60, null);
+    for (const ev of sim.events) if (ev.type === 'upgrade') seen.push([ev.level, ev.id]);
+  }
+  assert.ok(seen.length >= 10, 'only ' + seen.length + ' upgrades fired across 11 levels');
+  for (const [lv, id] of seen) {
+    const expect = upgradeForLevel(lv, CONFIG);
+    assert.ok(expect, 'no upgrade defined for level ' + lv);
+    assert.equal(id, expect.id, 'level ' + lv + ' granted ' + id + ', expected ' + expect.id);
+  }
+});
+
+test('progression survives a save/load round trip, upgrades and all', () => {
+  const sim = freshSim(null, 909);
+  applyUpgradesTo(sim, 60);
+  sim.level = 60;
+  const snap = JSON.stringify(sim.config);
+  const cap = sim.config.population.softCapBase;
+  const shards = sim.config.types.PRISM.shards;
+
+  const reborn = createSim({
+    config: cloneConfig(), rng: makeRng(3), width: W, height: H,
+    save: Object.assign(defaultSave(), { level: 60 }),
+  });
+  assert.equal(reborn.config.population.softCapBase, cap, 'ball cap did not survive reload');
+  assert.equal(reborn.config.types.PRISM.shards, shards, 'prism upgrade did not survive reload');
+  assert.equal(JSON.stringify(reborn.config), snap, 'the replayed config differs from the live one');
+  assert.equal(reborn.unlocked.length, 8, 'not every ball type was restored at level 60');
+});
+
+test('the ball population starts small and grows only through upgrades', () => {
+  const low = freshSim(null, 11);
+  assert.ok(low.softCap <= 40, 'level 1 starts with ' + low.softCap + ' balls — too crowded');
+  assert.ok(low.aliveCount <= low.softCap);
+
+  const high = freshSim(null, 11);
+  applyUpgradesTo(high, CONFIG.levels.cap);
+  assert.equal(high.softCap, CONFIG.population.hardCap,
+    'level ' + CONFIG.levels.cap + ' should reach the hard cap, got ' + high.softCap);
+
+  // Monotonic the whole way up, and never over the hard cap.
+  let prev = 0;
+  for (let l = 1; l <= CONFIG.levels.cap; l++) {
+    const s2 = freshSim(null, 5);
+    applyUpgradesTo(s2, l);
+    assert.ok(s2.softCap >= prev, 'ball cap fell at level ' + l);
+    assert.ok(s2.softCap <= CONFIG.population.hardCap, 'over hard cap at level ' + l);
+    prev = s2.softCap;
+  }
+});
+
+test('all twelve colour worlds are reachable, and none before its level', () => {
+  assert.ok(CONFIG.palettes.length >= 12, 'only ' + CONFIG.palettes.length + ' palettes');
+  const paletteUps = CONFIG.upgrades.filter((u) => u.kind === 'palette');
+  assert.equal(1 + paletteUps.length, CONFIG.palettes.length,
+    'palette upgrades (' + paletteUps.length + ') do not unlock every world');
+  assert.equal(palettesUnlockedAt(1), 1, 'more than one palette at level 1');
+  assert.equal(palettesUnlockedAt(CONFIG.levels.cap), CONFIG.palettes.length,
+    'not every palette is unlocked at the cap');
+  let prev = 1;
+  for (let l = 1; l <= CONFIG.levels.cap; l++) {
+    const n = palettesUnlockedAt(l);
+    assert.ok(n >= prev && n <= CONFIG.palettes.length, 'palette count went backwards at ' + l);
+    prev = n;
+  }
+});
+
+/* ========================================================================== */
+group('14. The level cap');
+/* ========================================================================== */
+
+test('the level stops at the cap, the bar sits full, and score keeps rising', () => {
+  const sim = freshSim(null, 313);
+  for (let i = 0; i < 200 && !sim.atLevelCap; i++) {
+    sim.xp = sim.xpNeeded;
+    step(sim, 1 / 60, null);
+  }
+  assert.equal(sim.level, CONFIG.levels.cap, 'did not reach the cap');
+  assert.ok(sim.atLevelCap, 'atLevelCap not set');
+
+  const capEvents = [];
+  const scoreBefore = sim.score;
+  for (let i = 0; i < 600; i++) {
+    sim.xp = sim.xpNeeded * 10;             // pile on XP; the level must not move
+    sim.score += 1000;
+    step(sim, 1 / 60, null);
+    for (const ev of sim.events) if (ev.type === 'levelcap') capEvents.push(ev);
+  }
+  assert.equal(sim.level, CONFIG.levels.cap, 'the level rose past the cap');
+  assert.equal(sim.xp, sim.xpNeeded, 'the bar is not pinned full at the cap');
+  assert.ok(sim.score > scoreBefore, 'score stopped at the cap — it must never stop');
+  assert.equal(capEvents.length, 0, 'the cap celebration fired more than once');
+});
+
+test('the cap celebration fires exactly once, ever, and survives a reload', () => {
+  const sim = freshSim(null, 314);
+  let fired = 0;
+  for (let i = 0; i < 200 && !sim.atLevelCap; i++) {
+    sim.xp = sim.xpNeeded;
+    step(sim, 1 / 60, null);
+    for (const ev of sim.events) if (ev.type === 'levelcap') fired++;
+  }
+  assert.equal(fired, 1, 'expected exactly one cap celebration, got ' + fired);
+  assert.equal(sim.capCelebrated, true);
+
+  const save = serializeSave(sim);
+  assert.equal(save.capCelebrated, true, 'the flag did not persist');
+  const reborn = createSim({ config: cloneConfig(), rng: makeRng(1), width: W, height: H, save });
+  assert.equal(reborn.capCelebrated, true, 'a reload would replay the grand celebration');
+  assert.equal(reborn.atLevelCap, true);
 });
 
 /* ========================================================================== */

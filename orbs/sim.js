@@ -24,6 +24,17 @@ import { CONFIG } from './config.js';
 
 export const SAVE_VERSION = CONFIG.save.version;
 
+/** Structural deep clone. Used so each sim owns a config its upgrades may mutate. */
+function deepCloneConfig(v) {
+  if (Array.isArray(v)) return v.map(deepCloneConfig);
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const k of Object.keys(v)) o[k] = deepCloneConfig(v[k]);
+    return o;
+  }
+  return v;
+}
+
 /* ========================================================================== */
 /* PRNG                                                                       */
 /* ========================================================================== */
@@ -92,11 +103,29 @@ function mix32(x) {
 /* Levels, combo, milestones — pure functions of the config                   */
 /* ========================================================================== */
 
-/** XP required to advance FROM `level` to `level + 1`. Strictly increasing in level. */
+/**
+ * XP required to advance FROM `level` to `level + 1`. Strictly increasing in level.
+ *
+ * Interpolates the measured anchor curve in log-log space, so each segment is a power law
+ * and the whole thing is smooth and monotonic. Past the final anchor the last segment's
+ * exponent continues, so there is always a next level even beyond the cap.
+ */
 export function levelThreshold(level, config = CONFIG) {
-  const L = config.levels;
+  const a = config.levels.curve;
   const n = Math.max(1, level);
-  return Math.round(L.base * Math.pow(n, L.exp) + L.linear * n);
+  if (!a || a.length < 2) return Math.round(1000 * n * n);
+  if (n <= a[0][0]) return a[0][1];
+  for (let i = 1; i < a.length; i++) {
+    if (n <= a[i][0]) {
+      const n0 = a[i - 1][0], v0 = a[i - 1][1], n1 = a[i][0], v1 = a[i][1];
+      const t = (Math.log(n) - Math.log(n0)) / (Math.log(n1) - Math.log(n0));
+      return Math.round(Math.exp(Math.log(v0) + t * (Math.log(v1) - Math.log(v0))));
+    }
+  }
+  const n0 = a[a.length - 2][0], v0 = a[a.length - 2][1];
+  const n1 = a[a.length - 1][0], v1 = a[a.length - 1][1];
+  const b = (Math.log(v1) - Math.log(v0)) / (Math.log(n1) - Math.log(n0));
+  return Math.round(v1 * Math.pow(n / n1, b));
 }
 
 /** Combo multiplier. Sublinear in count, uncapped, exactly 1 at count 0. */
@@ -129,9 +158,79 @@ export function filigreeTier(bestCombo, config = CONFIG) {
 
 /** How many palettes are unlocked at a given level. Always at least 1. */
 export function palettesUnlockedAt(level, config = CONFIG) {
-  const every = Math.max(1, config.paletteRules.unlockEvery);
-  const n = 1 + Math.floor(Math.max(0, level - 1) / every);
+  let n = 1;
+  const list = config.upgrades || [];
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].kind === 'palette' && list[i].level <= level) n++;
+  }
   return clamp(n, 1, config.palettes.length);
+}
+
+/* ========================================================================== */
+/* Upgrades                                                                   */
+/* ========================================================================== */
+
+/** The single upgrade granted at `level`, or null. One per level, 2..cap. */
+export function upgradeForLevel(level, config = CONFIG) {
+  const list = config.upgrades || [];
+  for (let i = 0; i < list.length; i++) if (list[i].level === level) return list[i];
+  return null;
+}
+
+// Knobs that are counts, not magnitudes: after a mul they must land on a whole number,
+// or "3 chain targets" quietly becomes 3.75 and the loop truncates it back anyway.
+const INTEGER_PATHS = {
+  'types.PRISM.shards': 1, 'types.CHAIN.targets': 1, 'types.CHAIN.depth': 1,
+  'types.FROST.maxTargets': 1, 'types.MAGNET.fieldLines': 1,
+  'population.softCapBase': 1, 'effects.impactSparks': 1, 'effects.detonateSparks': 1,
+  'effects.shatterSparks': 1, 'effects.maxParticles': 1, 'tap.vortexMax': 1,
+};
+
+/**
+ * Apply one upgrade to a LIVE sim by mutating its own config copy.
+ *
+ * createSim deep-clones whatever config it is handed, so this never touches the shared
+ * CONFIG object — and because every read goes through sim.config, an upgrade reaches
+ * physics and rendering alike without either side needing to know it exists.
+ *
+ * Guarded against double-application: a `mul` applied twice would silently square.
+ */
+export function applyUpgrade(sim, up, force) {
+  if (!up) return false;
+  if (!force && sim.appliedUpgrades.has(up.id)) return false;
+  sim.appliedUpgrades.add(up.id);
+  const C = sim.config;
+
+  if (up.kind === 'type') {
+    if (C.types[up.type] && sim.unlocked.indexOf(up.type) < 0) sim.unlocked.push(up.type);
+  } else if (up.kind === 'palette') {
+    sim.palettesUnlocked = Math.min(C.palettes.length, sim.palettesUnlocked + 1);
+  } else if (up.path) {
+    const parts = up.path.split('.');
+    let node = C;
+    for (let i = 0; i < parts.length - 1; i++) {
+      node = node && node[parts[i]];
+      if (!node || typeof node !== 'object') return false;
+    }
+    const key = parts[parts.length - 1];
+    const cur = node[key];
+    if (typeof cur !== 'number' || !Number.isFinite(cur)) return false;
+    let next = cur;
+    if (typeof up.mul === 'number') next = cur * up.mul;
+    else if (typeof up.add === 'number') next = cur + up.add;
+    else if (typeof up.set === 'number') next = up.set;
+    if (!Number.isFinite(next)) return false;
+    node[key] = INTEGER_PATHS[up.path] ? Math.max(0, Math.round(next)) : next;
+  }
+  refreshDerived(sim);
+  return true;
+}
+
+/** Re-apply every upgrade from level 2 up to `level`, in order. Used on load. */
+export function applyUpgradesTo(sim, level) {
+  const sorted = (sim.config.upgrades || []).slice().sort(function (a, b) { return a.level - b.level; });
+  for (const up of sorted) if (up.level <= level) applyUpgrade(sim, up, false);
+  return sim;
 }
 
 /* ========================================================================== */
@@ -208,6 +307,7 @@ export function defaultSave(config = CONFIG) {
     plays: 0,
     paletteIndex: 0,
     seenHint: false,
+    capCelebrated: false,
   };
 }
 
@@ -242,6 +342,7 @@ export function loadSave(raw, config = CONFIG) {
   out.plays = Math.floor(num(obj.plays, 0, 0, 1e9));
   out.paletteIndex = Math.floor(num(obj.paletteIndex, 0, 0, config.palettes.length - 1));
   out.seenHint = obj.seenHint === true;
+  out.capCelebrated = obj.capCelebrated === true;
 
   // Milestones: strings only, deduped, order preserved (order defines the sky).
   if (Array.isArray(obj.milestones)) {
@@ -276,6 +377,7 @@ export function loadSave(raw, config = CONFIG) {
  */
 export function applySave(sim, raw) {
   const C = sim.config;
+  const C0 = sim.baseConfig || C;
   const save = loadSave(raw, C);
   sim.score = save.lifetimeScore;
   sim.xp = save.xp;
@@ -294,10 +396,19 @@ export function applySave(sim, raw) {
   sim.plays = save.plays;
   sim.paletteIndex = save.paletteIndex;
   sim.seenHint = save.seenHint;
+  sim.capCelebrated = save.capCelebrated === true;
+  // Upgrades mutate sim.config, so a reset needs a clean config and a fresh replay.
+  sim.config = deepCloneConfig(C0);
+  sim.appliedUpgrades = new Set();
+  sim.palettesUnlocked = 1;
+  sim.lastUpgrade = null;
   refreshDerived(sim);
+  applyUpgradesTo(sim, sim.level);
+  sim.atLevelCap = sim.level >= sim.config.levels.cap;
   for (const b of sim.balls) {
     if (b.alive && sim.unlocked.indexOf(b.type) < 0) b.type = 'ORB';
   }
+  refreshDerived(sim);
   return sim;
 }
 
@@ -316,6 +427,7 @@ export function serializeSave(sim) {
     plays: sim.plays,
     paletteIndex: sim.paletteIndex,
     seenHint: sim.seenHint === true,
+    capCelebrated: sim.capCelebrated === true,
   };
 }
 
@@ -324,14 +436,18 @@ export function serializeSave(sim) {
 /* ========================================================================== */
 
 export function createSim(opts = {}) {
-  const config = opts.config || CONFIG;
+  // Deep-clone: upgrades mutate this object, and the shared CONFIG export must never be
+  // touched (main.js hands us CONFIG directly, and tests reuse it across sims).
+  const config = deepCloneConfig(opts.config || CONFIG);
   const rng = opts.rng || makeRng(1);
   const width = Math.max(1, fin(opts.width, 390));
   const height = Math.max(1, fin(opts.height, 844));
   const save = loadSave(opts.save != null ? opts.save : defaultSave(config), config);
 
   const sim = {
-    config, rng,
+    config,
+    baseConfig: deepCloneConfig(opts.config || CONFIG),   // pristine, for resets
+    rng,
     width, height,
     scale: 1,
     time: 0,
@@ -384,6 +500,13 @@ export function createSim(opts = {}) {
     comet: null,
     cometTimer: config.comet.minGap * 0.5,
 
+    appliedUpgrades: new Set(),
+    palettesUnlocked: 1,
+    lastUpgrade: null,
+    atLevelCap: false,
+    capCelebrated: save.capCelebrated === true,
+    vortices: [],
+    tapCooldown: 0,
     activeFields: 0,
     sanitizerHits: 0,
     stepCount: 0,
@@ -405,8 +528,11 @@ export function createSim(opts = {}) {
 
   resize(sim, width, height);
   refreshDerived(sim);
+  // Replay progression before spawning: the ball cap and the spawn pool are both upgrade-driven.
+  applyUpgradesTo(sim, sim.level);
+  sim.atLevelCap = sim.level >= config.levels.cap;
 
-  for (let i = 0; i < config.population.startCount; i++) {
+  for (let i = 0; i < Math.min(config.population.startCount, sim.softCap); i++) {
     const b = spawnBall(sim, { anywhere: true, fade: 1 });
     if (!b) break;
   }
@@ -425,7 +551,6 @@ function refreshDerived(sim) {
     C.population.hardCap,
     Math.round(C.population.softCapBase + C.population.softCapPerLevel * (sim.level - 1) + nudge),
   );
-  sim.palettesUnlocked = palettesUnlockedAt(sim.level, C);
   sim.filigreeTier = filigreeTier(sim.bestCombo, C);
 }
 
@@ -822,6 +947,93 @@ function slingField(sim, f) {
 }
 
 /* ========================================================================== */
+/* Tap powers: PULSE and VORTEX                                               */
+/* ========================================================================== */
+
+/*
+ * The counterparts to push and hold-to-gather. Gather is slow and deliberate — you commit a
+ * finger and wait. These are the opposite: you throw them down and they act on their own.
+ *
+ * Recognition (tap vs drag, single vs double) lives in main.js because it needs a clock.
+ * The sim only receives input.taps = [{ x, y, double }], which keeps it deterministic and
+ * lets tests drive the powers directly.
+ */
+
+/** TAP: one sharp outward shove. Instant, punchy, no follow-through. */
+function firePulse(sim, x, y) {
+  const C = sim.config;
+  const T = C.tap;
+  const s = sim.scale;
+  const R = T.pulseRadius * s;
+  const R2 = R * R;
+  const imp = T.pulseImpulse * s;
+  let touched = 0;
+
+  for (const b of sim.balls) {
+    if (!b.alive || b.dying) continue;
+    const dx = b.x - x, dy = b.y - y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > R2) continue;
+    const d = Math.max(1e-4, Math.sqrt(d2));
+    const fall = Math.pow(clamp(1 - d / R, 0, 1), T.pulseFalloffExp);
+    const kick = imp * fall;
+    b.vx += (dx / d) * kick;
+    b.vy += (dy / d) * kick;
+    // Charged, so a pulse can start a cascade the same way a finger can.
+    if (b.chargeT < T.pulseCharge) b.chargeT = T.pulseCharge;
+    b.pulse = 1;
+    touched++;
+  }
+
+  pushEvent(sim, { type: 'pulse', x, y, r: R, count: touched });
+  return touched;
+}
+
+/** DOUBLE TAP: a spinning well that outlives the finger, then lets go. */
+function spawnVortex(sim, x, y) {
+  const C = sim.config;
+  const T = C.tap;
+  if (sim.vortices.length >= T.vortexMax) sim.vortices.shift();
+  sim.vortices.push({ x, y, t: 0, life: T.vortexTime, id: sim.nextId++ });
+  pushEvent(sim, { type: 'vortex', x, y, r: T.vortexRadius * sim.scale, life: T.vortexTime });
+}
+
+function consumeTaps(sim, input) {
+  const taps = (input && Array.isArray(input.taps)) ? input.taps : EMPTY;
+  for (const t of taps) {
+    if (!t) continue;
+    const x = fin(t.x, sim.width * 0.5);
+    const y = fin(t.y, sim.height * 0.5);
+    if (t.double) spawnVortex(sim, x, y);
+    else if (sim.tapCooldown <= 0) {
+      firePulse(sim, x, y);
+      sim.tapCooldown = sim.config.tap.cooldown;
+    }
+  }
+}
+
+function updateVortices(sim, dt) {
+  let w = 0;
+  for (let i = 0; i < sim.vortices.length; i++) {
+    const v = sim.vortices[i];
+    v.t += dt;
+    if (v.t >= v.life) { pushEvent(sim, { type: 'vortexEnd', x: v.x, y: v.y }); continue; }
+    sim.vortices[w++] = v;
+  }
+  sim.vortices.length = w;
+  if (sim.tapCooldown > 0) sim.tapCooldown = Math.max(0, sim.tapCooldown - dt);
+}
+
+/** A vortex's strength over its life: snaps on, holds, then eases off. */
+function vortexAmp(v, T) {
+  const k = clamp(v.t / Math.max(1e-6, v.life), 0, 1);
+  const fadeFrom = 1 - clamp(T.vortexFade, 0, 0.9);
+  if (k <= 0.06) return k / 0.06;
+  if (k < fadeFrom) return 1;
+  return clamp((1 - k) / Math.max(1e-6, 1 - fadeFrom), 0, 1);
+}
+
+/* ========================================================================== */
 /* Broadphase                                                                 */
 /* ========================================================================== */
 
@@ -966,6 +1178,30 @@ function applyForces(sim, h) {
           ax += (nx * radial + tvx * tan) * g * amp;
           ay += (ny * radial + tvy * tan) * g * amp;
         }
+      }
+    }
+
+    // --- vortices (double-tap) ---------------------------------------------
+    if (sim.vortices.length > 0) {
+      const T = C.tap;
+      const vR = T.vortexRadius * s;
+      const vSpin = T.vortexSpin * s;
+      const vPull = T.vortexPull * s;
+      for (let vi = 0; vi < sim.vortices.length; vi++) {
+        const v = sim.vortices[vi];
+        const dx = b.x - v.x, dy = b.y - v.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > vR * vR) continue;
+        const d = Math.max(minD, Math.sqrt(d2));
+        const nx = dx / d, ny = dy / d;
+        const amp = vortexAmp(v, T) * massResp;
+        const fall = 1 - d / vR;
+        const tvx = -ny, tvy = nx;
+        const vt = b.vx * tvx + b.vy * tvy;
+        const tan = (vSpin - vt) * T.vortexSpinGain;
+        ax += (-nx * vPull * fall + tvx * tan) * amp;
+        ay += (-ny * vPull * fall + tvy * tan) * amp;
+        if (b.chargeT < T.vortexCharge) b.chargeT = T.vortexCharge;
       }
     }
 
@@ -1835,28 +2071,39 @@ function progression(sim, dt) {
 
   // Levels. Thresholds are strictly increasing, so this terminates.
   let guard = 0;
-  while (sim.xp >= sim.xpNeeded && guard++ < 64) {
+  while (!sim.atLevelCap && sim.xp >= sim.xpNeeded && guard++ < 64) {
     sim.xp -= sim.xpNeeded;
     sim.level++;
-    const beforePalettes = sim.palettesUnlocked;
     refreshDerived(sim);
 
-    // Type unlocks: each early level opens a new ball type, with a celebration.
-    for (const key of C.unlockOrder) {
-      const t = C.types[key];
-      if (t.unlockLevel === sim.level && sim.unlocked.indexOf(key) < 0) {
-        sim.unlocked.push(key);
-        pushEvent(sim, { type: 'unlock', key, label: t.label, level: sim.level });
-      }
-    }
-    if (sim.palettesUnlocked > beforePalettes) {
+    // Exactly one named upgrade per level. It mutates sim.config, so both the physics and
+    // the renderer pick it up with no further plumbing.
+    const up = upgradeForLevel(sim.level, C);
+    if (up) {
+      const beforePalettes = sim.palettesUnlocked;
+      applyUpgrade(sim, up, false);
+      sim.lastUpgrade = up;
       pushEvent(sim, {
-        type: 'palette', index: sim.palettesUnlocked - 1,
-        name: C.palettes[sim.palettesUnlocked - 1].name, level: sim.level,
+        type: 'upgrade', id: up.id, kind: up.kind, label: up.label, level: sim.level,
+        typeKey: up.type || null,
+        palette: up.kind === 'palette' && sim.palettesUnlocked > beforePalettes
+          ? C.palettes[sim.palettesUnlocked - 1].name : null,
       });
     }
     pushEvent(sim, { type: 'levelup', level: sim.level, cap: sim.softCap, mult: sim.globalMult });
+
+    if (sim.level >= C.levels.cap) {
+      sim.atLevelCap = true;
+      sim.xp = sim.xpNeeded;                       // the bar sits full from here on
+      if (!sim.capCelebrated) {
+        sim.capCelebrated = true;
+        pushEvent(sim, { type: 'levelcap', level: sim.level });
+      }
+      break;
+    }
   }
+  // Past the cap the bar stays full and xp stops accruing; score never stops.
+  if (sim.atLevelCap) sim.xp = sim.xpNeeded;
 
   // Milestones: round numbers, celebrated hard, etched permanently into the sky.
   const ladder = sim._ladder;
@@ -2015,6 +2262,7 @@ export function step(sim, dtRaw, input) {
   if (input && input.scatter) scatter(sim);
 
   updatePointers(sim, dt, input);
+  consumeTaps(sim, input);
 
   const sub = Math.max(1, C.world.substeps | 0);
   const h = dt / sub;
@@ -2025,6 +2273,7 @@ export function step(sim, dtRaw, input) {
   }
 
   updateShards(sim, dt);
+  updateVortices(sim, dt);
   updateTimers(sim, dt);
   updateComet(sim, dt);
   sanitize(sim);
@@ -2063,6 +2312,8 @@ export function hashState(sim) {
       q(b.fade), q(b.frozenT), q(b.inertT), q(b.effectT), q(b.chargeT),
     );
   }
+  parts.push('vx', String(sim.vortices.length));
+  for (const v of sim.vortices) parts.push(q(v.x), q(v.y), q(v.t));
   parts.push('sh', String(sim.shards.length));
   for (const s of sim.shards) parts.push(q(s.x), q(s.y), q(s.vx), q(s.vy), q(s.life), String(s.bounces));
   parts.push(
@@ -2098,6 +2349,7 @@ export default {
   createSim, step, resize, scatter, makeRng, hashState,
   loadSave, serializeSave, defaultSave, applySave, deriveStars,
   levelThreshold, comboMultiplier, milestoneLadder, filigreeTier,
-  palettesUnlockedAt, detonate, splitBall, forceSplitAll, detonateAll,
+  palettesUnlockedAt, upgradeForLevel, applyUpgrade, applyUpgradesTo,
+  detonate, splitBall, forceSplitAll, detonateAll,
   totalKineticEnergy, SAVE_VERSION,
 };
