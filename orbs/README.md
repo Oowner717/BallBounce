@@ -192,7 +192,8 @@ The debug overlay shows fps, physics and draw milliseconds, ball and particle co
 sanitizer hits, dropped effect events, soft resets, the error ring buffer, and a
 **hold-to-wipe** target for erasing the save.
 
-The **upgrade menu** (`U`, or four-finger tap then `U`) lists all 99 upgrades as tappable
+The **upgrade menu** — `U` on a keyboard, or **four-finger tap** (debug overlay on) then
+**three-finger tap** on a phone, which is the whole point of it — lists all 99 upgrades as tappable
 buttons — level, name and kind, with the ones you already own marked. Tapping one fires it
 immediately, so any upgrade can be seen without playing to it. `+1 LV` / `+10 LV` advance
 levels properly (granting each upgrade on the way), `ALL` applies everything, `RESET` puts

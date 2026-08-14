@@ -796,7 +796,11 @@ function endPointer(e, isCancel) {
       if (dur < CFG.input.debugTapMaxTime && still) {
         if (gestureMaxDown >= CFG.input.debugFingers) {
           debugOn = !debugOn;
+          if (!debugOn) upgradeMenu.open = false;
           twoFingerTapCount = 0;
+        } else if (gestureMaxDown === CFG.input.upgradeMenuFingers && debugOn) {
+          // The phone has no keyboard, so the upgrade menu needs a gesture of its own.
+          upgradeMenu.open = !upgradeMenu.open;
         } else if (gestureMaxDown === CFG.input.scatterFingers) {
           const t = nowSec();
           twoFingerTapCount = (t - lastTwoFingerTap < CFG.input.scatterTapWindow) ? twoFingerTapCount + 1 : 1;

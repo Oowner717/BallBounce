@@ -927,6 +927,9 @@ export const CONFIG = {
     scatterFingers: 2,        // Fingers required for the re-scatter gesture.
     debugFingers: 4,          // Fingers in the tap that toggles the debug overlay.
     debugTapMaxTime: 0.35,    // s. Maximum duration of that four-finger tap.
+    upgradeMenuFingers: 3,    // Fingers in the tap that opens the upgrade menu. Only listened
+                              // for while the debug overlay is already up, so it takes two
+                              // deliberate gestures to reach and never fires during real play.
     soakPointers: 3,          // Synthetic pointers used by ?soak=1.
     soakChangeRate: 1.3,      // 1/s. How often a soak pointer picks a new target.
     soakHoldChance: 0.3,      // Probability a soak pointer holds still (exercising gather/sling).
