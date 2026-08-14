@@ -68,33 +68,41 @@ black-translucent status bar.
 
 ## Deployment
 
-### GitHub Pages (the workflow is already in this repo)
+### GitHub Pages — needs one click from you first
 
-`.github/workflows/pages.yml` runs the tests, then publishes `./orbs` as the **site root**,
-so the app ends up at `https://<owner>.github.io/<repo>/` rather than at `/orbs/`.
+`.github/workflows/pages.yml` is in the repo and working. It runs the tests, then publishes
+`./orbs` as the **site root**, so the app ends up at `https://<owner>.github.io/<repo>/`
+rather than at `/orbs/`.
 
-It triggers on pushes to `main`, `master`, or `claude/orbs-physics-toy-6vnxwx`, and can be
-run by hand from the Actions tab. `actions/configure-pages` is set to `enablement: true`,
-so it switches Pages on by itself rather than needing someone to visit Settings first.
+**It cannot finish on its own, and has not.** The workflow asks the API to switch Pages on
+(`actions/configure-pages` with `enablement: true`), but the default `GITHUB_TOKEN` is not
+permitted to enable Pages on a repository where it has never been enabled. The run fails at
+that step with:
 
-If it has not run, or Pages was never enabled on the repository, do this once:
+```
+Create Pages site failed. Error: Resource not accessible by integration
+```
+
+That is a repository setting, not something a workflow can grant itself. **There is no live
+URL yet.** To get one:
+
+1. **Settings → Pages → Build and deployment → Source: “GitHub Actions”.** This is the one
+   click that cannot be automated from CI.
+2. Re-run the workflow — Actions → *Deploy Orbs to GitHub Pages* → **Run workflow** — or just
+   push any commit to the branch.
 
 ```sh
-# 1. push the branch
-git push -u origin claude/orbs-physics-toy-6vnxwx
-
-# 2. Settings -> Pages -> Build and deployment -> Source: "GitHub Actions"
-#    (only needed if the workflow's own enablement step was not permitted)
-
-# 3. trigger it, or just push again
-gh workflow run "Deploy Orbs to GitHub Pages"
+# or from a shell, once Pages is enabled:
+gh workflow run "Deploy Orbs to GitHub Pages" --ref claude/orbs-physics-toy-6vnxwx
 gh run watch
 ```
 
-The published URL is printed at the end of the workflow run and shown on the repository's
-Pages settings page. It will look like `https://oowner717.github.io/BallBounce/`, but
-**check the actual run output** — do not trust that guess until a deploy has actually
-succeeded.
+The published URL is printed by the last step of the run and shown on the Pages settings
+page. It will almost certainly be `https://oowner717.github.io/BallBounce/` — but that is a
+prediction, not a fact. Take the URL from the run output.
+
+The `test` job is deliberately separate from `deploy`, so the test signal stays green and
+meaningful whether or not Pages is enabled.
 
 ### Netlify, as an alternative
 

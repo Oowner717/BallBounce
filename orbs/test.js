@@ -1180,6 +1180,93 @@ test('a magnet dragging gold into a hard impact scores double', () => {
 });
 
 /* ========================================================================== */
+group('11b. The comet');
+/* ========================================================================== */
+
+// The comet is rare by design, so these force it via config overrides. The shipped
+// rarity is asserted separately, so the overrides cannot hide a bad default.
+const COMET_ON = { 'comet.chancePerSec': 60, 'comet.requireIntensity': 0, 'comet.minGap': 0 };
+
+test('the shipped comet really is rare and active-play only', () => {
+  assert.ok(CONFIG.comet.enabled);
+  assert.ok(CONFIG.comet.chancePerSec > 0 && CONFIG.comet.chancePerSec < 0.1,
+    'chancePerSec ' + CONFIG.comet.chancePerSec + ' is not "rarely"');
+  assert.ok(CONFIG.comet.minGap >= 30, 'comets could bunch up: minGap ' + CONFIG.comet.minGap);
+  assert.ok(CONFIG.comet.requireIntensity > 0, 'a comet must not appear on a calm, untouched screen');
+
+  // Prove the gate: a quiet screen never produces one, however long it sits.
+  const quiet = freshSim({ 'comet.chancePerSec': 60, 'comet.minGap': 0 }, 4242);
+  for (let i = 0; i < 4000; i++) {
+    step(quiet, 1 / 60, null);
+    assert.equal(quiet.comet, null, 'a comet appeared on an untouched screen at step ' + i);
+  }
+});
+
+test('a comet spawns, drifts, and leaves on its own', () => {
+  const sim = freshSim(COMET_ON, 515);
+  let spawned = false;
+  for (let i = 0; i < 240 && !spawned; i++) { step(sim, 1 / 60, null); spawned = !!sim.comet; }
+  assert.ok(spawned, 'no comet after 240 steps with the spawn forced');
+  assert.ok(Number.isFinite(sim.comet.x) && Number.isFinite(sim.comet.y));
+  assert.equal(sim.comet.hp, CONFIG.comet.hp);
+
+  const x0 = sim.comet.x;
+  for (let i = 0; i < 60; i++) step(sim, 1 / 60, null);
+  assert.ok(sim.comet === null || Math.abs(sim.comet.x - x0) > 1, 'the comet never moved');
+
+  // It must eventually leave rather than parking on screen forever.
+  let gone = false;
+  for (let i = 0; i < Math.ceil((CONFIG.comet.lifetime + 5) * 60) && !gone; i++) {
+    step(sim, 1 / 60, null);
+    if (!sim.comet) gone = true;
+  }
+  assert.ok(gone, 'the comet never left');
+  assert.equal(allFinite(sim), null);
+});
+
+test('slamming balls into a comet chips it, breaks it, and records a milestone', () => {
+  const sim = freshSim(COMET_ON, 616);
+  for (let i = 0; i < 240 && !sim.comet; i++) step(sim, 1 / 60, null);
+  assert.ok(sim.comet, 'no comet to hit');
+
+  const before = sim.score;
+  const milestonesBefore = sim.milestones.length;
+  let chips = 0, broke = false;
+  for (let i = 0; i < 2000 && !broke; i++) {
+    const c = sim.comet;
+    if (c) {
+      // Fire everything nearby straight at it, fast enough to chip.
+      for (const b of sim.balls) {
+        if (!b.alive) continue;
+        const dx = c.x - b.x, dy = c.y - b.y;
+        const d = Math.hypot(dx, dy);
+        if (d < 200 * sim.scale && d > 1e-3) {
+          const sp = CONFIG.comet.chipSpeed * sim.scale * 3;
+          b.vx = (dx / d) * sp; b.vy = (dy / d) * sp;
+        }
+      }
+    }
+    step(sim, 1 / 60, null);
+    for (const ev of sim.events) {
+      if (ev.type === 'cometChip') chips++;
+      if (ev.type === 'cometBreak') broke = true;
+    }
+    if (!sim.comet && !broke) break;   // it drifted away; give up cleanly
+  }
+  assert.ok(chips > 0, 'never chipped the comet');
+  assert.ok(broke, 'never broke the comet after ' + chips + ' chips');
+  assert.equal(sim.comet, null, 'a broken comet is still on screen');
+  assert.ok(sim.score > before, 'breaking a comet scored nothing');
+  assert.equal(sim.cometsBroken, 1);
+  assert.ok(sim.milestones.length > milestonesBefore, 'breaking a comet was not a milestone');
+  assert.ok(sim.milestones.some((m) => m[0] === 'c'), 'no comet milestone id: ' + sim.milestones.join(','));
+  // And that milestone must etch a star like any other.
+  const sky = deriveStars(serializeSave(sim));
+  assert.ok(sky.stars.some((s) => s.id[0] === 'c'), 'the comet did not put a star in the sky');
+  assert.equal(allFinite(sim), null);
+});
+
+/* ========================================================================== */
 group('12. Config integrity');
 /* ========================================================================== */
 

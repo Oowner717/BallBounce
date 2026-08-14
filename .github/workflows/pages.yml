@@ -12,10 +12,9 @@ on:
       - main
       - master
       - claude/orbs-physics-toy-6vnxwx
+  pull_request:
   workflow_dispatch:
 
-# GITHUB_TOKEN needs pages:write to deploy, and id-token:write for the
-# deployment's OIDC attestation.
 permissions:
   contents: read
   pages: write
@@ -28,7 +27,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Kept separate from the deploy so the test signal stays meaningful even when
+  # Pages has not been enabled on the repository yet.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # No install step and no build step: plain node + node:assert.
+      - name: node test.js
+        working-directory: orbs
+        run: node test.js
+
   deploy:
+    needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -36,18 +51,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # No install step, no build step: the tests are plain node + node:assert.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Run tests
-        working-directory: orbs
-        run: node test.js
-
-      # enablement: true turns Pages on via the API if it is not already enabled,
-      # so a fresh repository does not need anyone to visit Settings first.
-      - uses: actions/configure-pages@v5
+      # enablement: true asks the API to switch Pages on. The default GITHUB_TOKEN
+      # is often NOT permitted to do that on a repository where Pages has never been
+      # enabled, and the step then fails with:
+      #     Create Pages site failed. Error: Resource not accessible by integration
+      # That is a one-time repository setting, not something this workflow can fix:
+      #     Settings -> Pages -> Build and deployment -> Source: "GitHub Actions"
+      # Once that is set, every later run of this workflow deploys on its own.
+      - name: Configure Pages
+        id: configure
+        uses: actions/configure-pages@v5
         with:
           enablement: true
 
@@ -57,3 +70,6 @@ jobs:
 
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Where it went
+        run: echo "Published to ${{ steps.deployment.outputs.page_url }}"
