@@ -1309,7 +1309,7 @@ function drawDebug(P, physMs, fps) {
     'balls ' + sim.aliveCount + '/' + sim.softCap + ' (cap ' + CONFIG.population.hardCap + ')'
       + '   shards ' + sim.shards.length,
     'parts ' + particles.length + '/' + particleBudget + '   bloom ' + bloomScale.toFixed(2)
-      + '   evDrop ' + sim.eventsDropped,
+      + '   evDrop ' + sim.eventsDropped + '/' + sim.eventsDroppedTotal,
     'sanitizer ' + sim.sanitizerHits + '   fields ' + sim.pointers.size
       + '   softResets ' + softResets,
     'I ' + sim.intensity.toFixed(2) + ' ' + sim.mode + '   combo ' + sim.comboCount
@@ -1585,7 +1585,8 @@ try {
         fps, physMs, renderMs, balls: sim.aliveCount, particles: particles.length,
         score: sim.score, level: sim.level, combo: sim.comboCount,
         intensity: sim.intensity, mode: sim.mode, sanitizer: sim.sanitizerHits,
-        eventsDropped: sim.eventsDropped, stars: sky.stars.length,
+        eventsDropped: sim.eventsDropped, eventsDroppedTotal: sim.eventsDroppedTotal,
+        stars: sky.stars.length,
         storage: store.available, dpr, bloomScale, particleBudget,
         cssW, cssH, safe: Object.assign({}, safe), palette: palette.cur && palette.cur.name,
       };

@@ -589,6 +589,9 @@ test('detonating every ball in one step respects the per-frame effect budget', (
       'round ' + round + ': ' + sim.events.length + ' events emitted, budget is ' + budget,
     );
     assert.ok(sim.eventsDropped > 0, 'round ' + round + ': excess should be counted as dropped, not queued');
+    // The per-step figure resets every step; the overlay needs a running total or the
+    // number flickers past unreadably on a phone.
+    assert.ok(sim.eventsDroppedTotal >= sim.eventsDropped, 'the cumulative drop count is not accumulating');
     step(sim, 1 / 60, null);
     assert.equal(allFinite(sim), null, 'round ' + round + ' non-finite after storm');
     assert.ok(sim.events.length <= budget, 'round ' + round + ': step emitted ' + sim.events.length + ' events');

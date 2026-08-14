@@ -345,7 +345,9 @@ export function createSim(opts = {}) {
     needsCompact: false,
 
     events: [],
-    eventsDropped: 0,
+    eventsDropped: 0,          // this step only
+    eventsDroppedTotal: 0,     // cumulative, for the debug overlay — a per-step number
+                               // flickers past unreadably on a phone.
 
     score: save.lifetimeScore,
     scoreThisStep: 0,
@@ -606,6 +608,7 @@ export function scatter(sim) {
 function pushEvent(sim, ev) {
   if (sim.events.length >= sim.config.effects.maxPerFrame) {
     sim.eventsDropped++;
+    sim.eventsDroppedTotal++;
     return false;
   }
   sim.events.push(ev);
