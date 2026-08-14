@@ -50,7 +50,7 @@ try {
 import { CONFIG } from './config.js';
 import {
   createSim, step as simStep, resize as simResize, scatter as simScatter,
-  makeRng, loadSave, serializeSave, defaultSave, deriveStars, filigreeTier,
+  makeRng, loadSave, serializeSave, defaultSave, applySave, deriveStars, filigreeTier,
   palettesUnlockedAt,
 } from './sim.js';
 
@@ -101,6 +101,30 @@ function writeSave(force) {
     logError('save', e.message);
   }
   if (force) saveTimer = 0;
+}
+
+/**
+ * Erase everything. Deleting the key alone is not enough: the very next autosave (or the
+ * pagehide flush on reload) writes the live state straight back and the wipe silently
+ * un-happens. The running session has to be reset too.
+ */
+function wipeSave() {
+  store.remove(CONFIG.save.key);
+  try {
+    applySave(sim, defaultSave(CONFIG));
+    seenHint = false;
+    hintFade = 0;
+    displayScore = 0;
+    sky = deriveStars(defaultSave(CONFIG), CONFIG);
+    skyDirty = true;
+    palette.cur = null;
+    palette.from = palette.to = 0;
+    palette.t = 0;
+    softResetEffects();
+    saveTimer = 0;
+  } catch (e) {
+    logError('save', 'wipe: ' + e.message);
+  }
 }
 
 /* ========================================================================== */
@@ -1291,7 +1315,7 @@ function drawDebug(P, physMs, fps) {
   ctx.fillStyle = 'rgba(255,70,70,0.9)';
   ctx.fillRect(wipeRect.x, wipeRect.y, wipeRect.w * k, wipeRect.h);
   ctx.fillStyle = '#fff';
-  ctx.fillText(wipeDone > 0 ? 'WIPED — reload' : 'HOLD TO WIPE SAVE', wipeRect.x + 6, wipeRect.y + 5);
+  ctx.fillText(wipeDone > 0 ? 'WIPED' : 'HOLD TO WIPE SAVE', wipeRect.x + 6, wipeRect.y + 5);
   ctx.restore();
 }
 
@@ -1304,7 +1328,7 @@ function updateWipe(dt) {
   if (inside) {
     wipeHold += dt;
     if (wipeHold >= CONFIG.debug.wipeHoldTime && wipeDone === 0) {
-      store.remove(CONFIG.save.key);
+      wipeSave();
       wipeDone = 1;
       logError('save', 'save wiped by debug overlay');
     }
@@ -1529,7 +1553,7 @@ try {
         cssW, cssH, safe: Object.assign({}, safe), palette: palette.cur && palette.cur.name,
       };
     },
-    wipe() { store.remove(CONFIG.save.key); },
+    wipe() { wipeSave(); },
     save() { writeSave(true); },
     toggleDebug() { debugOn = !debugOn; },
   };

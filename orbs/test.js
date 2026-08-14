@@ -15,7 +15,7 @@ import {
   createSim, step, resize, scatter, makeRng, hashState,
   loadSave, serializeSave, defaultSave, deriveStars,
   levelThreshold, comboMultiplier, milestoneLadder, filigreeTier,
-  forceSplitAll, detonateAll, totalKineticEnergy, detonate,
+  forceSplitAll, detonateAll, totalKineticEnergy, detonate, applySave,
 } from './sim.js';
 
 /* -------------------------------------------------------------------------- */
@@ -886,6 +886,53 @@ test('a valid-version save with missing or mistyped fields is repaired field by 
     for (let i = 0; i < 60; i++) step(sim, 1 / 60, null);
     assert.equal(allFinite(sim), null, label + ': sim went non-finite');
   }
+});
+
+test('applySave resets a live sim in place — a wipe really is a first run', () => {
+  const sim = freshSim(null, 4004);
+  const script = makeScript(2002, { pointers: 3 });
+  for (let i = 0; i < 4000; i++) step(sim, 1 / 60, script(i, 1 / 60));
+  assert.ok(sim.score > 0 && sim.unlocked.length > 1 && sim.milestones.length > 0,
+    'the sim did not accumulate anything to reset');
+
+  applySave(sim, defaultSave());
+
+  assert.equal(sim.score, 0, 'score survived the wipe');
+  assert.equal(sim.level, 1);
+  assert.equal(sim.xp, 0);
+  assert.equal(sim.bestCombo, 0);
+  assert.equal(sim.comboCount, 0);
+  assert.equal(sim.comboMult, 1);
+  assert.deepEqual(sim.unlocked, ['ORB'], 'unlocks survived the wipe');
+  assert.deepEqual(sim.milestones, []);
+  assert.equal(deriveStars(serializeSave(sim)).stars.length, 0, 'the sky survived the wipe');
+  // Balls of a no-longer-unlocked type must revert, or a "first run" is full of gold.
+  for (const b of sim.balls) {
+    if (b.alive) assert.equal(b.type, 'ORB', 'ball kept type ' + b.type + ' after a wipe');
+  }
+  // And it must still run.
+  for (let i = 0; i < 300; i++) step(sim, 1 / 60, script(i, 1 / 60));
+  assert.equal(allFinite(sim), null);
+  assert.ok(sim.score >= 0);
+});
+
+test('applySave restores an arbitrary save onto a running sim', () => {
+  const donor = freshSim(null, 5005);
+  const script = makeScript(6006, { pointers: 2 });
+  for (let i = 0; i < 5000; i++) step(donor, 1 / 60, script(i, 1 / 60));
+  const payload = serializeSave(donor);
+
+  const target = freshSim(null, 7007);
+  applySave(target, payload);
+  assert.equal(target.score, payload.lifetimeScore);
+  assert.equal(target.level, payload.level);
+  assert.deepEqual(target.unlocked, payload.unlocked);
+  assert.deepEqual(target.milestones, payload.milestones);
+  assert.equal(target.xpNeeded, levelThreshold(payload.level), 'derived state was not refreshed');
+  // A corrupt payload must land on clean defaults rather than throwing.
+  assert.doesNotThrow(() => applySave(target, '{{{not json'));
+  assert.equal(target.score, 0);
+  assert.equal(target.level, 1);
 });
 
 test('a prototype-pollution attempt in a save is inert', () => {

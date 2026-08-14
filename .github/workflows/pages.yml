@@ -1,0 +1,59 @@
+name: Deploy Orbs to GitHub Pages
+
+# Publishes ./orbs as the site ROOT, so the app lives at
+#   https://<owner>.github.io/<repo>/
+# rather than at /orbs/. index.html, sw.js and manifest.webmanifest all use
+# relative paths ('./'), so the app works at either location — but serving it at
+# the root keeps the Home Screen URL short.
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - claude/orbs-physics-toy-6vnxwx
+  workflow_dispatch:
+
+# GITHUB_TOKEN needs pages:write to deploy, and id-token:write for the
+# deployment's OIDC attestation.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time. Do not cancel a running deploy — a half-published site is
+# worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # No install step, no build step: the tests are plain node + node:assert.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run tests
+        working-directory: orbs
+        run: node test.js
+
+      # enablement: true turns Pages on via the API if it is not already enabled,
+      # so a fresh repository does not need anyone to visit Settings first.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: orbs
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

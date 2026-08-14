@@ -261,6 +261,40 @@ export function loadSave(raw, config = CONFIG) {
   return out;
 }
 
+/**
+ * Apply a save to a LIVE sim, in place. Used by the debug overlay's wipe, which must leave
+ * the running session genuinely reset — not merely delete the file and then have the next
+ * autosave write the old state straight back over it.
+ *
+ * Balls whose type is no longer unlocked revert to ORB, so a wipe really is a first run.
+ */
+export function applySave(sim, raw) {
+  const C = sim.config;
+  const save = loadSave(raw, C);
+  sim.score = save.lifetimeScore;
+  sim.xp = save.xp;
+  sim.level = save.level;
+  sim.bestCombo = save.bestCombo;
+  sim.sessionBestCombo = 0;
+  sim.comboCount = 0;
+  sim.comboMult = 1;
+  sim.comboTimer = 0;
+  sim.comboDecayAcc = 0;
+  sim.milestones = save.milestones.slice();
+  sim._milestoneSet = new Set(sim.milestones);
+  sim.unlocked = save.unlocked.slice();
+  sim.cometsBroken = save.cometsBroken;
+  sim.playTime = save.playTime;
+  sim.plays = save.plays;
+  sim.paletteIndex = save.paletteIndex;
+  sim.seenHint = save.seenHint;
+  refreshDerived(sim);
+  for (const b of sim.balls) {
+    if (b.alive && sim.unlocked.indexOf(b.type) < 0) b.type = 'ORB';
+  }
+  return sim;
+}
+
 /** Extract the persistent save payload from a live sim. */
 export function serializeSave(sim) {
   return {
@@ -2025,7 +2059,7 @@ export function totalKineticEnergy(sim) {
 
 export default {
   createSim, step, resize, scatter, makeRng, hashState,
-  loadSave, serializeSave, defaultSave, deriveStars,
+  loadSave, serializeSave, defaultSave, applySave, deriveStars,
   levelThreshold, comboMultiplier, milestoneLadder, filigreeTier,
   palettesUnlockedAt, detonate, splitBall, forceSplitAll, detonateAll,
   totalKineticEnergy, SAVE_VERSION,
