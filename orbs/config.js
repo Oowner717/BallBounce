@@ -35,6 +35,8 @@ export const CONFIG = {
     idleDriftSpaceA: 0.0042,  // 1/px. Spatial frequency of the drift field (large, lazy cells).
     idleDriftSpaceB: 0.0091,  // 1/px. Spatial frequency of the finer drift lobe.
     idleDriftCalmBoost: 1.25, // Drift multiplier when fully CALM, so a quiet screen still breathes.
+    idleDriftLobeB: 0.6,      // Amplitude of the second (faster, finer) drift lobe, relative to the first.
+    idleDriftGain: 0.7,       // Overall gain on the summed drift lobes. Shapes how wandery it looks.
     speedClamp: 1250,         // px/s @ref. Hard velocity ceiling. Nothing ever exceeds this.
     substeps: 2,              // Physics substeps per frame. 2 keeps fast balls from tunnelling.
     maxDt: 1 / 30,            // s. Longest dt a single step will integrate; longer frames are clipped.
@@ -57,6 +59,8 @@ export const CONFIG = {
     hardImpactSpeed: 185,     // px/s @ref. Relative normal speed above which an impact is "HARD".
                               // Hard impacts score, trigger type effects, and feed the combo.
                               // Must sit comfortably above what idle drift alone can produce.
+    tapFraction: 0.28,        // Fraction of hardImpactSpeed at which a collision still emits a soft
+                              // 'tap' effect. Below this a contact is silent.
     hardImpactWall: 260,      // px/s @ref. Higher bar for wall hits, so edge-rattling is not a score farm.
     wallScoreScale: 0.35,     // Wall hard-hit score is scaled down; walls are not opponents.
     effectCooldown: 0.42,     // s. Per-ball lockout after its type effect fires. Stops machine-gunning.
@@ -138,6 +142,7 @@ export const CONFIG = {
     flickGain: 1.15,          // Multiplier on flick velocity folded into the sling.
     slingChargeMax: 2.6,      // s. Hold time at which sling power saturates.
     slingChargeGain: 0.75,    // Extra sling power at full charge (0.75 = +75%).
+    minSlingGather: 0.06,     // Gather amount below which a release is just a lift, not a sling.
     slingComboGrace: 0.9,     // s. Combo timer floor granted after a sling, so the payoff can land.
   },
 
@@ -176,6 +181,7 @@ export const CONFIG = {
     spawnEdgeInset: 12,       // px @ref. How far inside the edge new balls appear.
     spawnSpeed: 46,           // px/s @ref. Initial drift speed of a spawned ball.
     scatterSpeed: 210,        // px/s @ref. Speed given to balls by a two-finger triple-tap re-scatter.
+    scatterFadeFloor: 0.15,   // Minimum presence a ball is given by a re-scatter, so nothing pops in.
   },
 
   /* ----------------------------------------------------------------- balls -- */
@@ -186,6 +192,7 @@ export const CONFIG = {
     minSplitRadius: 3.4,      // px @ref. A splitter below this will not split again.
     densityExp: 2,            // mass = density * r^densityExp. 2 = "area", reads right in 2D.
     density: 0.022,           // Mass per r^densityExp. Only ratios matter.
+    hueVariants: 4,           // How many of the palette's orb hues a ball picks between (render only).
     glowScale: 1.9,           // Halo radius as a multiple of ball radius (render only). Bigger
                               // than ~2 and the balls stop reading as small glowing balls and
                               // start reading as one continuous wall of light.
@@ -233,7 +240,7 @@ export const CONFIG = {
                               // where a magnet gets to be dramatic; the ambient pull is not.
       spikeTime: 1.15,        // s. Duration of the post-impact spike.
       fieldLines: 5,          // Faint field lines drawn around a magnet (render only).
-      dragAssist: 0.2,        // How strongly a magnet drags a captured ball along its own motion.
+      dragAssist: 0.1,        // How strongly a magnet drags a captured ball along its own motion.
                               // This term is non-conservative (it does net work), so it is kept
                               // small — it is the mechanism behind the gold resonance, not a
                               // general-purpose energy source.
@@ -408,6 +415,7 @@ export const CONFIG = {
     impactSparks: 7,          // Sparks per hard impact at full quality.
     detonateSparks: 26,       // Sparks per detonation.
     shatterSparks: 12,        // Sparks per freeze-shatter.
+    novaShockStrength: 1.5,   // Shockwave strength multiplier for a resonance nova vs a plain blast.
     shockwaveTime: 0.45,      // s. Shockwave ring lifetime.
     flashTime: 0.14,          // s. Screen flash lifetime.
     flashMaxAlpha: 0.20,      // Peak screen-flash alpha at FRENZY. Never blinding.

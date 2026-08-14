@@ -318,6 +318,26 @@ test('resize rescales velocities with the world, not just positions and radii', 
   assert.equal(allFinite(sim), null);
 });
 
+test('resize carries the comet with it', () => {
+  const sim = freshSim({ 'comet.chancePerSec': 60, 'comet.requireIntensity': 0, 'comet.minGap': 0 }, 1919);
+  for (let i = 0; i < 240 && !sim.comet; i++) step(sim, 1 / 60, null);
+  assert.ok(sim.comet, 'no comet to test with');
+  const before = { x: sim.comet.x, y: sim.comet.y };
+
+  resize(sim, W * 2, H * 2);
+  const c = sim.comet;
+  assert.ok(c, 'the comet vanished on resize');
+  assert.ok(Math.abs(c.x - before.x * 2) < 1e-6 && Math.abs(c.y - before.y * 2) < 1e-6,
+    'the comet was left in old coordinates: ' + c.x.toFixed(0) + ',' + c.y.toFixed(0)
+      + ' expected ' + (before.x * 2).toFixed(0) + ',' + (before.y * 2).toFixed(0));
+  assert.ok(Number.isFinite(c.vx) && Number.isFinite(c.vy));
+  for (const v of c.tail) assert.ok(Number.isFinite(v));
+
+  // And it must still be alive and reachable, not stranded off the new screen.
+  for (let i = 0; i < 60; i++) step(sim, 1 / 60, null);
+  assert.equal(allFinite(sim), null);
+});
+
 test('resize / rotation re-clamps every ball into the new bounds', () => {
   const sim = freshSim(null, 11);
   const script = makeScript(77);
@@ -507,6 +527,48 @@ test('effect budget holds during a combined split + detonate + multi-touch storm
   }
   assert.ok(maxEvents > 0, 'storm produced no events at all — the test is not exercising anything');
   assert.ok(Number.isFinite(sim.score) && sim.score >= 0);
+});
+
+test('prism shards push nothing and bounce off a wall exactly once', () => {
+  const sim = freshSim({ 'world.idleDriftStrength': 0, 'world.gravityY': 0 }, 5150);
+  step(sim, 1 / 60, null);
+
+  // Park one ball in the middle at rest, and fire a shard straight at it.
+  for (const b of sim.balls) { b.x = sim.width * 3; b.y = sim.height * 3; b.vx = 0; b.vy = 0; }
+  const target = sim.balls[0];
+  target.x = sim.width * 0.5; target.y = sim.height * 0.5; target.vx = 0; target.vy = 0;
+  sim.shards.length = 0;
+  sim.shards.push({
+    x: target.x - 120 * sim.scale, y: target.y, vx: 600 * sim.scale, vy: 0,
+    life: 3, bounces: CONFIG.types.PRISM.shardBounces, charge: 0, seed: 1,
+  });
+
+  let hit = false;
+  for (let i = 0; i < 60 && !hit; i++) {
+    step(sim, 1 / 60, null);
+    hit = sim.events.some((e) => e.type === 'shardHit');
+  }
+  assert.ok(hit, 'the shard never reached the ball');
+  // "push nothing": the ball it struck must not have been moved by it.
+  assert.ok(Math.hypot(target.vx, target.vy) < 1e-6,
+    'a shard pushed a ball to ' + Math.hypot(target.vx, target.vy).toFixed(3) + ' px/s');
+  assert.equal(sim.shards.length, 0, 'the shard survived contact');
+
+  // "bounce off a wall once": one bounce, then it is gone.
+  sim.shards.length = 0;
+  sim.shards.push({
+    x: 30 * sim.scale, y: sim.height * 0.5, vx: -900 * sim.scale, vy: 0,
+    life: 30, bounces: CONFIG.types.PRISM.shardBounces, charge: 0, seed: 2,
+  });
+  for (const b of sim.balls) { b.x = sim.width * 3; b.y = sim.height * 3; }
+  let bounces = 0;
+  for (let i = 0; i < 600 && sim.shards.length; i++) {
+    step(sim, 1 / 60, null);
+    bounces += sim.events.filter((e) => e.type === 'shardBounce').length;
+  }
+  assert.equal(bounces, CONFIG.types.PRISM.shardBounces,
+    'shard bounced ' + bounces + ' times, config says ' + CONFIG.types.PRISM.shardBounces);
+  assert.equal(sim.shards.length, 0, 'the shard outlived its bounce allowance');
 });
 
 test('prism shards are capped and always expire', () => {

@@ -7,8 +7,14 @@
  *   - No Math.random(). All randomness comes from the injected seeded PRNG.
  *   - No tunable numbers. Every constant lives in config.js.
  *
- * Consequence: the same seed plus the same scripted inputs produces a bit-identical
- * state, forever. test.js leans on that hard.
+ * Consequence: the same seed plus the same scripted inputs reproduces the same state
+ * exactly, run after run, which is what test.js leans on.
+ *
+ * Caveat worth knowing: that guarantee holds within one JavaScript engine. Math.sin, cos,
+ * pow and hypot are implementation-defined in the last bit or two, so a replay is not
+ * guaranteed to match ACROSS engines (Node vs Safari vs Chrome). Nothing here depends on
+ * cross-engine replay, and the state hash rounds to 1e-6 before hashing, but do not build
+ * a feature such as a shared replay format on the assumption.
  *
  * The renderer reads `sim.events` (cleared and refilled every step) and draws from it.
  * The sim never knows what an effect looks like — only that one happened, and where.
@@ -383,7 +389,6 @@ export function createSim(opts = {}) {
     // Scratch, reused across steps so the hot loop allocates nothing.
     _grid: new Map(),
     _cell: 1,
-    _gw: 1,
     _impacts: [],
     _magnets: [],
     _near: [],
@@ -459,6 +464,19 @@ export function resize(sim, width, height) {
       s.vx = fin(s.vx * rs, 0);
       s.vy = fin(s.vy * rs, 0);
     }
+    // The comet too: leaving it in old coordinates strands it off the new screen, where it
+    // immediately despawns and takes its milestone with it.
+    const c = sim.comet;
+    if (c) {
+      c.x = fin(c.x * sx, w * 0.5);
+      c.y = fin(c.y * sy, h * 0.5);
+      c.vx = fin(c.vx * rs, 0);
+      c.vy = fin(c.vy * rs, 0);
+      for (let i = 0; i + 1 < c.tail.length; i += 2) {
+        c.tail[i] = fin(c.tail[i] * sx, w * 0.5);
+        c.tail[i + 1] = fin(c.tail[i + 1] * sy, h * 0.5);
+      }
+    }
   }
   for (const f of sim.pointers.values()) {
     f.x = fin(f.x * sx, w * 0.5); f.y = fin(f.y * sy, h * 0.5);
@@ -501,7 +519,7 @@ function makeBall(sim, x, y, r, type, fade) {
     r, mass, invMass: 1 / mass,
     phase: sim.rng.float() * TAU,
     seed: mix32(sim.nextId * 2654435761),
-    hue: sim.rng.int(4),
+    hue: sim.rng.int(C.balls.hueVariants),
     alive: true,
     fade: fade == null ? 0 : fade,
     dying: false,
@@ -575,7 +593,7 @@ export function scatter(sim) {
     const a = rng.angle();
     const sp = C.population.scatterSpeed * s * rng.range(0.35, 1);
     b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp;
-    b.frozenT = 0; b.dying = false; b.fade = Math.max(b.fade, 0.15);
+    b.frozenT = 0; b.dying = false; b.fade = Math.max(b.fade, C.population.scatterFadeFloor);
   }
   pushEvent(sim, { type: 'scatter', x: sim.width * 0.5, y: sim.height * 0.5 });
   return sim;
@@ -733,7 +751,7 @@ const EMPTY = [];
 /** Release: throw whatever this field had gathered into the crowd. */
 function slingField(sim, f) {
   const C = sim.config, s = sim.scale, rng = sim.rng;
-  if (f.gather <= 0.06) {
+  if (f.gather <= C.gather.minSlingGather) {
     pushEvent(sim, { type: 'fieldUp', x: f.sx, y: f.sy, gather: f.gather });
     return;
   }
@@ -811,7 +829,6 @@ function buildGrid(sim) {
   for (const b of sim.balls) if (b.alive && !b.dying && b.r > maxR) maxR = b.r;
   const cell = Math.max(4, maxR * sim.config.collision.gridCellScale);
   sim._cell = cell;
-  sim._gw = Math.max(1, Math.ceil(sim.width / cell) + 2);
   for (let i = 0; i < sim.balls.length; i++) {
     const b = sim.balls[i];
     if (!b.alive || b.dying) continue;
@@ -851,6 +868,8 @@ function applyForces(sim, h) {
     lerp(C.world.idleDriftCalmBoost, 1, clamp(inten / Math.max(1e-6, C.intensity.frenzyAbove), 0, 1));
   const sA = C.world.idleDriftSpaceA / s;
   const sB = C.world.idleDriftSpaceB / s;
+  const lobeB = C.world.idleDriftLobeB;
+  const driftGain = C.world.idleDriftGain;
   const rA = C.world.idleDriftRateA * TAU;
   const rB = C.world.idleDriftRateB * TAU;
   const t = sim.time;
@@ -886,8 +905,8 @@ function applyForces(sim, h) {
     // without systematically herding balls anywhere.
     if (driftAmp > 0 && b.frozenT <= 0) {
       const p = b.phase;
-      ax += driftAmp * (Math.sin(b.y * sA + t * rA + p) + 0.6 * Math.sin(b.y * sB - t * rB + p * 2.3)) * 0.7;
-      ay += driftAmp * (Math.cos(b.x * sA - t * rA + p * 1.3) + 0.6 * Math.cos(b.x * sB + t * rB + p * 0.7)) * 0.7;
+      ax += driftAmp * (Math.sin(b.y * sA + t * rA + p) + lobeB * Math.sin(b.y * sB - t * rB + p * 2.3)) * driftGain;
+      ay += driftAmp * (Math.cos(b.x * sA - t * rA + p * 1.3) + lobeB * Math.cos(b.x * sB + t * rB + p * 0.7)) * driftGain;
     }
 
     // Mass response: small balls fly, big balls shoulder through. Feel, not realism.
@@ -962,8 +981,8 @@ function applyForces(sim, h) {
       ay += (dy / d) * acc;
       // The magnet also drags its catch along its own heading, which is what makes
       // "magnet drags gold into something" a thing that actually happens.
-      ax += mb.vx * magCfg.dragAssist * fall * fall * 0.5;
-      ay += mb.vy * magCfg.dragAssist * fall * fall * 0.5;
+      ax += mb.vx * magCfg.dragAssist * fall * fall;
+      ay += mb.vy * magCfg.dragAssist * fall * fall;
       if (b.type === 'GOLD' && goldRes) b.magnetT = goldRes.dragWindow;
     }
 
@@ -990,7 +1009,7 @@ function applyForces(sim, h) {
 /* Collision                                                                  */
 /* ========================================================================== */
 
-function collide(sim, h) {
+function collide(sim) {
   const C = sim.config;
   const s = sim.scale;
   const balls = sim.balls;
@@ -1048,7 +1067,7 @@ function collide(sim, h) {
             x: a.x + nx * a.r, y: a.y + ny * a.r,
             nx, ny, wall: false,
           });
-        } else if (speed > hardSpeed * 0.28) {
+        } else if (speed > hardSpeed * C.collision.tapFraction) {
           pushEvent(sim, { type: 'tap', x: a.x + nx * a.r, y: a.y + ny * a.r, speed: speed / hardSpeed });
         }
       }
@@ -1338,7 +1357,7 @@ export function detonate(sim, b, scoreMulIn) {
     type: 'detonate', x: b.x, y: b.y, r: radius, id: b.id,
     caught, nova: isNova,
   });
-  pushEvent(sim, { type: 'shockwave', x: b.x, y: b.y, r: radius, strength: isNova ? 1.5 : 1 });
+  pushEvent(sim, { type: 'shockwave', x: b.x, y: b.y, r: radius, strength: isNova ? C.effects.novaShockStrength : 1 });
   if (isNova) pushEvent(sim, { type: 'resonance', id: 'shatterNova', x: b.x, y: b.y });
   return true;
 }
@@ -1998,7 +2017,7 @@ export function step(sim, dtRaw, input) {
   const h = dt / sub;
   for (let i = 0; i < sub; i++) {
     applyForces(sim, h);
-    collide(sim, h);
+    collide(sim);
     processImpacts(sim);
   }
 
