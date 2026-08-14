@@ -783,6 +783,32 @@ test('cancelled pointers clear their field without slinging (iOS pointercancel)'
   assert.equal(before.length, cancelled.balls.length);
 });
 
+test('a recycled pointer id does not drag the old field across the screen', () => {
+  // Platforms recycle pointer ids. If a re-tap reuses a field that is still fading out,
+  // its smoothed position sweeps from the old touch to the new one, which the physics
+  // reads as an enormous swipe the player never made.
+  const sim = freshSim({ 'world.idleDriftStrength': 0, 'world.gravityY': 0 }, 8123);
+  for (let i = 0; i < 90; i++) step(sim, 1 / 60, { pointers: [{ id: 1, x: 40, y: 100 }] });
+  step(sim, 1 / 60, { pointers: [] });                     // release; the field starts fading
+  assert.ok(sim.pointers.has(1), 'the field should still be fading, or this proves nothing');
+
+  // Re-tap with the SAME id, far away, while the old field is mid-fade.
+  const farX = sim.width - 40, farY = sim.height - 100;
+  step(sim, 1 / 60, { pointers: [{ id: 1, x: farX, y: farY }] });
+  const f = sim.pointers.get(1);
+  assert.ok(f, 'no field after the re-tap');
+  assert.ok(Math.hypot(f.sx - farX, f.sy - farY) < 1,
+    'the field was placed at ' + f.sx.toFixed(0) + ',' + f.sy.toFixed(0) + ' instead of the new touch');
+  assert.ok(f.speed < 1, 'the re-tap inherited a field velocity of ' + f.speed.toFixed(0) + ' px/s');
+
+  for (let i = 0; i < 10; i++) {
+    step(sim, 1 / 60, { pointers: [{ id: 1, x: farX, y: farY }] });
+    assert.ok(f.speed < CONFIG.gather.flickSpeed * sim.scale,
+      'phantom field speed ' + f.speed.toFixed(0) + ' px/s after a recycled-id re-tap');
+  }
+  assert.equal(allFinite(sim), null);
+});
+
 test('gather then release actually throws balls outward (the sling does work)', () => {
   const sim = freshSim({ 'world.idleDriftStrength': 0 }, 30);
   const cx = sim.width * 0.5, cy = sim.height * 0.5;

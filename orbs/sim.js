@@ -640,6 +640,15 @@ function updatePointers(sim, dt, input) {
       f = makeField(sim, p.id, px, py);
       sim.pointers.set(p.id, f);
       pushEvent(sim, { type: 'fieldDown', x: px, y: py, id: p.id });
+    } else if (!f.down) {
+      // This id was released and is still fading out. Platforms recycle pointer ids, so a
+      // quick re-tap elsewhere would otherwise reuse the old field: its smoothed position
+      // would sweep across the screen to the new touch, reading as an enormous fling that
+      // the player never made. A new touch is a new field.
+      const keep = f.id;
+      f = makeField(sim, keep, px, py);
+      sim.pointers.set(keep, f);
+      pushEvent(sim, { type: 'fieldDown', x: px, y: py, id: keep });
     }
     f.x = px; f.y = py;
     f.down = true;
