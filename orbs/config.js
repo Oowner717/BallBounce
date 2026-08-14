@@ -679,6 +679,46 @@ export const CONFIG = {
     calmSettleTime: 10.0,     // s. Untouched time at which "genuinely quiet" is asserted (used by tests).
   },
 
+  /* ------------------------------------------------------------------- help -- */
+  // The one screen in the game that is allowed to use words. Numbers only — the copy itself
+  // lives in main.js, because prose is content and this file is the tuning surface.
+  help: {
+    cornerSize: 56,           // px. The bottom-right patch you hold to open help. Mirrors the
+                              // debug corner at top-left, and is the first thing in the whole
+                              // renderer to make use of the bottom safe-area inset.
+    holdTime: 1.2,            // s. Shorter than the debug hold: this one is for players.
+    holdArcDelay: 0.30,       // s before the progress ring appears under your fingertip.
+    breadcrumbTime: 4.0,      // s. After your FIRST level-up ever, and only then, the help corner
+                              // pulses once. That is the moment a player first wonders what just
+                              // happened, and the only moment a wordless toy has any business
+                              // pointing at its own documentation.
+    openTime: 0.22,           // s. Sheet open/close animation.
+    panelMargin: 14,          // px. Gap from the safe area to the sheet.
+    panelMaxW: 420,           // px. The sheet never grows past this on a tablet.
+    veilAlpha: 0.55,          // Darkening behind the sheet.
+    sheetAlpha: 0.86,         // The sheet's own backing.
+    headerH: 52,              // px. Pinned header height.
+    rowH: 52,                 // px. A contents row.
+    barRowH: 46,              // px. An upgrade value-bar row.
+    unit: 15,                 // px type unit at a 390px-wide screen; everything scales from it.
+    unitMin: 13,              // px floor on that unit.
+    unitMax: 17,              // px ceiling, so a tablet does not get comically large text.
+    lineHeight: 1.45,         // Multiplier on the unit for body line spacing.
+    scrollFriction: 4.2,      // 1/s. How quickly a flick decays.
+    flickMin: 60,             // px/s below which a release just stops instead of coasting.
+    overscroll: 0.4,          // Fraction of a drag that still moves the list past its ends.
+    overscrollSpring: 14,     // 1/s. Snap-back rate from overscroll.
+    barPipAlpha: 0.5,         // A pip on a value bar for an upgrade you own.
+    barPipAlphaLocked: 0.16,  // ...and one you do not.
+    swatchLockedAlpha: 0.22,  // A colour-world chip you have not unlocked.
+    demoTime: 1.6,            // s. How long a tapped row demonstrates itself over the live toy.
+    demoFade: 0.18,           // s. Sheet fade in and out around that.
+    demoSheetAlpha: 0.10,     // How far the sheet fades back so you can see the demonstration.
+                              // Low: a legible list behind a demonstration is two things competing
+                              // for the same glance, and the demonstration is the one that matters.
+    eraseHoldTime: 1.8,       // s. Hold to erase everything, from inside help.
+  },
+
   /* ------------------------------------------------------------------ proof -- */
   // Upgrades that change a distance draw themselves at that distance, and upgrades that add a
   // ball show you the ball. The one legibility pattern this game already had that worked was the

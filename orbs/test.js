@@ -1976,6 +1976,25 @@ test('the ball population starts small and grows only through upgrades', () => {
   }
 });
 
+test('the help screen can describe every upgradeable number', () => {
+  // The upgrades page is one row per NUMBER, not one per upgrade — twenty rows reading MORE ORBS
+  // is noise; one reading "orbs on screen 30 -> 90" is information. That only works if every
+  // path an upgrade touches has a plain-English name, and nothing else would notice a new
+  // upgrade quietly arriving without one: it would simply be missing from the page.
+  const src = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+  const named = new Set();
+  const re = /'([a-zA-Z]+(?:\.[A-Za-z_$][\w$]*)+)':\s*\[/g;
+  let m;
+  while ((m = re.exec(src)) !== null) named.add(m[1]);
+  const missing = [];
+  for (const u of CONFIG.upgrades) {
+    if (!u.path) continue;
+    if (!named.has(u.path)) missing.push(u.id + ' -> ' + u.path);
+  }
+  assert.ok(named.size > 50, 'the scanner only found ' + named.size + ' named paths — it is not working');
+  assert.deepEqual(missing, [], 'upgrade paths with no plain-English name for the help page');
+});
+
 test('every upgrade carries a note a player could read', () => {
   // The description of each upgrade used to live only in a // comment, which is invisible at
   // runtime — so the help screen had nothing to show and the player had nothing to read. Nothing

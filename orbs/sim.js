@@ -354,6 +354,7 @@ export function defaultSave(config = CONFIG) {
     plays: 0,
     paletteIndex: 0,
     seenHint: false,
+    seenHelp: false,
     capCelebrated: false,
   };
 }
@@ -389,6 +390,7 @@ export function loadSave(raw, config = CONFIG) {
   out.plays = Math.floor(num(obj.plays, 0, 0, 1e9));
   out.paletteIndex = Math.floor(num(obj.paletteIndex, 0, 0, config.palettes.length - 1));
   out.seenHint = obj.seenHint === true;
+  out.seenHelp = obj.seenHelp === true;
   out.capCelebrated = obj.capCelebrated === true;
 
   // Milestones: strings only, deduped, order preserved (order defines the sky).
@@ -443,6 +445,7 @@ export function applySave(sim, raw) {
   sim.plays = save.plays;
   sim.paletteIndex = save.paletteIndex;
   sim.seenHint = save.seenHint;
+  sim.seenHelp = save.seenHelp;
   sim.capCelebrated = save.capCelebrated === true;
   // Upgrades mutate sim.config, so a reset needs a clean config and a fresh replay.
   sim.config = deepCloneConfig(C0);
@@ -475,6 +478,7 @@ export function serializeSave(sim) {
     plays: sim.plays,
     paletteIndex: sim.paletteIndex,
     seenHint: sim.seenHint === true,
+    seenHelp: sim.seenHelp === true,
     capCelebrated: sim.capCelebrated === true,
   };
 }
@@ -534,6 +538,7 @@ export function createSim(opts = {}) {
     plays: save.plays + 1,
     paletteIndex: save.paletteIndex,
     seenHint: save.seenHint,
+    seenHelp: save.seenHelp,
 
     intensity: 0,
     mode: 'CALM',

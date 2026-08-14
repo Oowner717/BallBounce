@@ -367,6 +367,11 @@ function retargetPalette() {
 const SPRITE_SIZE = 128;
 const spriteCache = new Map();
 
+// Help-sheet display lists, keyed by section id + width. Declared up here beside the other
+// render caches because resizeLayers clears it, and resizeLayers runs during module init —
+// long before the help block further down has been evaluated.
+const layoutCache = new Map();
+
 function glowSprite(hex) {
   let s = spriteCache.get(hex);
   if (s) return s;
@@ -627,6 +632,7 @@ function resizeLayers(force) {
   // The plates are sized from cssW/cssH, so they are stale the moment those change.
   plateKey = ''; platesReady = false;
   buildVigPlate();
+  layoutCache.clear();   // every op in it was measured against the old width
 
   if (sim) simResize(sim, cssW, cssH);
 }
@@ -872,6 +878,9 @@ function consumeEvents(P) {
         addFlash(0.12);
         break;
       case 'levelup':
+        // The one moment a wordless toy has any business pointing at its own documentation:
+        // the first time something happened that the player did not ask for. Once, ever.
+        if (!sim.seenHelp && helpBreadcrumb === 0) helpBreadcrumb = CFG.help.breadcrumbTime;
         // Deliberately nothing. sim.js pushes `levelup` immediately AFTER `upgrade`, and every
         // level from 2 to the cap has an upgrade, so the celebration this used to raise was
         // always stomped by the one already on screen — it had never once run. The level number
@@ -1105,6 +1114,9 @@ function onPointerDown(e) {
   try {
     if (SOAK) return;
     const [x, y] = canvasPos(e);
+    // Help is checked FIRST and swallows everything: a thumb reading a page must not also be
+    // playing the toy underneath it.
+    if (helpDown(x, y)) { e.preventDefault(); return; }
     if (upgradeMenuHit(x, y)) { e.preventDefault(); return; }
     if (debugButtonHit(x, y)) { e.preventDefault(); return; }
     if (pointers.size === 0) { gestureStart = nowSec(); gestureMaxDown = 0; gestureMoved = 0; }
@@ -1120,6 +1132,7 @@ function onPointerDown(e) {
 function onPointerMove(e) {
   try {
     if (SOAK) return;
+    if (help.open) { const [hx, hy] = canvasPos(e); helpMove(hx, hy); e.preventDefault(); return; }
     const p = pointers.get(e.pointerId);
     if (!p) return;
     const [x, y] = canvasPos(e);
@@ -1132,6 +1145,7 @@ function onPointerMove(e) {
 function endPointer(e, isCancel) {
   try {
     if (SOAK) return;
+    if (help.open) { helpUp(); e.preventDefault(); return; }
     if (!pointers.has(e.pointerId)) return;
     pointers.delete(e.pointerId);
     // pointercancel (iOS system gestures), pointerleave and blur must CLEAR the field
@@ -1197,7 +1211,12 @@ try {
   document.addEventListener('gesturechange', (e) => e.preventDefault(), { passive: false });
   canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'd' || e.key === 'D') debugOn = !debugOn;
+    if (e.key === '?' || e.key === 'h' || e.key === 'H') { if (help.open) closeHelp(); else openHelp(null, 0); }
+    else if (e.key === 'Escape') { if (help.open) closeHelp(); }
+    else if (help.open && e.key === 'ArrowDown') help.scroll += 60;
+    else if (help.open && e.key === 'ArrowUp') help.scroll -= 60;
+    else if (help.open) { /* the sheet has the keyboard */ }
+    else if (e.key === 'd' || e.key === 'D') debugOn = !debugOn;
     else if (e.key === 'u' || e.key === 'U') { upgradeMenu.open = !upgradeMenu.open; if (upgradeMenu.open) debugOn = true; }
     else if (e.key === 'r' || e.key === 'R') scatterRequest = true;
     else if (e.key === 'ArrowRight') upgradeMenu.page++;
@@ -2090,6 +2109,969 @@ function roundRect(c, x, y, w, h, r) {
   c.closePath();
 }
 
+/* ========================================================================== */
+/* Help                                                                       */
+/*                                                                            */
+/* The one screen in this game allowed to use words. It is drawn on the same  */
+/* canvas as everything else — there is no DOM in this app and there is not   */
+/* about to be one for a help screen.                                         */
+/*                                                                            */
+/* What it deliberately does NOT contain: settings, an account, a FAQ, a      */
+/* search box, a changelog, a troubleshooting page or a palette picker. A toy */
+/* with no accounts, no settings and no network has no business shipping the  */
+/* sections that exist to serve those things. It also never explains the      */
+/* three type resonances — those are meant to be found.                       */
+/* ========================================================================== */
+
+const HELP = [
+  {
+    id: 'start', title: 'start here', gloss: 'what this is',
+    blocks: [
+      { kind: 'prose', text: 'There is nothing to win and nothing to lose.' },
+      { kind: 'prose', text: 'Touch the screen and the orbs move away from your finger. Hold still and they gather into an orbit around it. Lift, and they are thrown.' },
+      { kind: 'prose', text: 'That is the whole thing. Everything else is decoration you earn by playing.' },
+      { kind: 'prose', text: 'Left alone for ten seconds, it goes quiet on its own.' },
+    ],
+  },
+  {
+    id: 'touch', title: 'touch', gloss: 'how to play',
+    blocks: [
+      { kind: 'row', name: 'swipe', text: 'Orbs are pushed away from your finger, and carried along with it. Swipe fast and they fling.' },
+      { kind: 'row', name: 'hold still', text: 'Your finger becomes an attractor. Orbs fall into orbit around it. The ring shows where that orbit will settle.' },
+      { kind: 'row', name: 'let go', text: 'Everything you gathered is slung outward. The longer you held it, the harder it goes.' },
+      { kind: 'row', name: 'tap', text: 'A sharp pulse outward from that point.' },
+      { kind: 'row', name: 'tap twice', text: 'A vortex. A spinning well that stays behind for a moment after your finger has gone.' },
+      { kind: 'row', name: 'more fingers', text: 'Every finger is its own field. Up to ten.' },
+      { kind: 'row', name: 'two fingers, three taps', text: 'Scatters everything back out, if the screen has gone lopsided.' },
+    ],
+  },
+  {
+    id: 'screen', title: 'on screen', gloss: 'what the numbers mean',
+    blocks: [
+      { kind: 'row', name: 'the number at the top', text: 'Your score. It is mainly aesthetic. Nothing is ever spent, and nothing is ever lost.' },
+      { kind: 'row', name: 'the multiplier', text: 'Your combo. It counts moments of contact in quick succession and multiplies what they are worth. It lapses if the screen goes still.' },
+      { kind: 'row', name: 'the bar', text: 'Progress to your next level. Every level hands you one named upgrade, and its name stays under the bar for a few seconds afterward. Touch that name to see what it did.' },
+      { kind: 'row', name: 'the ring at your finger', text: 'How far your gather reaches, and where the orbit sits. It grows ornaments as your best combo grows.' },
+      { kind: 'row', name: 'the stars', text: 'One for each milestone you have passed. It is your own sky, drawn from your save.' },
+      { kind: 'row', name: 'a comet', text: 'Rare, and only while things are busy. Hit it enough and it breaks. Entirely optional.' },
+    ],
+  },
+  {
+    id: 'orbs', title: 'the orbs', gloss: 'eight kinds of ball',
+    blocks: [
+      { kind: 'orb', type: 'ORB', text: 'The plain one. Most of what you see.' },
+      { kind: 'orb', type: 'VOLATILE', text: 'Struck hard, it detonates and shoves everything nearby. Then it goes dark while it recharges.' },
+      { kind: 'orb', type: 'SPLITTER', text: 'Struck hard, it splits in two. The children can split again.' },
+      { kind: 'orb', type: 'MAGNET', text: 'Pulls its neighbours in, gently. Struck hard, it yanks.' },
+      { kind: 'orb', type: 'PRISM', text: 'Struck hard, it throws shards outward. Shards score on whatever they touch.' },
+      { kind: 'orb', type: 'CHAIN', text: 'Struck hard, it jolts the nearest orbs with an arc, and those jolt others.' },
+      { kind: 'orb', type: 'FROST', text: 'Struck hard, it freezes its neighbours. They shatter free a moment later.' },
+      { kind: 'orb', type: 'GOLD', text: 'Rare. Worth a great deal, and jumps your combo several steps at once.' },
+      { kind: 'note', text: 'An effect only fires on an orb still carrying energy from your finger. That is why an untouched screen goes quiet instead of going forever.' },
+    ],
+  },
+  {
+    id: 'upgrades', title: 'upgrades', gloss: 'everything you have earned',
+    blocks: [
+      { kind: 'prose', text: 'One every level, ninety-nine in all. Here is what they have added up to.' },
+      { kind: 'note', text: 'Tap any row to watch it.' },
+      { kind: 'bars' },
+      { kind: 'worlds' },
+      { kind: 'earned' },
+    ],
+  },
+  {
+    id: 'run', title: 'your run', gloss: 'where you are up to',
+    blocks: [
+      { kind: 'stats' },
+      { kind: 'note', text: 'None of this is a target.' },
+    ],
+  },
+  {
+    id: 'about', title: 'about', gloss: 'no accounts, no ads, no network',
+    blocks: [
+      { kind: 'prose', text: 'A quiet physics toy. Small glowing balls in almost no gravity.' },
+      { kind: 'prose', text: 'No accounts, no ads, no notifications, no network. No fail states, no timers, no streaks. Nothing punishes you for stopping.' },
+      { kind: 'prose', text: 'Made to be played for two minutes or for an hour.' },
+      { kind: 'prose', text: 'Your progress is saved on this device, in this browser. It is written every few seconds, and whenever you leave. Nothing is sent anywhere.' },
+      { kind: 'prose', text: 'Add it to your home screen and it runs full screen, and offline.' },
+      { kind: 'prose', text: 'If the screen ever stutters it quietly draws fewer sparks. It never slows the orbs down.' },
+      { kind: 'erase' },
+      { kind: 'note', text: '' },
+    ],
+  },
+];
+
+/* -- what each upgradeable number IS, in plain words ------------------------
+ * Twenty rows reading MORE ORBS is noise. One row reading "orbs on screen 30 -> 150" is
+ * information. Group order is the order they are shown in.
+ */
+const PATH_INFO = {
+  'field.radius':               ['push reach', 'px', 'your touch'],
+  'field.flingGain':            ['fling power', '', 'your touch'],
+  'gather.radiusGather':        ['gather reach', 'px', 'your touch'],
+  'gather.slingBase':           ['sling force', '', 'your touch'],
+  'tap.pulseRadius':            ['pulse reach', 'px', 'your touch'],
+  'tap.pulseImpulse':           ['pulse force', '', 'your touch'],
+  'tap.vortexRadius':           ['vortex reach', 'px', 'your touch'],
+  'tap.vortexSpin':             ['vortex spin', '', 'your touch'],
+  'tap.vortexTime':             ['vortex life', 's', 'your touch'],
+  'render.ringRadius':          ['ring size', 'px', 'your touch'],
+
+  'population.softCapBase':     ['orbs on screen', '', 'the orbs'],
+  'balls.glowScale':            ['halo size', '×', 'the orbs'],
+
+  'types.VOLATILE.blastRadius':  ['blast reach', 'px', 'volatile'],
+  'types.VOLATILE.blastImpulse': ['blast force', '', 'volatile'],
+  'types.VOLATILE.inertTime':    ['recharge', 's', 'volatile'],
+  'effects.detonateSparks':      ['blast sparks', '', 'volatile'],
+
+  'types.SPLITTER.splitSpeed':   ['split speed', '', 'splitter'],
+  'types.SPLITTER.cooldown':     ['split cooldown', 's', 'splitter'],
+  'types.SPLITTER.childRadius':  ['child size', '×', 'splitter'],
+  'types.SPLITTER.inheritSpeed': ['child speed', '×', 'splitter'],
+
+  'types.MAGNET.pull':          ['pull', '', 'magnet'],
+  'types.MAGNET.pullRadius':    ['pull reach', 'px', 'magnet'],
+  'types.MAGNET.spikePull':     ['yank', '', 'magnet'],
+  'types.MAGNET.fieldLines':    ['field lines', '', 'magnet'],
+
+  'types.PRISM.shards':         ['shards', '', 'prism'],
+  'types.PRISM.shardSpeed':     ['shard speed', '', 'prism'],
+  'types.PRISM.shardLife':      ['shard life', 's', 'prism'],
+  'effects.shatterSparks':      ['shatter sparks', '', 'prism'],
+
+  'types.CHAIN.targets':        ['arcs per jolt', '', 'chain'],
+  'types.CHAIN.range':          ['arc reach', 'px', 'chain'],
+  'types.CHAIN.depth':          ['arc depth', '', 'chain'],
+  'types.CHAIN.impulse':        ['arc force', '', 'chain'],
+
+  'types.FROST.maxTargets':     ['orbs frozen', '', 'frost'],
+  'types.FROST.radius':         ['freeze reach', 'px', 'frost'],
+  'types.FROST.freezeTime':     ['ice hold', 's', 'frost'],
+  'types.FROST.shatterImpulse': ['shatter force', '', 'frost'],
+
+  'types.GOLD.weight':          ['gold in the pool', '', 'gold'],
+  'types.GOLD.comboJump':       ['gold combo jump', '', 'gold'],
+  'types.GOLD.scoreFlat':       ['gold worth', '', 'gold'],
+
+  'render.trailFade':           ['trail length', '', 'the look'],
+  'render.trailFadeCalm':       ['quiet trails', '', 'the look'],
+  'render.bloomStrength':       ['bloom', '×', 'the look'],
+  'render.bloomStrengthCalm':   ['quiet bloom', '×', 'the look'],
+  'render.bloomStrengthFrenzy': ['loud bloom', '×', 'the look'],
+  'render.starTwinkle':         ['twinkle', '×', 'the look'],
+  'effects.impactSparks':       ['impact sparks', '', 'the look'],
+  'effects.shockwaveTime':      ['shockwave life', 's', 'the look'],
+  'effects.maxParticles':       ['spark ceiling', '', 'the look'],
+  'filigree.alpha':             ['ring ornament', '×', 'the look'],
+  'comet.chancePerSec':         ['comets', '/s', 'the look'],
+  'paletteRules.driftPeriod':   ['world drift', 's', 'the look'],
+
+  'sky.nebulaCount':            ['clouds', '', 'the sky'],
+  'sky.nebulaAlpha':            ['cloud depth', '', 'the sky'],
+  'sky.horizonAlpha':           ['horizon', '', 'the sky'],
+  'sky.vignette':               ['dark edges', '', 'the sky'],
+  'sky.vignetteFrenzy':         ['edges in chaos', '', 'the sky'],
+  'sky.maxStars':               ['room for stars', '', 'the sky'],
+  'sky.baseMag':                ['star brightness', '', 'the sky'],
+  'sky.starGlow':               ['star halo', '×', 'the sky'],
+  'sky.linksPerStars':          ['constellations', '', 'the sky'],
+  'sky.shootingChancePerSec':   ['shooting stars', '/s', 'the sky'],
+
+  'score.globalMultBase':       ['everything is worth', '×', 'score'],
+  'score.comboMultScale':       ['combo curve', '', 'score'],
+};
+
+const BAR_GROUPS = ['your touch', 'the orbs', 'volatile', 'splitter', 'magnet', 'prism',
+  'chain', 'frost', 'gold', 'the look', 'the sky', 'score'];
+
+/** Read a dotted path off an object, the same walk applyUpgrade uses. */
+function readPath(root, path) {
+  const parts = path.split('.');
+  let node = root;
+  for (const seg of parts) {
+    if (node == null || typeof node !== 'object') return undefined;
+    node = node[seg];
+  }
+  return node;
+}
+
+/**
+ * Fold the whole upgrade table into one row per NUMBER, once at boot.
+ *
+ * `base` is the pristine value, `cap` the value after every contributing upgrade has applied in
+ * order, and `ups` the upgrades that touch it. Nothing here ever changes, so it is built once.
+ */
+let barRows = null;
+function foldUpgrades() {
+  if (barRows) return barRows;
+  const byPath = new Map();
+  for (const u of (BASE_CONFIG.upgrades || [])) {
+    if (!u.path || !PATH_INFO[u.path]) continue;
+    let r = byPath.get(u.path);
+    if (!r) {
+      r = { path: u.path, base: readPath(BASE_CONFIG, u.path), ups: [] };
+      byPath.set(u.path, r);
+    }
+    r.ups.push(u);
+  }
+  for (const r of byPath.values()) {
+    let v = r.base;
+    for (const u of r.ups.slice().sort((a, b) => a.level - b.level)) {
+      if (typeof u.mul === 'number') v *= u.mul;
+      else if (typeof u.add === 'number') v += u.add;
+      else if (typeof u.set === 'number') v = u.set;
+    }
+    r.cap = v;
+    const info = PATH_INFO[r.path];
+    r.name = info[0]; r.unit = info[1]; r.group = info[2];
+  }
+  barRows = [...byPath.values()];
+  barRows.sort((a, b) => {
+    const g = BAR_GROUPS.indexOf(a.group) - BAR_GROUPS.indexOf(b.group);
+    return g !== 0 ? g : a.ups[0].level - b.ups[0].level;
+  });
+  return barRows;
+}
+
+/** Numbers a person can read. Not a formatter for scores — those roll and are huge. */
+function helpNum(v, unit) {
+  if (!Number.isFinite(v)) return '—';
+  const a = Math.abs(v);
+  let t;
+  if (a >= 100) t = String(Math.round(v));
+  else if (a >= 10) t = v.toFixed(1).replace(/\.0$/, '');
+  else if (a >= 1) t = v.toFixed(2).replace(/0$/, '').replace(/\.$/, '');
+  else t = v.toFixed(3).replace(/0$/, '');
+  return unit === '×' ? t + '×' : (unit ? t + ' ' + unit : t);
+}
+
+/** Greedy word wrap on measureText. Never splits a word. */
+function wrapText(c, text, maxW) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const lines = [];
+  let line = words[0];
+  for (let i = 1; i < words.length; i++) {
+    const t = line + ' ' + words[i];
+    if (c.measureText(t).width <= maxW) line = t;
+    else { lines.push(line); line = words[i]; }
+  }
+  lines.push(line);
+  return lines;
+}
+
+/* -- help state ------------------------------------------------------------- */
+
+const help = {
+  open: false,
+  t: 0,             // 0..1 open animation
+  section: null,    // null = contents
+  scroll: 0,
+  vel: 0,
+  drag: null,       // { id, lastY, moved, t0 }
+  hit: [],          // tappable rows laid out this frame: { x, y, w, h, act, arg }
+  demo: null,       // { row, t }
+  eraseHold: 0,
+  eraseDone: 0,
+};
+let helpCornerHold = 0;
+let helpCornerArmed = true;
+let helpBreadcrumb = 0;     // one-shot pulse on the help corner after the first level-up ever
+
+function helpUnit() {
+  const H = CFG.help;
+  return Math.max(H.unitMin, Math.min(H.unitMax, H.unit * cssW / 390));
+}
+
+function helpPanel() {
+  const H = CFG.help;
+  const w = Math.min(cssW - safe.l - safe.r - H.panelMargin * 2, H.panelMaxW);
+  const x = (cssW - w) / 2;
+  const y = safe.t + H.panelMargin;
+  const h = cssH - safe.b - H.panelMargin - y;
+  return { x, y, w, h };
+}
+
+function openHelp(sectionId, scrollTo) {
+  help.open = true;
+  help.section = sectionId || null;
+  help.scroll = scrollTo || 0;
+  help.vel = 0;
+  help.drag = null;
+  help.demo = null;
+  help.eraseHold = 0;
+  debugOn = false;
+  upgradeMenu.open = false;
+  clearAllFields();
+  if (!sim.seenHelp) { sim.seenHelp = true; writeSave(true); }
+}
+
+function closeHelp() {
+  help.open = false;
+  help.section = null;
+  help.demo = null;
+  help.drag = null;
+}
+
+/* -- the door: a hold in the bottom-right corner ---------------------------- */
+
+function updateHelpCorner(dt) {
+  const H = CFG.help;
+  if (helpBreadcrumb > 0) helpBreadcrumb = Math.max(0, helpBreadcrumb - dt);
+  if (help.open) { helpCornerHold = 0; helpCornerArmed = true; return; }
+  const s = H.cornerSize;
+  const x0 = cssW - safe.r - s, y0 = cssH - safe.b - s;
+  let inside = false;
+  for (const p of pointers.values()) {
+    if (p.x >= x0 && p.x <= x0 + s && p.y >= y0 && p.y <= y0 + s) inside = true;
+  }
+  if (!inside) { helpCornerHold = 0; helpCornerArmed = true; return; }
+  helpCornerHold += dt;
+  if (helpCornerArmed && helpCornerHold >= H.holdTime) {
+    helpCornerArmed = false;
+    // Clear the holding field rather than letting it sling: opening a menu must never
+    // also throw the orbit you happened to have gathered under your thumb.
+    clearAllFields();
+    openHelp(null, 0);
+  }
+}
+
+/** The filling ring under your fingertip, and the one-shot breadcrumb after your first level. */
+function drawHelpCorner(P) {
+  if (help.open) return;
+  const H = CFG.help;
+  const s = H.cornerSize;
+  const cx = cssW - safe.r - s * 0.5;
+  const cy = cssH - safe.b - s * 0.5;
+  const r = s * 0.34;
+  let k = -1;
+  if (helpCornerArmed && helpCornerHold > H.holdArcDelay) {
+    k = (helpCornerHold - H.holdArcDelay) / Math.max(1e-6, H.holdTime - H.holdArcDelay);
+  } else if (helpBreadcrumb > 0) {
+    // Not a progress arc — a slow breath, so it reads as an invitation and not as a countdown.
+    const a = Math.sin((1 - helpBreadcrumb / CFG.help.breadcrumbTime) * Math.PI * 3) * 0.5 + 0.5;
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = rgba(P.ring, 0.10 + 0.28 * a);
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = rgba(P.ring, 0.25 + 0.45 * a);
+    ctx.font = '600 ' + Math.round(r * 1.05) + 'px ' + CFG.render.fontStack;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('?', cx, cy + 1);
+    ctx.restore();
+    return;
+  }
+  if (k <= 0) return;
+  ctx.save();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = rgba(P.ring, 0.18);
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = rgba(P.ring, 0.85);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, k));
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* -- layout ----------------------------------------------------------------- */
+
+/**
+ * Turn a section into a flat list of draw ops plus a content height, ONCE.
+ *
+ * Cached by id and width. Re-measuring eight sections of prose and sixty stat rows every frame,
+ * for content that cannot change, is the single easiest way to ship a help screen that halves
+ * the frame budget on the device it is meant to help on.
+ */
+function layoutSection(id, w) {
+  const key = id + ':' + Math.round(w) + ':' + Math.round(helpUnit() * 4);
+  const hit = layoutCache.get(key);
+  if (hit) return hit;
+
+  const H = CFG.help;
+  const u = helpUnit();
+  const lh = u * H.lineHeight;
+  const pad = u * 0.95;
+  const iw = w - pad * 2;
+  const ops = [];
+  let y = 0;
+  const c = ctx;
+
+  const prose = (text, alpha, size) => {
+    c.font = '400 ' + (size || u * 0.92) + 'px ' + CFG.render.fontStack;
+    for (const ln of wrapText(c, text, iw)) {
+      ops.push({ op: 'text', x: pad, y, s: ln, size: size || u * 0.92, weight: '400', col: 'hud', a: alpha });
+      y += lh;
+    }
+    y += lh * 0.35;
+  };
+
+  if (id === null || id === 'contents') {
+    y += u * 0.5;
+    for (const sec of HELP) {
+      ops.push({ op: 'rowbg', x: pad * 0.4, y, w: w - pad * 0.8, h: H.rowH - 6 });
+      ops.push({ op: 'text', x: pad, y: y + H.rowH * 0.20, s: sec.title, size: u, weight: '600', col: 'hud', a: 0.95 });
+      ops.push({ op: 'text', x: pad, y: y + H.rowH * 0.56, s: sec.gloss, size: u * 0.85, weight: '400', col: 'hud', a: 0.6 });
+      ops.push({ op: 'hit', x: 0, y, w, h: H.rowH, act: 'section', arg: sec.id });
+      y += H.rowH;
+    }
+    y += u;
+    const out = { ops, height: y };
+    layoutCache.set(key, out);
+    return out;
+  }
+
+  const sec = HELP.find((s) => s.id === id);
+  if (!sec) return { ops: [], height: 0 };
+
+  for (const b of sec.blocks) {
+    if (b.kind === 'prose') { prose(b.text, 0.78); }
+
+    else if (b.kind === 'note') {
+      if (!b.text) continue;
+      c.font = '400 ' + (u * 0.85) + 'px ' + CFG.render.fontStack;
+      y += lh * 0.3;
+      for (const ln of wrapText(c, b.text, iw)) {
+        ops.push({ op: 'text', x: pad, y, s: ln, size: u * 0.85, weight: '400', col: 'hudDim', a: 0.9 });
+        y += u * 1.35;
+      }
+      y += lh * 0.4;
+    }
+
+    else if (b.kind === 'row') {
+      ops.push({ op: 'text', x: pad, y, s: b.name, size: u, weight: '600', col: 'hud', a: 0.95 });
+      y += lh * 1.05;
+      prose(b.text, 0.74);
+      y += lh * 0.15;
+    }
+
+    else if (b.kind === 'orb') {
+      const sw = u * 0.85;
+      ops.push({ op: 'swatch', x: pad + sw * 0.6, y: y + u * 0.42, r: sw * 0.55, type: b.type });
+      ops.push({ op: 'text', x: pad + sw * 1.7, y, s: b.type, size: u * 0.95, weight: '600', col: 'type', type: b.type, a: 1 });
+      y += lh * 1.05;
+      c.font = '400 ' + (u * 0.9) + 'px ' + CFG.render.fontStack;
+      for (const ln of wrapText(c, b.text, iw - sw * 1.7)) {
+        ops.push({ op: 'text', x: pad + sw * 1.7, y, s: ln, size: u * 0.9, weight: '400', col: 'hud', a: 0.74 });
+        y += lh;
+      }
+      y += lh * 0.3;
+    }
+
+    else if (b.kind === 'bars') {
+      let group = '';
+      for (const r of foldUpgrades()) {
+        if (r.group !== group) {
+          group = r.group;
+          y += u * 0.6;
+          ops.push({ op: 'text', x: pad, y, s: group, size: u * 0.8, weight: '600', col: 'hudDim', a: 0.95, upper: true });
+          y += u * 1.5;
+        }
+        ops.push({ op: 'bar', x: pad, y, w: iw, row: r });
+        ops.push({ op: 'hit', x: 0, y, w, h: H.barRowH, act: 'demo', arg: r.path });
+        y += H.barRowH;
+      }
+      y += u;
+    }
+
+    else if (b.kind === 'worlds') {
+      ops.push({ op: 'text', x: pad, y, s: 'colour worlds', size: u * 0.8, weight: '600', col: 'hudDim', a: 0.95, upper: true });
+      y += u * 1.6;
+      const per = Math.max(2, Math.floor(iw / (u * 5.2)));
+      const cw = iw / per;
+      const chH = u * 3.2;
+      for (let i = 0; i < BASE_CONFIG.palettes.length; i++) {
+        const col = i % per, row = Math.floor(i / per);
+        ops.push({ op: 'world', x: pad + col * cw, y: y + row * chH, w: cw - u * 0.35, h: chH - u * 0.5, i });
+      }
+      y += Math.ceil(BASE_CONFIG.palettes.length / per) * chH + u * 0.2;
+      prose('Every few levels unlocks one forever. The screen drifts between the ones you own.', 0.55, u * 0.85);
+    }
+
+    else if (b.kind === 'earned') {
+      ops.push({ op: 'text', x: pad, y, s: 'earned', size: u * 0.8, weight: '600', col: 'hudDim', a: 0.95, upper: true });
+      y += u * 1.6;
+      ops.push({ op: 'earned', x: pad, y, w: iw, u });
+      // Height is resolved at draw time against the live save, so reserve from the live count.
+      const owned = sim.appliedUpgrades ? sim.appliedUpgrades.size : 0;
+      y += (Math.min(owned, 99) + 1) * (u * 2.5);
+      prose('What is coming is not listed. It arrives when it arrives.', 0.55, u * 0.85);
+    }
+
+    else if (b.kind === 'stats') {
+      ops.push({ op: 'stats', x: pad, y, w: iw, u });
+      y += 8 * (u * 2.0) + u;
+    }
+
+    else if (b.kind === 'erase') {
+      y += u * 0.8;
+      ops.push({ op: 'erase', x: pad, y, w: iw, h: u * 2.2 });
+      ops.push({ op: 'hit', x: 0, y, w, h: u * 2.2, act: 'erase' });
+      y += u * 3.4;
+      ops.push({ op: 'text', x: pad, y, s: '99 upgrades · ' + BASE_CONFIG.palettes.length
+        + ' colour worlds · 8 kinds of orb', size: u * 0.8, weight: '400', col: 'hudDim', a: 0.85 });
+      y += u * 2;
+    }
+  }
+  const out = { ops, height: y + u };
+  layoutCache.set(key, out);
+  return out;
+}
+
+/* -- drawing ---------------------------------------------------------------- */
+
+function helpColour(P, op) {
+  if (op.col === 'hudDim') return P.hudDim;
+  if (op.col === 'type') return op.type === 'ORB' ? P.orbHues[0] : (P.type[op.type] || P.hud);
+  return P.hud;
+}
+
+function formatPlayed(sec) {
+  const s = Math.max(0, Math.floor(sec));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h > 0 ? h + 'h ' + m + 'm' : m + 'm ' + (s % 60) + 's';
+}
+
+function drawHelp(P, dt) {
+  const H = CFG.help;
+  const e = help.t;
+  if (e <= 0.001) return;
+  const pan = helpPanel();
+  const u = helpUnit();
+  const slide = (1 - e) * 16;
+
+  ctx.save();
+  // No shadow inside the sheet: the HUD needs its halo because it floats over bright orbs with
+  // nothing to sit on. The sheet IS something to sit on, and a blur on forty lines of list is
+  // pure waste on the device this is meant to run well on.
+  ctx.shadowBlur = 0;
+  const sheetA = help.demo ? (H.demoSheetAlpha + (1 - H.demoSheetAlpha) * (1 - help.demoFadeK)) : 1;
+  ctx.fillStyle = 'rgba(0,0,0,' + (H.veilAlpha * e * sheetA) + ')';
+  ctx.fillRect(0, 0, cssW, cssH);
+  ctx.globalAlpha = e * sheetA;
+  ctx.translate(0, slide);
+
+  ctx.fillStyle = 'rgba(0,0,0,' + H.sheetAlpha + ')';
+  roundRect(ctx, pan.x, pan.y, pan.w, pan.h, 14);
+  ctx.fill();
+  ctx.strokeStyle = rgba(P.ring, 0.30);
+  ctx.lineWidth = 1;
+  roundRect(ctx, pan.x + 0.5, pan.y + 0.5, pan.w - 1, pan.h - 1, 14);
+  ctx.stroke();
+
+  // --- header, pinned -------------------------------------------------------
+  const sec = help.section ? HELP.find((s) => s.id === help.section) : null;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '600 ' + (u * 1.05) + 'px ' + CFG.render.fontStack;
+  ctx.fillStyle = rgba(P.hud, 0.95);
+  ctx.fillText(sec ? sec.title : 'help', pan.x + pan.w / 2, pan.y + H.headerH / 2);
+  ctx.strokeStyle = rgba(P.hudDim, 0.35);
+  ctx.beginPath();
+  ctx.moveTo(pan.x + u, pan.y + H.headerH);
+  ctx.lineTo(pan.x + pan.w - u, pan.y + H.headerH);
+  ctx.stroke();
+
+  help.hit.length = 0;
+  const back = { x: pan.x, y: pan.y, w: H.headerH, h: H.headerH };
+  const close = { x: pan.x + pan.w - H.headerH, y: pan.y, w: H.headerH, h: H.headerH };
+  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = rgba(P.hud, 0.7);
+  if (sec) {
+    const bx = back.x + H.headerH * 0.55, by = back.y + H.headerH / 2;
+    ctx.beginPath();
+    ctx.moveTo(bx + 4, by - 6); ctx.lineTo(bx - 3, by); ctx.lineTo(bx + 4, by + 6);
+    ctx.stroke();
+    help.hit.push({ ...back, act: 'back' });
+  }
+  const kx = close.x + H.headerH / 2, ky = close.y + H.headerH / 2;
+  ctx.beginPath();
+  ctx.moveTo(kx - 6, ky - 6); ctx.lineTo(kx + 6, ky + 6);
+  ctx.moveTo(kx + 6, ky - 6); ctx.lineTo(kx - 6, ky + 6);
+  ctx.stroke();
+  help.hit.push({ ...close, act: 'close' });
+
+  // --- body, clipped and scrolled -------------------------------------------
+  const bodyY = pan.y + H.headerH;
+  const bodyH = pan.h - H.headerH;
+  const lay = layoutSection(help.section, pan.w);
+  help.maxScroll = Math.max(0, lay.height - bodyH + u);
+
+  ctx.save();
+  roundRect(ctx, pan.x, bodyY, pan.w, bodyH, 2);
+  ctx.clip();
+  ctx.translate(pan.x, bodyY - help.scroll + u * 0.6);
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  for (const op of lay.ops) {
+    // Cull anything scrolled out of view — the upgrades section is over a thousand ops long.
+    const oy = op.y - help.scroll + u * 0.6;
+    if (oy > bodyH + 80 || oy < -140) {
+      if (op.op === 'hit') continue;
+      if (op.op !== 'earned' && op.op !== 'stats') continue;
+    }
+    drawHelpOp(P, op, u, pan, bodyY, bodyH);
+  }
+  ctx.restore();
+
+  // scroll indicator
+  if (help.maxScroll > 1) {
+    const frac = bodyH / (bodyH + help.maxScroll);
+    const th = Math.max(24, bodyH * frac);
+    const tt = bodyY + (bodyH - th) * Math.max(0, Math.min(1, help.scroll / help.maxScroll));
+    ctx.fillStyle = rgba(P.hudDim, 0.35 * Math.min(1, help.scrollGlow || 0));
+    roundRect(ctx, pan.x + pan.w - 5, tt, 2.5, th, 1.25);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawHelpOp(P, op, u, pan, bodyY, bodyH) {
+  const H = CFG.help;
+  switch (op.op) {
+    case 'text': {
+      ctx.font = op.weight + ' ' + op.size + 'px ' + CFG.render.fontStack;
+      ctx.fillStyle = rgba(helpColour(P, op), op.a);
+      ctx.fillText(op.upper ? op.s.toUpperCase() : op.s, op.x, op.y);
+      break;
+    }
+    case 'rowbg': {
+      ctx.fillStyle = rgba(P.hudDim, 0.10);
+      roundRect(ctx, op.x, op.y, op.w, op.h, 8);
+      ctx.fill();
+      break;
+    }
+    case 'swatch': {
+      const unlocked = op.type === 'ORB' || sim.unlocked.indexOf(op.type) >= 0;
+      const col = op.type === 'ORB' ? P.orbHues[0] : (P.type[op.type] || P.hud);
+      ctx.beginPath();
+      ctx.arc(op.x, op.y, op.r, 0, 6.283);
+      if (unlocked) { ctx.fillStyle = rgba(col, 0.95); ctx.fill(); }
+      else { ctx.strokeStyle = rgba(P.hudDim, 0.7); ctx.lineWidth = 1.2; ctx.stroke(); }
+      break;
+    }
+    case 'bar': {
+      const r = op.row;
+      const cur = readPath(sim.config, r.path);
+      const owned = r.ups.filter((x) => sim.appliedUpgrades.has(x.id)).length;
+      const lo = Math.min(r.base, r.cap), hi = Math.max(r.base, r.cap);
+      const span = Math.max(1e-9, hi - lo);
+      const k = Math.max(0, Math.min(1, (cur - lo) / span));
+      ctx.font = '600 ' + (u * 0.92) + 'px ' + CFG.render.fontStack;
+      ctx.fillStyle = rgba(P.hud, 0.92);
+      ctx.fillText(r.name, op.x, op.y);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = rgba(P.ring, 0.95);
+      ctx.fillText(helpNum(cur, r.unit), op.x + op.w, op.y);
+      ctx.textAlign = 'left';
+      const by = op.y + u * 1.5;
+      const bw = op.w * 0.62;
+      ctx.fillStyle = rgba(P.hudDim, 0.30);
+      roundRect(ctx, op.x, by, bw, 2, 1); ctx.fill();
+      if (k > 0.001) {
+        ctx.fillStyle = rgba(P.ring, 0.9);
+        roundRect(ctx, op.x, by - 1, Math.max(4, bw * k), 4, 2); ctx.fill();
+      }
+      // One pip per contributing upgrade, lit if you own it. This is the row that says
+      // "you have two of the four things that ever touch this number".
+      const n = r.ups.length;
+      for (let i = 0; i < n; i++) {
+        const px = op.x + bw * ((i + 1) / n);
+        ctx.fillStyle = rgba(P.ring, sim.appliedUpgrades.has(r.ups[i].id) ? H.barPipAlpha : H.barPipAlphaLocked);
+        ctx.beginPath(); ctx.arc(px, by + 1.5, 2.1, 0, 6.283); ctx.fill();
+      }
+      ctx.font = '400 ' + (u * 0.78) + 'px ' + CFG.render.fontStack;
+      ctx.fillStyle = rgba(P.hudDim, 0.9);
+      ctx.textAlign = 'right';
+      ctx.fillText(owned + '/' + n + '   ' + helpNum(r.base, '') + ' → ' + helpNum(r.cap, ''), op.x + op.w, by - 2);
+      ctx.textAlign = 'left';
+      break;
+    }
+    case 'world': {
+      const pal = BASE_CONFIG.palettes[op.i];
+      const unlocked = op.i < sim.palettesUnlocked;
+      const a = unlocked ? 1 : H.swatchLockedAlpha;
+      ctx.globalAlpha *= a;
+      ctx.fillStyle = pal.bg1;
+      roundRect(ctx, op.x, op.y, op.w, op.h * 0.62, 6); ctx.fill();
+      ctx.strokeStyle = rgba(pal.ring, 0.9);
+      ctx.lineWidth = 1;
+      roundRect(ctx, op.x + 0.5, op.y + 0.5, op.w - 1, op.h * 0.62 - 1, 6); ctx.stroke();
+      // Three dots of the world's own orb hues, so a chip is a sample and not just a rectangle.
+      for (let d = 0; d < 3; d++) {
+        ctx.fillStyle = pal.orbHues[d % pal.orbHues.length];
+        ctx.beginPath();
+        ctx.arc(op.x + op.w * (0.28 + d * 0.22), op.y + op.h * 0.31, Math.max(1.6, op.w * 0.05), 0, 6.283);
+        ctx.fill();
+      }
+      if (unlocked && palette.cur && pal.name === palette.cur.name) {
+        ctx.strokeStyle = rgba(P.hud, 0.85);
+        ctx.lineWidth = 1.6;
+        roundRect(ctx, op.x - 1.5, op.y - 1.5, op.w + 3, op.h * 0.62 + 3, 7); ctx.stroke();
+      }
+      ctx.font = '400 ' + (u * 0.66) + 'px ' + CFG.render.fontStack;
+      ctx.fillStyle = rgba(P.hud, unlocked ? 0.8 : 0.9);
+      ctx.fillText(unlocked ? pal.name : 'locked', op.x, op.y + op.h * 0.68);
+      ctx.globalAlpha /= a;
+      break;
+    }
+    case 'earned': {
+      // Owned upgrades, newest first, plus exactly one locked row: the next. The remaining
+      // levels are not enumerated — a toy that keeps its secrets should not publish a schedule.
+      const owned = (BASE_CONFIG.upgrades || []).filter((x) => sim.appliedUpgrades.has(x.id))
+        .sort((a, b) => b.level - a.level);
+      const next = (BASE_CONFIG.upgrades || []).filter((x) => !sim.appliedUpgrades.has(x.id))
+        .sort((a, b) => a.level - b.level)[0];
+      let y = op.y;
+      const line = u * 2.5;
+      if (next) {
+        ctx.fillStyle = rgba(P.ring, 0.55);
+        ctx.fillRect(op.x - u * 0.45, y, 2, u * 1.8);
+        ctx.font = '600 ' + (u * 0.9) + 'px ' + CFG.render.fontStack;
+        ctx.fillStyle = rgba(P.hudDim, 0.95);
+        ctx.fillText('LV ' + next.level + '   ' + next.label, op.x, y);
+        ctx.font = '400 ' + (u * 0.78) + 'px ' + CFG.render.fontStack;
+        ctx.fillStyle = rgba(P.hudDim, 0.8);
+        ctx.fillText('next', op.x + op.w - ctx.measureText('next').width, y + 1);
+        y += line;
+      }
+      for (const up of owned) {
+        ctx.font = '600 ' + (u * 0.9) + 'px ' + CFG.render.fontStack;
+        ctx.fillStyle = rgba(upgradeTint(P, up), 0.95);
+        ctx.fillText('LV ' + up.level + '   ' + up.label, op.x, y);
+        ctx.font = '400 ' + (u * 0.78) + 'px ' + CFG.render.fontStack;
+        ctx.fillStyle = rgba(P.hud, 0.6);
+        ctx.fillText(up.note, op.x, y + u * 1.15);
+        y += line;
+      }
+      break;
+    }
+    case 'stats': {
+      const rows = [
+        ['level', sim.atLevelCap ? sim.level + ' of ' + CFG.levels.cap + ' — max' : sim.level + ' of ' + CFG.levels.cap],
+        ['lifetime score', formatScore(sim.score)],
+        ['best combo', formatScore(sim.bestCombo)],
+        ['stars in your sky', String(sky.stars.length)],
+        ['comets broken', String(sim.cometsBroken || 0)],
+        ['upgrades earned', sim.appliedUpgrades.size + ' of 99'],
+        ['time played', formatPlayed(sim.time)],
+        ['this world', palette.cur ? palette.cur.name : '—'],
+      ];
+      let y = op.y;
+      for (const [k, v] of rows) {
+        ctx.font = '400 ' + (u * 0.92) + 'px ' + CFG.render.fontStack;
+        ctx.fillStyle = rgba(P.hud, 0.72);
+        ctx.fillText(k, op.x, y);
+        ctx.textAlign = 'right';
+        ctx.font = '600 ' + (u * 0.98) + 'px ' + CFG.render.fontStack;
+        ctx.fillStyle = rgba(P.ring, 0.95);
+        ctx.fillText(v, op.x + op.w, y);
+        ctx.textAlign = 'left';
+        y += u * 2.0;
+      }
+      break;
+    }
+    case 'erase': {
+      const k = Math.min(1, help.eraseHold / CFG.help.eraseHoldTime);
+      ctx.fillStyle = 'rgba(120,20,20,0.55)';
+      roundRect(ctx, op.x, op.y, op.w, op.h, 8); ctx.fill();
+      if (k > 0) {
+        ctx.save();
+        roundRect(ctx, op.x, op.y, op.w, op.h, 8); ctx.clip();
+        ctx.fillStyle = 'rgba(255,70,70,0.85)';
+        ctx.fillRect(op.x, op.y, op.w * k, op.h);
+        ctx.restore();
+      }
+      ctx.font = '600 ' + (u * 0.88) + 'px ' + CFG.render.fontStack;
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.textAlign = 'center';
+      ctx.fillText(help.eraseDone > 0 ? 'erased. this is a first run again.' : 'hold to erase everything',
+        op.x + op.w / 2, op.y + op.h * 0.32);
+      ctx.textAlign = 'left';
+      break;
+    }
+    default: break;
+  }
+}
+
+/* -- input ------------------------------------------------------------------
+ * Intercepted at ALL THREE pointer hooks, not just the first. Catching only pointerdown means a
+ * fast reader's flick still feeds gestureMoved, the double-tap window and the scatter counter,
+ * and the toy underneath quietly reacts to a thumb that was reading a help page.
+ */
+
+function helpDown(x, y) {
+  if (!help.open) return false;
+  const pan = helpPanel();
+  const H = CFG.help;
+  // Outside the sheet closes it.
+  if (x < pan.x || x > pan.x + pan.w || y < pan.y || y > pan.y + pan.h) { closeHelp(); return true; }
+  for (const h of help.hit) {
+    if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
+      if (h.act === 'close') closeHelp();
+      else if (h.act === 'back') { help.section = null; help.scroll = 0; help.vel = 0; }
+      return true;
+    }
+  }
+  help.drag = { id: -1, lastY: y, y0: y, moved: 0, tapY: y, hitAct: null, hitArg: null };
+  // Which content row is under the finger, resolved now and only acted on if this turns out
+  // to be a tap rather than a scroll.
+  const bodyY = pan.y + H.headerH;
+  const u = helpUnit();
+  const lay = layoutSection(help.section, pan.w);
+  const ly = y - bodyY + help.scroll - u * 0.6;
+  for (const op of lay.ops) {
+    if (op.op !== 'hit') continue;
+    if (ly >= op.y && ly <= op.y + op.h) { help.drag.hitAct = op.act; help.drag.hitArg = op.arg; break; }
+  }
+  help.vel = 0;
+  return true;
+}
+
+function helpMove(x, y) {
+  if (!help.open || !help.drag) return help.open;
+  const d = help.drag;
+  const dy = y - d.lastY;
+  d.lastY = y;
+  d.moved += Math.abs(dy);
+  if (d.moved > 6) {
+    const over = help.scroll < 0 || help.scroll > help.maxScroll;
+    help.scroll -= dy * (over ? CFG.help.overscroll : 1);
+    help.vel = -dy * 60;
+    help.scrollGlow = 1;
+  } else if (d.hitAct === 'erase') {
+    // stay put: the erase target is a hold, not a drag
+  }
+  return true;
+}
+
+function helpUp() {
+  if (!help.open) return false;
+  const d = help.drag;
+  help.drag = null;
+  if (!d) return true;
+  if (d.moved <= 6) {
+    if (d.hitAct === 'section') { help.section = d.hitArg; help.scroll = 0; help.vel = 0; layoutCache.clear(); }
+    else if (d.hitAct === 'demo') startDemo(d.hitArg);
+  } else if (Math.abs(help.vel) < CFG.help.flickMin) {
+    help.vel = 0;
+  }
+  help.eraseHold = 0;
+  return true;
+}
+
+function updateHelp(dt) {
+  const H = CFG.help;
+  const want = help.open ? 1 : 0;
+  const step = dt / Math.max(1e-6, H.openTime);
+  help.t += Math.max(-step, Math.min(step, want - help.t));
+  if (!help.open) { help.eraseHold = 0; return; }
+
+  // Momentum, then a spring back out of overscroll.
+  if (!help.drag) {
+    help.scroll += help.vel * dt;
+    help.vel -= help.vel * Math.min(1, H.scrollFriction * dt);
+    if (Math.abs(help.vel) < 4) help.vel = 0;
+    if (help.scroll < 0) { help.scroll += (0 - help.scroll) * Math.min(1, H.overscrollSpring * dt); help.vel = 0; }
+    else if (help.scroll > help.maxScroll) {
+      help.scroll += (help.maxScroll - help.scroll) * Math.min(1, H.overscrollSpring * dt);
+      help.vel = 0;
+    }
+  }
+  help.scrollGlow = Math.max(0, (help.scrollGlow || 0) - dt / 0.8);
+
+  // Hold-to-erase, only while a finger is actually sitting on the target.
+  let onErase = false;
+  if (help.drag && help.drag.hitAct === 'erase' && help.drag.moved <= 6) onErase = true;
+  if (onErase) {
+    help.eraseHold += dt;
+    if (help.eraseHold >= H.eraseHoldTime && help.eraseDone === 0) {
+      wipeSave();
+      resetToLevelOne();
+      help.eraseDone = 0.001;
+      layoutCache.clear();
+    }
+  } else {
+    help.eraseHold = 0;
+  }
+  if (help.eraseDone > 0) { help.eraseDone += dt; if (help.eraseDone > 3) help.eraseDone = 0; }
+
+  // A demonstration playing over the live toy.
+  if (help.demo) {
+    help.demo.t += dt;
+    const k = help.demo.t / H.demoTime;
+    help.demoFadeK = k < 0.5 ? Math.min(1, help.demo.t / H.demoFade)
+      : Math.min(1, (H.demoTime - help.demo.t) / H.demoFade);
+    if (help.demo.t >= H.demoTime) { help.demo = null; help.demoFadeK = 0; }
+  } else {
+    help.demoFadeK = 0;
+  }
+}
+
+/**
+ * Show me, do not tell me.
+ *
+ * The one legibility pattern this game already had that worked was the tap pulse: the event
+ * carries its radius and the renderer draws exactly that, so you can see what WIDE PULSE bought.
+ * A tapped row plays the same trick on demand — the player asks the question at the moment they
+ * have it, and gets it answered at true size on a quiet screen.
+ */
+function startDemo(path) {
+  const row = foldUpgrades().find((r) => r.path === path);
+  if (!row) return;
+  help.demo = { row, t: 0 };
+  help.demoFadeK = 0;
+}
+
+function drawDemo(P) {
+  if (!help.demo) return;
+  const H = CFG.help;
+  const r = help.demo.row;
+  const cur = readPath(sim.config, r.path);
+  const base = r.base;
+  const k = Math.min(1, help.demo.t / H.demoTime);
+  const cx = cssW / 2, cy = cssH * 0.5;
+  const a = Math.sin(Math.min(1, k * 1.15) * Math.PI) * 0.95;
+  if (a <= 0.01) return;
+
+  ctx.save();
+  ctx.lineWidth = 1.6 * scale();
+  // Anything measured in pixels is drawn AT that many pixels. Everything else is drawn as a
+  // pair of arcs whose lengths are in proportion, which is the honest picture of a multiplier.
+  if (r.unit === 'px') {
+    const s = scale();
+    ctx.strokeStyle = rgba(P.hudDim, a * 0.55);
+    ctx.beginPath(); ctx.arc(cx, cy, Math.max(2, base * s), 0, 6.283); ctx.stroke();
+    ctx.strokeStyle = rgba(P.ring, a);
+    ctx.beginPath(); ctx.arc(cx, cy, Math.max(2, cur * s), 0, 6.283); ctx.stroke();
+  } else {
+    const R = Math.min(cssW, cssH) * 0.3;
+    const span = Math.max(1e-9, Math.max(base, cur, r.cap));
+    ctx.strokeStyle = rgba(P.hudDim, a * 0.55);
+    ctx.beginPath(); ctx.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + 6.283 * (base / span)); ctx.stroke();
+    ctx.lineWidth = 4 * scale();
+    ctx.strokeStyle = rgba(P.ring, a);
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.92, -Math.PI / 2, -Math.PI / 2 + 6.283 * (cur / span)); ctx.stroke();
+  }
+  // The caption draws over the bare scene, so it keeps the HUD's halo.
+  ctx.shadowColor = 'rgba(0,0,0,0.75)';
+  ctx.shadowBlur = 9;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const u = helpUnit();
+  ctx.font = '600 ' + (u * 1.15) + 'px ' + CFG.render.fontStack;
+  ctx.fillStyle = rgba(P.hud, a);
+  ctx.fillText(r.name, cx, cssH * 0.82);
+  ctx.font = '600 ' + (u * 0.95) + 'px ' + CFG.render.fontStack;
+  ctx.fillStyle = rgba(P.ring, a);
+  ctx.fillText(helpNum(base, r.unit) + '  →  ' + helpNum(cur, r.unit), cx, cssH * 0.82 + u * 1.6);
+  ctx.restore();
+}
+
 /* ---- debug overlay -------------------------------------------------------- */
 
 const wipeRect = { x: 0, y: 0, w: 0, h: 0 };
@@ -2487,6 +3469,8 @@ function render(dt) {
   updateEffects(dt);
   updateWipe(dt);
   updateDebugCorner(dt);
+  updateHelpCorner(dt);
+  updateHelp(dt);
   if (lv1Done > 0) { lv1Done += dt; if (lv1Done > 1.6) lv1Done = 0; }
   adaptQuality();
 
@@ -2569,9 +3553,12 @@ function render(dt) {
   ctx.restore();
 
   // The two debug panels occupy the same corner, so only one shows at a time.
-  if (debugOn && !upgradeMenu.open) drawDebug(P, physMs, fps);
-  drawDebugCorner(P);
-  if (upgradeMenu.open) drawUpgradeMenu(P);
+  if (debugOn && !upgradeMenu.open && !help.open) drawDebug(P, physMs, fps);
+  if (!help.open) drawDebugCorner(P);
+  if (upgradeMenu.open && !help.open) drawUpgradeMenu(P);
+  drawHelpCorner(P);
+  drawDemo(P);
+  drawHelp(P, dt);
 }
 
 /* ========================================================================== */
@@ -2631,6 +3618,11 @@ try {
       return !!up;
     },
     grantLevels,
+    help,
+    openHelp(id) { openHelp(id || null, 0); },
+    closeHelp() { closeHelp(); },
+    helpSections() { return HELP.map((h) => h.id); },
+    get seenHelp() { return sim.seenHelp === true; },
     menu(open) { upgradeMenu.open = open !== false; debugOn = debugOn || upgradeMenu.open; },
     // The menu's live hit-boxes, so an automated check can press the same pixels a thumb would.
     get menuState() {
