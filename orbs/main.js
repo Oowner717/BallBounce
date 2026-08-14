@@ -116,7 +116,6 @@ function wipeSave() {
     hintFade = 0;
     displayScore = 0;
     sky = deriveStars(defaultSave(CONFIG), CONFIG);
-    skyDirty = true;
     palette.cur = null;
     palette.from = palette.to = 0;
     palette.t = 0;
@@ -302,7 +301,6 @@ function resizeLayers() {
   rebuildBloom();
 
   if (sim) simResize(sim, cssW, cssH);
-  skyDirty = true;
 }
 
 function rebuildBloom() {
@@ -332,7 +330,6 @@ const sim = createSim({
 });
 
 let sky = deriveStars(savedState, CONFIG);
-let skyDirty = true;
 
 resizeLayers();
 
@@ -501,8 +498,7 @@ function consumeEvents(P) {
         addFlash(0.18);
         addShake(5 * scale());
         sky = deriveStars(serializeSave(sim), CONFIG);
-        skyDirty = true;
-        writeSave(true);
+            writeSave(true);
         break;
       case 'filigree':
         celebrate('', 'combo record', false);
@@ -1292,7 +1288,7 @@ function drawDebug(P, physMs, fps) {
   for (const l of lines) maxW = Math.max(maxW, ctx.measureText(l).width);
 
   const errLines = errorBuffer.length
-    ? errorBuffer.slice(-6).map((e) => e.kind + ': ' + e.msg + (e.count > 1 ? ' (x' + e.count + ')' : ''))
+    ? errorBuffer.slice(-6).map((e) => '#' + e.n + ' ' + e.kind + ': ' + e.msg + (e.count > 1 ? ' (x' + e.count + ')' : ''))
     : ['errors: none'];
   for (const l of errLines) maxW = Math.max(maxW, ctx.measureText(l).width);
 
