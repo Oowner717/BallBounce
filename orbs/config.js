@@ -710,6 +710,12 @@ export const CONFIG = {
     driftPeriod: 95,          // s. Time to drift from one unlocked palette to the next.
     driftHold: 45,            // s. Time spent settled on a palette before drifting again.
     driftOnlyWhenCalm: false, // If true, drift pauses during FRENZY. Off: drift is slow enough to hide.
+    typeSeparation: 45,       // Minimum redmean colour distance between any two ball colours in a
+                              // palette (the seven named types plus the base orb hue). Enforced by
+                              // a test. Shipped worlds had CHAIN byte-identical to the orb hue in
+                              // Solar and two types identical in Monochrome: a whole ball type you
+                              // could not see was a ball type. Raising this number is a design
+                              // decision; lowering it to make a palette pass is not.
   },
 
   palettes: [
@@ -719,8 +725,8 @@ export const CONFIG = {
       hud: '#ffd9b0', hudDim: '#a6704e', ring: '#ff9a4d', star: '#ffd9a8',
       orbHues: ['#ff8a3d', '#ffb703', '#ff5f45', '#ffd08a'],
       type: {
-        VOLATILE: '#ff4d2e', SPLITTER: '#ffb703', MAGNET: '#ff8fa3',
-        PRISM: '#ffe6b0', CHAIN: '#ffd166', FROST: '#9fd8e0', GOLD: '#ffe066',
+        VOLATILE: '#ff2f14', SPLITTER: '#ffb703', MAGNET: '#ff8fa3',
+        PRISM: '#ffe6b0', CHAIN: '#b6f36a', FROST: '#9fd8e0', GOLD: '#ffe066',
       },
     },
     {
@@ -730,7 +736,7 @@ export const CONFIG = {
       orbHues: ['#38bdf8', '#22d3ee', '#5eead4', '#7dd3fc'],
       type: {
         VOLATILE: '#ff6b6b', SPLITTER: '#67e8f9', MAGNET: '#a78bfa',
-        PRISM: '#ccfbf1', CHAIN: '#7dd3fc', FROST: '#e0f2fe', GOLD: '#ffd24a',
+        PRISM: '#fff4d8', CHAIN: '#b8f36a', FROST: '#e0f2fe', GOLD: '#ffd24a',
       },
     },
     {
@@ -739,7 +745,7 @@ export const CONFIG = {
       hud: '#d7ffe9', hudDim: '#5f8f78', ring: '#5eead4', star: '#d9ffe8',
       orbHues: ['#4ade80', '#2dd4bf', '#a78bfa', '#86efac'],
       type: {
-        VOLATILE: '#fb7185', SPLITTER: '#86efac', MAGNET: '#c084fc',
+        VOLATILE: '#fb7185', SPLITTER: '#eaff8a', MAGNET: '#c084fc',
         PRISM: '#ecfeff', CHAIN: '#5eead4', FROST: '#cffafe', GOLD: '#fde047',
       },
     },
@@ -754,13 +760,16 @@ export const CONFIG = {
       },
     },
     {
-      name: 'Monochrome',     // Pure light on pure dark. The calmest world.
+      name: 'Monochrome',     // Pure light on pure dark. The calmest world. Orbs stay grey so the
+                              // mood holds; each named type carries the minimum whisper of hue
+                              // that tells it apart. PRISM keeps pure white — it is the
+                              // all-colours ball, and the only pure white left on screen.
       bg0: '#050505', bg1: '#101012', fog: '#9aa0a6',
       hud: '#f2f2f2', hudDim: '#7a7a7a', ring: '#e6e6e6', star: '#ffffff',
-      orbHues: ['#f5f5f5', '#c9c9c9', '#9e9e9e', '#e0e0e0'],
+      orbHues: ['#d8d8d8', '#b4b4b4', '#8e8e8e', '#c6c6c6'],
       type: {
-        VOLATILE: '#ffffff', SPLITTER: '#d4d4d4', MAGNET: '#b0b0b0',
-        PRISM: '#ffffff', CHAIN: '#e8e8e8', FROST: '#f0f6ff', GOLD: '#fff3c4',
+        VOLATILE: '#ffb4a2', SPLITTER: '#9fb4c8', MAGNET: '#c3a8e0',
+        PRISM: '#ffffff', CHAIN: '#8fd4bf', FROST: '#8ec8ff', GOLD: '#ffe08a',
       },
     },
     {
@@ -770,7 +779,7 @@ export const CONFIG = {
       orbHues: ['#ffd166', '#ff9f1c', '#fff3b0', '#ff7b00'],
       type: {
         VOLATILE: '#ff3d00', SPLITTER: '#ffb703', MAGNET: '#ff9e80',
-        PRISM: '#fffbe6', CHAIN: '#ffd166', FROST: '#cfe8ff', GOLD: '#fff08a',
+        PRISM: '#fffbe6', CHAIN: '#c86bff', FROST: '#cfe8ff', GOLD: '#fff08a',
       },
     },
     {
@@ -809,8 +818,8 @@ export const CONFIG = {
       hud: '#d6e6ff', hudDim: '#5b7699', ring: '#5b9cff', star: '#cfe0ff',
       orbHues: ['#3b7dff', '#5566ff', '#2a5fe8', '#8aa8ff'],
       type: {
-        VOLATILE: '#ff5a33', SPLITTER: '#2f6bff', MAGNET: '#b76bff',
-        PRISM: '#f0f6ff', CHAIN: '#00fff0', FROST: '#a9c8ff', GOLD: '#ffcf3d',
+        VOLATILE: '#ff5a33', SPLITTER: '#7cf5c8', MAGNET: '#b76bff',
+        PRISM: '#f0f6ff', CHAIN: '#00d0ff', FROST: '#a9c8ff', GOLD: '#ffcf3d',
       },
     },
     {

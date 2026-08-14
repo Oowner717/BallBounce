@@ -2015,7 +2015,10 @@ test('every config path the code reads actually exists in config.js', () => {
   // Match C.a.b / CONFIG.a.b / cfg.a.b chains. Only chains whose first segment is a real
   // top-level CONFIG section are resolved, so locals like `const C = sim.config.intensity`
   // (where C.riseTau is correct) are skipped rather than producing false alarms.
-  const re = /\b(?:C|CONFIG|cfg)((?:\.[A-Za-z_$][\w$]*)+)/g;
+  // `CFG` is in the list because main.js reads the whole config through that alias: without it
+  // the scanner matched 182 paths in sim.js and exactly zero in main.js, leaving every renderer
+  // config read unchecked — which is the half of the codebase the original bug would now live in.
+  const re = /\b(?:C|CFG|CONFIG|cfg)((?:\.[A-Za-z_$][\w$]*)+)/g;
   const bad = [];
   const checked = new Set();
   let m;
@@ -2080,6 +2083,35 @@ test('every ball type has a complete definition and every palette covers every t
     for (const c of p.orbHues) assert.ok(/^#[0-9a-f]{6}$/i.test(c), 'palette ' + p.name + ' bad orb hue ' + c);
     for (const k of ['bg0', 'bg1', 'hud', 'hudDim', 'ring', 'star', 'fog']) {
       assert.ok(/^#[0-9a-f]{6}$/i.test(p[k]), 'palette ' + p.name + ' bad ' + k + ': ' + p[k]);
+    }
+  }
+});
+
+test('no two ball colours in a palette are too close to tell apart', () => {
+  // Solar shipped with CHAIN set to the exact same hex as its base orb hue, and Monochrome
+  // shipped with VOLATILE and PRISM both #ffffff. In those worlds a whole ball type was
+  // invisible AS a type — it looked like an ordinary orb, so nothing it did could be attributed
+  // to it. Nothing failed; the game just quietly lied about what was on screen.
+  //
+  // redmean: a cheap perceptual distance that weights green heavily and shifts red/blue weight
+  // by overall brightness. Good enough to catch "these are the same ball" without a colour lib.
+  const rgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const dist = (a, b) => {
+    const A = rgb(a), B = rgb(b), rm = (A[0] + B[0]) / 2;
+    const dr = A[0] - B[0], dg = A[1] - B[1], db = A[2] - B[2];
+    return Math.sqrt((2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db);
+  };
+  const min = CONFIG.paletteRules.typeSeparation;
+  for (const p of CONFIG.palettes) {
+    // The base orb hue is in the set: ORBs are the majority of the screen, so a named type that
+    // matches them is just as unreadable as two named types matching each other.
+    const cols = CONFIG.unlockOrder.map((k) => [k, p.type[k]]).concat([['ORB', p.orbHues[0]]]);
+    for (let i = 0; i < cols.length; i++) {
+      for (let j = i + 1; j < cols.length; j++) {
+        const d = dist(cols[i][1], cols[j][1]);
+        assert.ok(d >= min, 'palette ' + p.name + ': ' + cols[i][0] + ' (' + cols[i][1] + ') and '
+          + cols[j][0] + ' (' + cols[j][1] + ') are only ' + d.toFixed(1) + ' apart, need ' + min);
+      }
     }
   }
 });
