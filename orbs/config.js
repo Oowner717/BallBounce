@@ -373,9 +373,11 @@ export const CONFIG = {
   milestones: {
     // Lifetime-score milestones. Generated as m * 10^k for each mantissa, ascending.
     mantissas: [1, 1.6, 2.5, 4, 6.3],  // Five per decade, log-even: 10k, 16k, 25k, 40k, 63k, 100k...
-    startExp: 4,              // First decade: 10^4 = 10,000. Starting at 1,000 fired four
-                              // celebrations in the first fifteen seconds, which is not a milestone.
-    maxExp: 15,               // Last decade tracked: 10^15. Sixty rungs, so a regular can
+    startExp: 5,              // First decade: 10^5 = 100,000, reached around 30s of engaged play.
+                              // Starting lower fired four celebrations inside the first fifteen
+                              // seconds, on top of the first type unlock — which is not a
+                              // milestone, it is noise.
+    maxExp: 15,               // Last decade tracked: 10^15. Fifty-five rungs, so a regular can
                               // plausibly fill the 88-star sky over months (comets count too).
     celebrateTime: 2.8,       // s. Length of a milestone celebration.
     cometMilestone: true,     // Breaking a comet also counts as a milestone.
