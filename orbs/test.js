@@ -419,6 +419,77 @@ test('with gravity also zeroed, KE is monotonically non-increasing across every 
   assert.ok(windows[windows.length - 1] < windows[0] * 0.02, 'energy did not actually dissipate');
 });
 
+test('with drag almost off, a dense pack still cannot gain energy', () => {
+  // The monotonic test above runs at full drag, which can mask a slow positional-correction
+  // leak. Drop drag to near zero and pack the balls tightly: now the only things that can
+  // change the total are collisions, so a correction that pumps energy has nowhere to hide.
+  const sim = freshSim(Object.assign({}, ENERGY_OVERRIDES, {
+    'world.gravityY': 0, 'world.gravityX': 0, 'world.drag': 0.002, 'world.dragFrenzyScale': 1,
+  }), 8642);
+  const rng = makeRng(24);
+  for (const b of sim.balls) {
+    b.x = sim.width * 0.5 + rng.range(-60, 60);
+    b.y = sim.height * 0.5 + rng.range(-90, 90);
+    const a = rng.float() * Math.PI * 2;
+    const sp = 260 * sim.scale;
+    b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp;
+  }
+  let prev = totalKineticEnergy(sim);
+  const e0 = prev;
+  for (let i = 0; i < 3000; i++) {
+    step(sim, 1 / 60, null);
+    const e = totalKineticEnergy(sim);
+    // Allow only the tiniest numerical slack. Any real energy source shows up here.
+    if (e > prev * (1 + 1e-9) + 1e-9) {
+      assert.fail('kinetic energy rose at step ' + i + ': '
+        + prev.toExponential(6) + ' -> ' + e.toExponential(6)
+        + ' (positional correction or a collision impulse is creating energy)');
+    }
+    prev = e;
+  }
+  assert.ok(prev < e0, 'energy did not dissipate at all, so this test proves nothing');
+});
+
+test('positional correction cannot leak energy, even with dissipation switched off', () => {
+  // The brief names this test's purpose exactly: catch positional correction pumping energy
+  // in. That only shows up if dissipation cannot hide it — at ship restitution a small leak
+  // is swamped by the ~19% lost per bounce. So: restitution just under 1, drag ~0, gravity
+  // 0, and a pack dense enough that corrections fire constantly. Now the ONLY thing that can
+  // move the total is the collision solver, and it may only ever move it down.
+  const sim = freshSim(Object.assign({}, ENERGY_OVERRIDES, {
+    'world.gravityY': 0, 'world.gravityX': 0,
+    'world.drag': 0.0002, 'world.dragFrenzyScale': 1,
+    'world.wallRestitution': 0.999, 'world.wallFriction': 1,
+    'collision.restitution': 0.999, 'collision.restitutionFrenzy': 0.999,
+  }), 1357);
+  const rng = makeRng(864);
+  for (const b of sim.balls) {
+    // Deliberately overlapping, so the correction path runs on almost every pair.
+    b.x = sim.width * 0.5 + rng.range(-55, 55);
+    b.y = sim.height * 0.5 + rng.range(-80, 80);
+    const a = rng.float() * Math.PI * 2;
+    const sp = 200 * sim.scale;
+    b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp;
+  }
+
+  const e0 = totalKineticEnergy(sim);
+  let peak = e0;
+  for (let i = 0; i < 4000; i++) {
+    step(sim, 1 / 60, null);
+    const e = totalKineticEnergy(sim);
+    if (e > peak) peak = e;
+    // With restitution < 1 and drag > 0 the total can only fall. Any sustained rise is the
+    // solver manufacturing energy.
+    if (e > e0 * 1.02) {
+      assert.fail('kinetic energy grew to ' + (100 * e / e0).toFixed(1) + '% of its start at step '
+        + i + ' — the collision solver is creating energy');
+    }
+  }
+  const eEnd = totalKineticEnergy(sim);
+  assert.ok(peak <= e0 * 1.02, 'peak energy reached ' + (100 * peak / e0).toFixed(1) + '% of the start');
+  assert.ok(eEnd < e0, 'energy did not dissipate at all (' + eEnd.toFixed(1) + ' vs ' + e0.toFixed(1) + ')');
+});
+
 test('a dense jam of overlapping balls relaxes instead of exploding', () => {
   // Positional correction's worst case: everything stacked on one point.
   const sim = freshSim(Object.assign({}, ENERGY_OVERRIDES, { 'world.gravityY': 0 }), 13);
@@ -451,6 +522,19 @@ test('forced splitting, repeatedly, never exceeds the hard cap', () => {
   const sim = freshSim(null, 1234);
   const cap = CONFIG.population.hardCap;
   for (let round = 0; round < 220; round++) {
+    // Reset every ball to full size and clear its cooldown first. Without this the minimum
+    // split radius stops the storm after a couple of rounds and the population manager
+    // trims the rest, so the cap guard is never actually put under pressure — deleting the
+    // guard outright would leave this test green, which is worse than having no test.
+    sim.softCap = cap;
+    for (const b of sim.balls) {
+      if (!b.alive) continue;
+      b.r = CONFIG.balls.radiusMax * sim.scale;
+      b.mass = CONFIG.balls.density * Math.pow(b.r, CONFIG.balls.densityExp);
+      b.invMass = 1 / b.mass;
+      b.splitT = 0;
+      b.effectT = 0;
+    }
     forceSplitAll(sim);
     // aliveCount is the population; balls.length also holds not-yet-compacted tombstones
     // until the end of the step, so it is only meaningful after step() has compacted.
@@ -674,9 +758,15 @@ test('a frozen ball detonated mid-freeze still ends up thawed (no stranded state
   b.frozenT = CONFIG.types.FROST.freezeTime;
   b.frozenFromX = a.x; b.frozenFromY = a.y;
   a.type = 'VOLATILE'; a.inertT = 0; a.effectT = 0;
+  assert.ok(b.frozenT > 0, 'the ball was not frozen to begin with');
   detonate(sim, a, 1);
+  // It must thaw BECAUSE of the blast, not because the freeze timer later expired anyway —
+  // asserting only the end state would pass even if the detonation did nothing at all.
+  assert.equal(b.frozenT, 0, 'the detonation did not shatter the frozen ball immediately');
+  assert.ok(sim.events.some((e) => e.type === 'shatter'), 'no shatter event from the nova');
+  assert.ok(b.immuneT > 0, 'a shattered ball should get its post-thaw immunity');
   for (let i = 0; i < Math.ceil((CONFIG.types.FROST.freezeTime + 0.5) * 60); i++) step(sim, 1 / 60, null);
-  if (b.alive) assert.equal(b.frozenT, 0, 'detonated frozen ball stayed frozen');
+  if (b.alive) assert.equal(b.frozenT, 0, 'detonated frozen ball re-froze or stayed frozen');
 });
 
 /* ========================================================================== */
@@ -1516,6 +1606,55 @@ test('slamming balls into a comet chips it, breaks it, and records a milestone',
 /* ========================================================================== */
 group('12. Config integrity');
 /* ========================================================================== */
+
+test("sim.js's purity contract is enforced, not just promised", () => {
+  // The determinism tests only cover whatever code paths a scripted run happens to reach.
+  // A Date.now() or Math.random() down a rare branch — a comet spawn, a resonance, an error
+  // path — would sail past them. This reads the source and refuses the constructs outright.
+  const src = readFileSync(new URL('./sim.js', import.meta.url), 'utf8');
+  // Strip comments and string literals so prose about Math.random does not trip it.
+  const code = src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``');
+
+  const forbidden = [
+    ['Math.random', /\bMath\s*\.\s*random\b/],
+    ['Date', /\bDate\b/],
+    ['performance', /\bperformance\b/],
+    ['document', /\bdocument\b/],
+    ['window', /\bwindow\b/],
+    ['globalThis', /\bglobalThis\b/],
+    ['navigator', /\bnavigator\b/],
+    ['localStorage', /\blocalStorage\b/],
+    ['requestAnimationFrame', /\brequestAnimationFrame\b/],
+    ['setTimeout', /\bsetTimeout\b/],
+    ['setInterval', /\bsetInterval\b/],
+    ['fetch', /\bfetch\b/],
+    ['canvas', /\bgetContext\b/],
+    ['process', /\bprocess\b/],
+    ['require', /\brequire\s*\(/],
+  ];
+  const hits = [];
+  for (const [name, re] of forbidden) {
+    const m = code.match(re);
+    if (m) {
+      const at = code.indexOf(m[0]);
+      hits.push(name + ' (near: ' + code.slice(Math.max(0, at - 40), at + 40).replace(/\s+/g, ' ').trim() + ')');
+    }
+  }
+  assert.deepEqual(hits, [], 'sim.js must be pure, but it references: ' + hits.join(' | '));
+
+  // And it must import nothing but config.js — no DOM shims, no helpers with side effects.
+  const imports = [...src.matchAll(/^\s*import[^;]*?from\s*'([^']+)'/gm)].map((m) => m[1]);
+  assert.deepEqual(imports, ['./config.js'], 'sim.js imports: ' + imports.join(', '));
+
+  // Sanity: the scanner must actually be looking at real code.
+  assert.ok(code.length > 20000, 'the purity scanner stripped too much (' + code.length + ' chars left)');
+  assert.ok(/function step\s*\(/.test(code), 'the purity scanner is not seeing sim.js source');
+});
 
 test('every config path the code reads actually exists in config.js', () => {
   // THE test this file was missing. `radiusGather` was declared under `field` while sim.js

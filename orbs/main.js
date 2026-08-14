@@ -120,6 +120,7 @@ function wipeSave() {
     displayScore = 0;
     sky = deriveStars(defaultSave(CONFIG), CONFIG);
     palette.cur = null;
+    palette.key = '';
     palette.from = palette.to = 0;
     palette.t = 0;
     softResetEffects();
@@ -212,7 +213,10 @@ function updatePalette(dt) {
   const A = CONFIG.palettes[Math.min(palette.from, CONFIG.palettes.length - 1)];
   const B = CONFIG.palettes[Math.min(palette.to, CONFIG.palettes.length - 1)];
   const key = palette.from + ':' + palette.to + ':' + Math.round(palette.t * 40);
-  if (key !== palette.key) {
+  // `|| !palette.cur` is load-bearing: a wipe resets from/to/t to values that can produce
+  // the SAME key, so a key-only check would never rebuild and every later frame would throw
+  // on a null palette — a permanently frozen screen with the sim still running underneath.
+  if (key !== palette.key || !palette.cur) {
     palette.key = key;
     palette.cur = blendPalettes(A, B, palette.t);
   }
@@ -350,6 +354,8 @@ let shake = 0;
 let celebration = null;    // { text, sub, t, life, big }
 let particleBudget = CONFIG.effects.maxParticles;
 
+let softResets = 0;
+
 function softResetEffects() {
   particles.length = 0;
   popups.length = 0;
@@ -357,12 +363,29 @@ function softResetEffects() {
   arcs.length = 0;
   flash = 0; shake = 0;
   celebration = null;
+  // A throw between ctx.save() and ctx.restore() leaks state-stack entries every frame.
+  // Unwind a bounded number of them and re-establish a known-good transform.
+  try {
+    for (let i = 0; i < 16; i++) ctx.restore();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+  } catch (_) {}
   try {
     trailCtx.setTransform(1, 0, 0, 1, 0, 0);
     trailCtx.clearRect(0, 0, trail.width, trail.height);
     trailCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   } catch (_) {}
-  logError('reset', 'effects layer soft-reset');
+  // Drop derived render state so the next frame rebuilds it. Without this a reset cannot
+  // recover from a corrupt palette, which is the exact case that wedged the renderer.
+  palette.cur = null;
+  palette.key = '';
+  spriteCache.clear();
+  // Counted rather than logged: the ring buffer is small, and a reset message evicting the
+  // error that CAUSED it is how you lose the only evidence you had.
+  softResets++;
 }
 
 function spawnParticles(x, y, count, speed, color, life, size) {
@@ -1277,7 +1300,8 @@ function drawDebug(P, physMs, fps) {
       + '   shards ' + sim.shards.length,
     'parts ' + particles.length + '/' + particleBudget + '   bloom ' + bloomScale.toFixed(2)
       + '   evDrop ' + sim.eventsDropped,
-    'sanitizer ' + sim.sanitizerHits + '   fields ' + sim.pointers.size,
+    'sanitizer ' + sim.sanitizerHits + '   fields ' + sim.pointers.size
+      + '   softResets ' + softResets,
     'I ' + sim.intensity.toFixed(2) + ' ' + sim.mode + '   combo ' + sim.comboCount
       + ' x' + sim.comboMult.toFixed(2),
     'lv ' + sim.level + '  xp ' + Math.floor(sim.xp) + '/' + sim.xpNeeded
