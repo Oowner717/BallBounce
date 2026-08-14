@@ -1906,6 +1906,14 @@ try {
     },
     grantLevels,
     menu(open) { upgradeMenu.open = open !== false; debugOn = debugOn || upgradeMenu.open; },
+    // The menu's live hit-boxes, so an automated check can press the same pixels a thumb would.
+    get menuState() {
+      return {
+        open: upgradeMenu.open, page: upgradeMenu.page,
+        rows: upgradeMenu.rows.map((r) => ({ id: r.up.id, level: r.up.level, cx: r.x + r.w / 2, cy: r.y + r.h / 2 })),
+        buttons: upgradeMenu.buttons.map((b) => ({ act: b.act, cx: b.x + b.w / 2, cy: b.y + b.h / 2 })),
+      };
+    },
   };
 } catch (_) {}
 

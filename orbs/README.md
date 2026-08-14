@@ -7,6 +7,7 @@ gathers balls into orbit — let go and it slings the whole orbit into the crowd
 collisions score, and every ball type does something different when it gets hit hard.
 
 Levelling to the cap of 100 takes about an hour, and every level hands you a named upgrade.
+How close to an hour depends a great deal on how you play — see the note on pacing below.
 
 No fail states, no timers, no streaks, no notifications. Nothing punishes you for stopping.
 
@@ -217,6 +218,15 @@ recorded, and the result made monotonic by isotonic regression. A single `base *
 formula could not fit the real shape, which is nearly flat through the early levels and
 then climbs steeply once the population and multipliers open up; one curve fitted to both
 ends made the first ten levels either trivial or a wall.
+
+The curve is scaled so that a **median** run reaches the cap in about an hour, and "median" is
+doing real work in that sentence. Twelve simulated players at the shipped scale finished in
+30, 34, 49, 53, 59, 62, **64**, 77, 79, 87, 97 and 120 minutes — median 63.5m, mean 67m. The
+spread is not measurement error; it is the toy. Someone who parks a finger, gathers a fat
+orbit and slings it into a packed screen earns several times what someone drifting through a
+sparse one does, and a lucky FRENZY chain can pay for two levels at once. An hour is the
+middle of the distribution, not a promise. Tuning it any tighter than that would be fitting
+noise: the 12-sample median has a wider confidence interval than the last adjustment made.
 
 Upgrades work by mutating the sim's **own** copy of the config (`createSim` deep-clones what
 it is handed), so an upgrade reaches physics and rendering alike without either side needing
