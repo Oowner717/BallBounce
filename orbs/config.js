@@ -402,9 +402,9 @@ export const CONFIG = {
     // Level 1 is set below the fitted value on purpose: with the population starting at 30
     // the opening is quieter, and the first ball type should still arrive inside ~15s.
     curve: [
-      [1, 8468], [2, 32764], [3, 48878], [5, 49664], [8, 50465], [12, 191050],
-      [18, 1145940], [26, 6326778], [36, 18636561], [50, 40219966], [68, 76303876],
-      [85, 177124289], [99, 226008873],
+      [1, 8468], [2, 32764], [3, 88029], [5, 89445], [8, 90887], [12, 344081], [18, 2063838],
+      [26, 11394527], [36, 33564446], [50, 72436159], [68, 137423281], [85, 319000844],
+      [99, 407041980],
     ],
     cap: 100,                 // Level cap. Play continues past it, but the level stops rising
                               // and a one-time grand celebration fires on arrival.

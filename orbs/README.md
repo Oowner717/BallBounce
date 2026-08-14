@@ -6,8 +6,14 @@ touch, a soft force field follows your finger and shoves them around. **Tap** fo
 gathers balls into orbit — let go and it slings the whole orbit into the crowd. Hard
 collisions score, and every ball type does something different when it gets hit hard.
 
-Levelling to the cap of 100 takes about an hour, and every level hands you a named upgrade.
-How close to an hour depends a great deal on how you play — see the note on pacing below.
+Levelling to the cap of 100 takes about an hour, and every level hands you a named upgrade
+you can actually see land: it arrives in the colour of whatever it changed, and an upgrade that
+changes a distance draws that distance at true size where your finger was. How close to an hour
+depends a great deal on how you play — see the note on pacing below.
+
+Hold a finger in the **bottom-right corner** for a moment and a help sheet opens, including one
+row for every number your ninety-nine upgrades have touched, showing what it started at, what it
+is now, and how many of the upgrades that feed it you own. Tap any row to watch it.
 
 No fail states, no timers, no streaks, no notifications. Nothing punishes you for stopping.
 
@@ -114,7 +120,7 @@ thing without a CLI.
 The first line of real code in `sw.js` is:
 
 ```js
-const CACHE_VERSION = 'orbs-v1';
+const CACHE_VERSION = 'orbs-v5';
 ```
 
 **Bump it on every deploy.** The browser decides a service worker has changed by
@@ -141,9 +147,9 @@ Zero installs, `node:assert` only, exits 0 on success. Takes about 70 seconds �
 that is genuine simulation: a 12,000-step soak under random max-strength fields, two
 4,000-step determinism runs, and a 5,000-step chaos run.
 
-76 tests covering determinism, stability, energy conservation, the population cap, the
+100 tests covering determinism, stability, energy conservation, the population cap, the
 effect budget, timer recovery, score/combo/level invariants, save corruption, the sky, the
-comet, the resonances, and the feel properties that are easy to fake.
+comet, the resonances, the upgrade table, and the feel properties that are easy to fake.
 
 The ones that earn their keep most often:
 
@@ -166,6 +172,20 @@ The ones that earn their keep most often:
   caught the above in a second rather than an afternoon.
 - **A fast swipe flings along the swipe** — and measurably more so than a slow drag, so a
   regression to a plain radial push fails rather than passing quietly.
+- **Unlocking a ball type puts that type on screen** — for four different types, within two
+  seconds, with the population unchanged. Levels 2 to 8 used to announce seven ball types and
+  spawn none of them; three of the seven never appeared at all in a fourteen-minute run.
+- **Every MORE ORBS upgrade actually moves the cap** — ten of the original twenty raised a
+  number that was already pinned behind the hard-cap clamp, and the test that should have
+  noticed was itself measuring the wrong thing (it applied the upgrades without advancing the
+  level, so it never saw the per-level nudge that does the pinning).
+- **A level-up during an effect storm still announces its upgrade** — the cascade that earns a
+  level used to fill the event buffer, so 12.2% of upgrades applied in silence.
+- **No two ball colours in a palette are too close to tell apart** — a redmean distance gate.
+  Solar shipped with CHAIN set to the exact hex of its base orb hue and Monochrome with two
+  types both `#ffffff`: whole ball types that were invisible *as* types.
+- **Every upgradeable number has a plain-English name** — otherwise a new upgrade is simply
+  missing from the help screen, silently.
 
 ---
 
@@ -180,6 +200,8 @@ The ones that earn their keep most often:
 | Release (or flick) a gather  | Slings the whole orbit. This is how you spike big combos. |
 | Multi-touch                  | Every finger is its own independent field. |
 | Two-finger triple-tap        | Re-scatter the balls. Does not touch your score. |
+| **Hold the bottom-right corner** | **Help.** Seven sections, and one live row per upgradeable number. |
+| `?` `h`                      | Help (desktop shortcut). `Esc` closes it. |
 | Four-finger tap, or `D`      | Debug overlay. |
 | `R`                          | Re-scatter (desktop shortcut). |
 | `?soak=1`                    | Synthesises random multi-touch for hands-free stress runs. Does not write to your save. |
@@ -188,7 +210,38 @@ The ones that earn their keep most often:
 | `U`                          | Upgrade menu — every upgrade as a button, tap to fire it. |
 | `←` `→`                      | Page through the upgrade menu. |
 
-### Opening it on a phone
+## Help
+
+**Hold one finger in the bottom-right corner for a moment.** A ring fills under your fingertip
+as you hold, so the gesture teaches itself. After your first level-up ever — and only then —
+that corner breathes once with a `?` in it: the one moment a player first wonders what just
+happened is the only moment a wordless toy has any business pointing at its own documentation.
+
+Seven sections: **start here**, **touch**, **on screen**, **the orbs**, **upgrades**, **your
+run**, **about**. There is no settings page, no account, no FAQ, no search, no changelog and no
+palette picker — a toy with no accounts, no settings and no network has no business shipping
+the sections that exist to serve those things. The three type resonances stay undocumented; they
+are meant to be found.
+
+The upgrades page is the point of it. It is **one row per number, not one per upgrade** — twenty
+rows reading MORE ORBS is noise, one reading `orbs on screen 30 → 90` is information. Each of
+the 55 rows carries a plain-English name, the value read live off the running config, a bar from
+its starting value to its ceiling, and one pip per upgrade that feeds it, lit for the ones you
+own. **Tap any row** and the sheet fades to a tenth while the change draws itself at true size
+over the live toy — anything measured in pixels is drawn at exactly that many pixels.
+
+Below the bars, thirteen colour-world chips in their own hues, the current one outlined and the
+locked ones dim. That is the first time the palette upgrades are visible as objects rather than
+a word over an unchanged screen. Then every upgrade you have earned, newest first, each in the
+colour of the thing it changed, with its description — plus exactly one locked row, the next.
+The rest are not listed: a toy that keeps its secrets should not publish a schedule of its gifts.
+
+The simulation keeps running at full physics behind the sheet and receives no input, so it
+settles into CALM within ten seconds and demonstrations play against a quiet field.
+
+---
+
+## The debug overlay
 
 **Hold one finger in the top-left corner for a second and a half.** A ring fills around your
 fingertip as you hold, so the gesture shows you it is working rather than being a secret you
@@ -235,12 +288,17 @@ ends made the first ten levels either trivial or a wall.
 
 The curve is scaled so that a **median** run reaches the cap in about an hour, and "median" is
 doing real work in that sentence. Twelve simulated players at the shipped scale finished in
-30, 34, 49, 53, 59, 62, **64**, 77, 79, 87, 97 and 120 minutes — median 63.5m, mean 67m. The
+33, 36, 43, 48, 49, 54, **56**, 60, 73, 76, 82 and 91 minutes — median 55.5m, mean 58.4m. The
 spread is not measurement error; it is the toy. Someone who parks a finger, gathers a fat
 orbit and slings it into a packed screen earns several times what someone drifting through a
 sparse one does, and a lucky FRENZY chain can pay for two levels at once. An hour is the
 middle of the distribution, not a promise. Tuning it any tighter than that would be fitting
 noise: the 12-sample median has a wider confidence interval than the last adjustment made.
+
+The curve had to be re-scaled by 1.8× when unlocked ball types started actually appearing on
+screen. That one fix roughly halved the time to the cap — seven types arriving at level 2 to 8
+instead of never is a very large change to the scoring economy, and it is a good measure of how
+much of the game those upgrades had silently not been delivering.
 
 Upgrades work by mutating the sim's **own** copy of the config (`createSim` deep-clones what
 it is handed), so an upgrade reaches physics and rendering alike without either side needing
