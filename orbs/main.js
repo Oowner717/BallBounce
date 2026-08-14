@@ -52,7 +52,6 @@ import {
   createSim, step as simStep, resize as simResize, scatter as simScatter,
   makeRng, loadSave, serializeSave, defaultSave, applySave, deriveStars, filigreeTier,
   applyUpgrade, upgradeForLevel,
-  palettesUnlockedAt,
 } from './sim.js';
 
 /* ========================================================================== */
@@ -161,6 +160,54 @@ function mixHex(a, b, t, q) {
   return '#' + out.map((c) => c.toString(16).padStart(2, '0')).join('');
 }
 
+/** max(rgb) - min(rgb). A cheap, hue-agnostic stand-in for chroma. */
+function chromaOf(hex) {
+  const c = hexToRgb(hex);
+  return Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]);
+}
+
+/**
+ * Push a colour away from its own luminance — more saturated at s > 0, greyer at s < 0.
+ *
+ * Hue-exact and clip-proof: if the scaled vector would run past 255 the whole vector is
+ * rescaled and the residual is paid out as a uniform lightness lift, so a bright red goes
+ * pale rather than sliding to orange. It is a mathematical no-op on greys, which is why
+ * Monochrome stays pure at every level while every other world deepens.
+ */
+function chroma(hex, sat, q) {
+  if (!(sat > -0.999) || sat === 0) return hex;
+  const c = hexToRgb(hex);
+  const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  let k = 1 + sat, hi = 0;
+  for (let i = 0; i < 3; i++) hi = Math.max(hi, L + (c[i] - L) * k);
+  const lift = hi > 255 ? (hi - 255) : 0;
+  if (hi > 255) k *= 255 / hi;
+  const step = q || 6;
+  const out = [0, 0, 0];
+  for (let i = 0; i < 3; i++) {
+    const v = L + (c[i] - L) * k + lift * 0.5;
+    out[i] = Math.max(0, Math.min(255, Math.round(v / step) * step));
+  }
+  return '#' + out.map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Blend two colours without passing through putty.
+ *
+ * A straight sRGB lerp between distant hues collapses through grey at the midpoint: Ember's
+ * #ff8a3d halfway to Deep Sea's #38bdf8 is #9aa49e, a dead putty that looked like the screen
+ * had been left in the sun. Restoring the chroma the pair implies turns that midpoint into a
+ * real sea-green, so a crossfade between worlds reads as weather rather than as a fault.
+ */
+function blendChroma(a, b, t, q) {
+  const mixed = mixHex(a, b, t, q);
+  const ca = chromaOf(a), cb = chromaOf(b);
+  const want = ca + (cb - ca) * t;
+  const have = chromaOf(mixed);
+  if (have < 1 || want <= have) return mixed;
+  return chroma(mixed, (want / have - 1) * CFG.paletteRules.blendChromaKeep, q);
+}
+
 function rgba(hex, alpha) {
   const c = hexToRgb(hex);
   return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + alpha + ')';
@@ -170,63 +217,145 @@ function rgba(hex, alpha) {
 
 const palette = {
   from: 0, to: 0, t: 0, hold: CFG.paletteRules.driftHold, cur: null, key: '',
+  fromP: null,      // snapshot of what was literally on screen when a rush started, so it never jumps
+  rush: 0,          // 1 while crossfading into a world that was just unlocked
+  rushId: 0,        // bumped per rush, so the cache key cannot collide across two of them
 };
 
-function blendPalettes(A, B, t) {
+// Where the light-front of a new world starts from: your fingertip, if you have one down.
+let lastTouchX = 0, lastTouchY = 0;
+let wash = null;    // { t, life, x, y, c1, c2 }
+
+function blendPalettes(A, B, t, q) {
+  // Backgrounds and HUD greys use a plain lerp: re-saturating a near-black reads as a colour
+  // cast on the whole screen. Everything that is meant to BE a colour uses blendChroma.
   const out = {
     name: t < 0.5 ? A.name : B.name,
-    bg0: mixHex(A.bg0, B.bg0, t), bg1: mixHex(A.bg1, B.bg1, t),
-    fog: mixHex(A.fog, B.fog, t), hud: mixHex(A.hud, B.hud, t),
-    hudDim: mixHex(A.hudDim, B.hudDim, t), ring: mixHex(A.ring, B.ring, t),
-    star: mixHex(A.star, B.star, t),
+    bg0: mixHex(A.bg0, B.bg0, t, q), bg1: mixHex(A.bg1, B.bg1, t, q),
+    fog: blendChroma(A.fog, B.fog, t, q), hud: mixHex(A.hud, B.hud, t, q),
+    hudDim: mixHex(A.hudDim, B.hudDim, t, q), ring: blendChroma(A.ring, B.ring, t, q),
+    star: blendChroma(A.star, B.star, t, q),
     orbHues: [], type: {},
   };
   const n = Math.max(A.orbHues.length, B.orbHues.length);
   for (let i = 0; i < n; i++) {
-    out.orbHues.push(mixHex(A.orbHues[i % A.orbHues.length], B.orbHues[i % B.orbHues.length], t));
+    out.orbHues.push(blendChroma(A.orbHues[i % A.orbHues.length], B.orbHues[i % B.orbHues.length], t, q));
   }
-  for (const k of CFG.unlockOrder) out.type[k] = mixHex(A.type[k], B.type[k], t);
+  for (const k of CFG.unlockOrder) out.type[k] = blendChroma(A.type[k], B.type[k], t, q);
   return out;
+}
+
+/**
+ * The levelled colour grade: the continuous half of colour progression.
+ *
+ * Hue is the discrete channel — it moves only when a world unlocks. Chroma, depth and spread
+ * are continuous, running a little at every one of the hundred levels, so the world you are in
+ * at level 80 is a deeper, richer, more separated version of the one you started in even when
+ * it is nominally the same world. It costs nothing per frame: it happens inside the palette
+ * rebuild, which is already cached behind a key.
+ */
+function gradePalette(P, g) {
+  if (g <= 0.001) return P;
+  const R = CFG.paletteRules;
+  P.bg0 = mixHex(P.bg0, '#000000', g * R.gradeDepth);
+  P.bg1 = mixHex(P.bg1, P.fog, g * R.gradeHorizon);
+  const n = P.orbHues.length;
+  for (let i = 0; i < n; i++) {
+    // Fan the orb hues apart in lightness as well as saturation, so a crowded late screen
+    // reads as a population with depth rather than one colour repeated 150 times.
+    const f = n > 1 ? i / (n - 1) : 0.5;
+    const toward = f > 0.5 ? '#ffffff' : '#000000';
+    const fan = mixHex(P.orbHues[i], toward, Math.abs(f - 0.5) * R.gradeSpread * g);
+    P.orbHues[i] = chroma(fan, g * R.gradeChroma);
+  }
+  for (const k of CFG.unlockOrder) P.type[k] = chroma(P.type[k], g * R.gradeChroma);
+  P.hud = chroma(P.hud, g * R.gradeChroma * 0.5);
+  P.ring = chroma(P.ring, g * R.gradeChroma * 0.5);
+  P.star = chroma(P.star, g * R.gradeChroma * 0.5);
+  return P;
 }
 
 function updatePalette(dt) {
   const R = CFG.paletteRules;
-  const unlocked = palettesUnlockedAt(sim.level, CFG);
+  // sim.palettesUnlocked, not palettesUnlockedAt(sim.level): the applied count is the authority.
+  // Deriving it from the level instead meant the debug menu could grant a world that the renderer
+  // then refused to show, because the level had not moved with it.
+  const unlocked = Math.max(1, Math.min(CFG.palettes.length, sim.palettesUnlocked));
   if (palette.cur === null) {
     palette.from = Math.min(sim.paletteIndex, unlocked - 1);
-    palette.to = palette.from;
+    // Aiming `to` at `from` meant the 45s hold AND the 95s crossfade that followed it both
+    // blended Ember with Ember: 140 seconds of drift machinery producing no colour change at all.
+    palette.to = unlocked > 1 ? (palette.from + 1) % unlocked : palette.from;
     palette.t = 0;
   }
-  const driftAllowed = !CFG.paletteRules.driftOnlyWhenCalm || sim.mode === 'CALM';
-  if (unlocked > 1 && driftAllowed) {
-    if (palette.hold > 0) {
+  const rushing = palette.rush > 0;
+  const driftAllowed = rushing || !R.driftOnlyWhenCalm || sim.mode === 'CALM';
+  if ((unlocked > 1 || rushing) && driftAllowed) {
+    if (palette.hold > 0 && !rushing) {
       palette.hold -= dt;
     } else if (palette.t < 1) {
-      palette.t += dt / Math.max(1e-6, R.driftPeriod);
+      palette.t += dt / Math.max(1e-6, rushing ? R.unlockDriftPeriod : R.driftPeriod);
       if (palette.t >= 1) {
-        palette.t = 1;
         palette.from = palette.to;
-        palette.hold = R.driftHold;
         palette.t = 0;
-        palette.to = (palette.from + 1) % unlocked;
+        palette.fromP = null;
+        palette.hold = rushing ? R.unlockHold : R.driftHold;
+        palette.rush = 0;
+        palette.to = (palette.from + 1) % Math.max(1, unlocked);
         sim.paletteIndex = palette.from;
       }
     }
-  } else {
+  } else if (unlocked <= 1) {
     palette.from = palette.to = 0;
     palette.t = 0;
   }
-  const A = CFG.palettes[Math.min(palette.from, CFG.palettes.length - 1)];
+  const A = palette.fromP || CFG.palettes[Math.min(palette.from, CFG.palettes.length - 1)];
   const B = CFG.palettes[Math.min(palette.to, CFG.palettes.length - 1)];
-  const key = palette.from + ':' + palette.to + ':' + Math.round(palette.t * 40);
+  // Smoothstep the rush so it eases in and out; ambient drift is far too slow to need it.
+  const tb = rushing ? palette.t * palette.t * (3 - 2 * palette.t) : palette.t;
+  const g = Math.max(0, Math.min(1, (sim.level - 1) / Math.max(1, R.gradeFullLevel - 1)));
+  // Coarser colour quantisation during a rush: a 9s crossfade churns glow sprites faster than
+  // anything else in the game, and halving the distinct-colour count halves that churn.
+  const q = rushing ? R.unlockMixStep : 6;
+  const key = palette.rushId + ':' + palette.from + ':' + palette.to
+    + ':' + Math.round(tb * 40) + ':' + Math.round(g * 20) + ':' + q;
   // `|| !palette.cur` is load-bearing: a wipe resets from/to/t to values that can produce
   // the SAME key, so a key-only check would never rebuild and every later frame would throw
   // on a null palette — a permanently frozen screen with the sim still running underneath.
   if (key !== palette.key || !palette.cur) {
     palette.key = key;
-    palette.cur = blendPalettes(A, B, palette.t);
+    palette.cur = gradePalette(blendPalettes(A, B, tb, q), g);
   }
   return palette.cur;
+}
+
+/**
+ * A world you just unlocked has to arrive while you can still see the word that announced it.
+ *
+ * Before this, "NEW SKY" changed nothing on screen: ambient drift sat on a 45s hold and then
+ * took 95s to reach the NEXT palette in a round robin, so the world you had just been given
+ * was the last one you would see — up to 25 minutes later. Twelve of these across a run, and
+ * not one of them was an event.
+ */
+function retargetPalette() {
+  // sim.palettesUnlocked, not palettesUnlockedAt(sim.level): the applied count is the authority.
+  // Deriving it from the level instead meant the debug menu could grant a world that the renderer
+  // then refused to show, because the level had not moved with it.
+  const unlocked = Math.max(1, Math.min(CFG.palettes.length, sim.palettesUnlocked));
+  const nx = CFG.palettes[Math.min(unlocked - 1, CFG.palettes.length - 1)];
+  if (!nx) return;
+  palette.fromP = palette.cur;      // start from exactly what is on screen, so nothing jumps
+  palette.from = palette.to;
+  palette.to = unlocked - 1;
+  palette.t = 0;
+  palette.hold = 0;
+  palette.rush = 1;
+  palette.rushId++;
+  wash = {
+    t: 0, life: CFG.paletteRules.unlockWashTime,
+    x: lastTouchX || cssW / 2, y: lastTouchY || cssH * 0.5,
+    c1: nx.ring, c2: nx.star,
+  };
 }
 
 /* ========================================================================== */
@@ -239,7 +368,7 @@ const spriteCache = new Map();
 function glowSprite(hex) {
   let s = spriteCache.get(hex);
   if (s) return s;
-  if (spriteCache.size > 220) spriteCache.clear();   // palette drift churns keys slowly
+  if (spriteCache.size > CFG.render.spriteCacheMax) spriteCache.clear();   // an unlock rush churns keys fast
   const c = document.createElement('canvas');
   c.width = c.height = SPRITE_SIZE;
   const g = c.getContext('2d');
@@ -385,6 +514,7 @@ function softResetEffects() {
   vortexRings.length = 0;
   converts.length = 0;
   tracers.length = 0;
+  wash = null;
   flash = 0; shake = 0;
   celebration = null;
   // A throw between ctx.save() and ctx.restore() leaks state-stack entries every frame.
@@ -571,6 +701,8 @@ function consumeEvents(P) {
           (ev.kind === 'palette' ? 'new sky' : 'upgrade'), loud);
         addFlash(loud ? 0.14 : 0.07);
         if (loud) addShake(3 * scale());
+        // A new world has to arrive while the word announcing it is still on screen.
+        if (ev.kind === 'palette') retargetPalette();
         break;
       }
       case 'convert': {
@@ -687,6 +819,7 @@ function updateEffects(dt) {
   popupBudget = Math.min(CFG.effects.popupRate, popupBudget + CFG.effects.popupRate * dt);
   if (hintFade > 0) hintFade = Math.max(0, hintFade - dt);
   if (lastUpShown) lastUpT += dt;
+  if (wash) { wash.t += dt; if (wash.t >= wash.life) wash = null; }
   w = 0;
   for (let i = 0; i < converts.length; i++) {
     const c = converts[i];
@@ -791,6 +924,7 @@ function onPointerDown(e) {
     if (debugButtonHit(x, y)) { e.preventDefault(); return; }
     if (pointers.size === 0) { gestureStart = nowSec(); gestureMaxDown = 0; gestureMoved = 0; }
     pointers.set(e.pointerId, { x, y });
+    lastTouchX = x; lastTouchY = y;   // a new world's light-front is thrown from your fingertip
     gestureMaxDown = Math.max(gestureMaxDown, pointers.size);
     if (!seenHint) { seenHint = true; hintFade = CFG.input.hintFadeTime; writeSave(true); }
     try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
@@ -968,8 +1102,27 @@ function drawBackground(P, calm) {
   ctx.fillStyle = g;
   ctx.fillRect(-m, -m, cssW + m * 2, cssH + m * 2);
 
-  // The sky: permanent, save-derived, and best seen when nothing is happening.
-  const skyAlpha = calm + (1 - calm) * CFG.sky.calmOnlyAlpha;
+  // A new world announces itself as an expanding front of its own light, thrown from wherever
+  // your finger was. Composited 'lighter' so it lifts the scene instead of veiling it.
+  if (wash) {
+    const k = Math.min(1, wash.t / wash.life);
+    const a = Math.sin(k * Math.PI) * CFG.paletteRules.unlockWashAlpha;
+    const rad = Math.max(1, Math.hypot(cssW, cssH) * 1.15 * (1 - Math.pow(1 - k, 4)));
+    const g2 = ctx.createRadialGradient(wash.x, wash.y, 0, wash.x, wash.y, rad);
+    g2.addColorStop(0.00, rgba(wash.c1, 0));
+    g2.addColorStop(0.86, rgba(wash.c1, a * 0.55));
+    g2.addColorStop(0.94, rgba(wash.c2, a));
+    g2.addColorStop(1.00, rgba(wash.c1, 0));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g2;
+    ctx.fillRect(-m, -m, cssW + m * 2, cssH + m * 2);
+    ctx.restore();
+  }
+
+  // The sky: permanent, save-derived, and best seen when nothing is happening. Celebrating a new
+  // sky while it sits at 28% opacity would be absurd, so a wash brings it to full strength.
+  const skyAlpha = wash ? 1 : calm + (1 - calm) * CFG.sky.calmOnlyAlpha;
   if (sky.stars.length && skyAlpha > 0.02) {
     const t = sim.time;
     ctx.save();
@@ -998,8 +1151,21 @@ function drawBackground(P, calm) {
   }
 }
 
+/**
+ * How many of the palette's orb hues are in play.
+ *
+ * Hoisted once per frame into `orbHueN` rather than recomputed inside ballColor, which runs
+ * about three hundred times a frame across two passes.
+ */
+function orbHueCount(P) {
+  const F = CFG.render;
+  return Math.max(1, Math.min(P.orbHues.length,
+    F.orbHueBase + Math.floor(sim.palettesUnlocked / F.orbHuePerPalettes)));
+}
+let orbHueN = CFG.render.orbHueBase;
+
 function ballColor(P, b) {
-  if (b.type === 'ORB') return P.orbHues[b.hue % P.orbHues.length];
+  if (b.type === 'ORB') return P.orbHues[b.hue % orbHueN];
   return P.type[b.type] || P.orbHues[0];
 }
 
@@ -1626,6 +1792,7 @@ function triggerUpgrade(up) {
   if (!up) return;
   applyUpgrade(sim, up, true);            // forced: debug may re-apply deliberately
   sim.lastUpgrade = up;                   // so the debug menu shows the same line real play does
+  if (up.kind === 'palette') retargetPalette();
   const P = palette.cur;
   celebrate(up.label, up.kind === 'type' ? 'new ball'
     : (up.kind === 'palette' ? 'new sky' : 'upgrade'), up.kind === 'type' || up.kind === 'palette');
@@ -1986,6 +2153,7 @@ function frame(now) {
 
 function render(dt) {
   const P = updatePalette(dt);
+  orbHueN = orbHueCount(P);
   const calmT = 1 - Math.min(1, sim.intensity / Math.max(1e-6, CFG.intensity.calmBelow));
   const frenzyT = Math.min(1, Math.max(0, (sim.intensity - CFG.intensity.frenzyAbove)
     / Math.max(1e-6, 1 - CFG.intensity.frenzyAbove)));
@@ -2003,9 +2171,12 @@ function render(dt) {
   if (Math.abs(sim.score - displayScore) < CFG.score.rollSnapBelow) displayScore = sim.score;
 
   // --- trail layer: fade with destination-out, then draw the glowing stuff -----------
-  const fadeBase = calmT > 0
+  let fadeBase = calmT > 0
     ? CFG.render.trailFadeCalm + (CFG.render.trailFade - CFG.render.trailFadeCalm) * (1 - calmT)
     : CFG.render.trailFade + (CFG.render.trailFadeFrenzy - CFG.render.trailFade) * frenzyT;
+  // During a world change, hold the streaks longer: the outgoing world burns off on screen
+  // while the incoming one draws over it, which is the whole point of a crossfade you can see.
+  if (wash) fadeBase *= CFG.paletteRules.unlockTrailHoldMul;
   trailCtx.save();
   trailCtx.setTransform(1, 0, 0, 1, 0, 0);
   trailCtx.globalCompositeOperation = 'destination-out';

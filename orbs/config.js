@@ -443,8 +443,9 @@ export const CONFIG = {
       // A new kind of ball joins the mix.
     { level: 8, id: 'type.GOLD', kind: 'type', type: 'GOLD', label: 'GOLD' },
       // A new kind of ball joins the mix.
-    { level: 9, id: 'palette.1', kind: 'palette', label: 'NEW SKY' },
-      // A new colour world, unlocked forever.
+    { level: 9, id: 'palette.1', kind: 'palette', label: 'DEEP SEA' },
+      // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
+      // eleven times told you nothing about which sky you had just been given.
     { level: 10, id: 'cap.10', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
       // Six more balls on screen.
     { level: 11, id: 'types.VOLATILE.blastRadius.11', kind: 'mod', path: 'types.VOLATILE.blastRadius', mul: 1.18, label: 'WIDER BLAST' },
@@ -455,8 +456,9 @@ export const CONFIG = {
       // Six more balls on screen.
     { level: 14, id: 'types.VOLATILE.blastImpulse.14', kind: 'mod', path: 'types.VOLATILE.blastImpulse', mul: 1.2, label: 'HARDER BLAST' },
       // Detonations shove harder.
-    { level: 15, id: 'palette.2', kind: 'palette', label: 'NEW SKY' },
-      // A new colour world, unlocked forever.
+    { level: 15, id: 'palette.2', kind: 'palette', label: 'AURORA' },
+      // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
+      // eleven times told you nothing about which sky you had just been given.
     { level: 16, id: 'tap.pulseRadius.16', kind: 'gesture', path: 'tap.pulseRadius', mul: 1.22, label: 'WIDE PULSE' },
       // Your tap pulse reaches further.
     { level: 17, id: 'cap.17', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
@@ -467,8 +469,9 @@ export const CONFIG = {
       // Volatiles come back online sooner.
     { level: 20, id: 'cap.20', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
       // Six more balls on screen.
-    { level: 21, id: 'palette.3', kind: 'palette', label: 'NEW SKY' },
-      // A new colour world, unlocked forever.
+    { level: 21, id: 'palette.3', kind: 'palette', label: 'SYNTHWAVE' },
+      // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
+      // eleven times told you nothing about which sky you had just been given.
     { level: 22, id: 'score.globalMultBase.22', kind: 'score', path: 'score.globalMultBase', add: 0.15, label: 'VALUE +' },
       // Everything scores more.
     { level: 23, id: 'types.VOLATILE.blastRadius.23', kind: 'mod', path: 'types.VOLATILE.blastRadius', mul: 1.15, label: 'WIDER BLAST II' },
@@ -481,8 +484,9 @@ export const CONFIG = {
       // Children fly apart faster.
     { level: 27, id: 'cap.27', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
       // Six more balls on screen.
-    { level: 28, id: 'palette.4', kind: 'palette', label: 'NEW SKY' },
-      // A new colour world, unlocked forever.
+    { level: 28, id: 'palette.4', kind: 'palette', label: 'MONOCHROME' },
+      // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
+      // eleven times told you nothing about which sky you had just been given.
     { level: 29, id: 'tap.pulseImpulse.29', kind: 'gesture', path: 'tap.pulseImpulse', mul: 1.25, label: 'HARD PULSE' },
       // Your tap pulse shoves harder.
     { level: 30, id: 'effects.impactSparks.30', kind: 'visual', path: 'effects.impactSparks', add: 4, label: 'MORE SPARKS' },
@@ -497,8 +501,9 @@ export const CONFIG = {
       // Split children keep more size.
     { level: 35, id: 'cap.35', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
       // Six more balls on screen.
-    { level: 36, id: 'palette.5', kind: 'palette', label: 'NEW SKY' },
-      // A new colour world, unlocked forever.
+    { level: 36, id: 'palette.5', kind: 'palette', label: 'SOLAR' },
+      // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
+      // eleven times told you nothing about which sky you had just been given.
     { level: 37, id: 'render.trailFadeCalm.37', kind: 'visual', path: 'render.trailFadeCalm', mul: 0.82, label: 'CALM TRAILS' },
       // Quiet moments hold their streaks.
     { level: 38, id: 'types.SPLITTER.inheritSpeed.38', kind: 'mod', path: 'types.SPLITTER.inheritSpeed', mul: 1.12, label: 'MOMENTUM SPLIT' },
@@ -515,8 +520,9 @@ export const CONFIG = {
       // Six more balls on screen.
     { level: 44, id: 'score.comboMultScale.44', kind: 'score', path: 'score.comboMultScale', mul: 1.12, label: 'COMBO VALUE' },
       // Combos multiply harder.
-    { level: 45, id: 'palette.6', kind: 'palette', label: 'NEW SKY' },
-      // A new colour world, unlocked forever.
+    { level: 45, id: 'palette.6', kind: 'palette', label: 'ULTRAVIOLET' },
+      // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
+      // eleven times told you nothing about which sky you had just been given.
     { level: 46, id: 'types.MAGNET.pullRadius.46', kind: 'mod', path: 'types.MAGNET.pullRadius', mul: 1.2, label: 'LONG REACH' },
       // Magnets reach further.
     { level: 47, id: 'effects.detonateSparks.47', kind: 'visual', path: 'effects.detonateSparks', add: 10, label: 'BLAST SPARKS' },
@@ -533,8 +539,9 @@ export const CONFIG = {
       // Six more balls on screen.
     { level: 53, id: 'types.MAGNET.fieldLines.53', kind: 'mod', path: 'types.MAGNET.fieldLines', add: 3, label: 'FIELD LINES' },
       // More visible magnet field lines.
-    { level: 54, id: 'palette.7', kind: 'palette', label: 'NEW SKY' },
-      // A new colour world, unlocked forever.
+    { level: 54, id: 'palette.7', kind: 'palette', label: 'VENOM' },
+      // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
+      // eleven times told you nothing about which sky you had just been given.
     { level: 55, id: 'score.globalMultBase.55', kind: 'score', path: 'score.globalMultBase', add: 0.25, label: 'VALUE +++' },
       // More still.
     { level: 56, id: 'types.PRISM.shards.56', kind: 'mod', path: 'types.PRISM.shards', add: 4, label: 'MORE SHARDS' },
@@ -551,8 +558,9 @@ export const CONFIG = {
       // Six more balls on screen.
     { level: 62, id: 'effects.shockwaveTime.62', kind: 'visual', path: 'effects.shockwaveTime', mul: 1.3, label: 'LONG SHOCKWAVE' },
       // Shockwave rings linger.
-    { level: 63, id: 'palette.8', kind: 'palette', label: 'NEW SKY' },
-      // A new colour world, unlocked forever.
+    { level: 63, id: 'palette.8', kind: 'palette', label: 'BLOODMOON' },
+      // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
+      // eleven times told you nothing about which sky you had just been given.
     { level: 64, id: 'types.PRISM.shardLife.64', kind: 'mod', path: 'types.PRISM.shardLife', mul: 1.35, label: 'LONG SHARDS' },
       // Shards live longer.
     { level: 65, id: 'score.comboMultScale.65', kind: 'score', path: 'score.comboMultScale', mul: 1.12, label: 'COMBO VALUE II' },
@@ -569,8 +577,9 @@ export const CONFIG = {
       // Six more balls on screen.
     { level: 71, id: 'tap.vortexRadius.71', kind: 'gesture', path: 'tap.vortexRadius', mul: 1.22, label: 'BIG VORTEX' },
       // Vortices reach further.
-    { level: 72, id: 'palette.9', kind: 'palette', label: 'NEW SKY' },
-      // A new colour world, unlocked forever.
+    { level: 72, id: 'palette.9', kind: 'palette', label: 'COBALT' },
+      // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
+      // eleven times told you nothing about which sky you had just been given.
     { level: 73, id: 'render.starTwinkle.73', kind: 'visual', path: 'render.starTwinkle', mul: 1.4, label: 'TWINKLE' },
       // Stars shimmer more.
     { level: 74, id: 'types.CHAIN.range.74', kind: 'mod', path: 'types.CHAIN.range', mul: 1.25, label: 'LONG ARC' },
@@ -593,8 +602,9 @@ export const CONFIG = {
       // Frost catches more neighbours.
     { level: 83, id: 'types.FROST.radius.83', kind: 'mod', path: 'types.FROST.radius', mul: 1.22, label: 'WIDE FREEZE' },
       // Frost reaches further.
-    { level: 84, id: 'palette.10', kind: 'palette', label: 'NEW SKY' },
-      // A new colour world, unlocked forever.
+    { level: 84, id: 'palette.10', kind: 'palette', label: 'BLOSSOM' },
+      // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
+      // eleven times told you nothing about which sky you had just been given.
     { level: 85, id: 'render.bloomStrengthFrenzy.85', kind: 'visual', path: 'render.bloomStrengthFrenzy', mul: 1.2, label: 'FRENZY GLOW' },
       // Chaos burns brighter.
     { level: 86, id: 'types.FROST.freezeTime.86', kind: 'mod', path: 'types.FROST.freezeTime', mul: 1.3, label: 'LONG FREEZE' },
@@ -617,8 +627,9 @@ export const CONFIG = {
       // Gold jumps the combo further.
     { level: 95, id: 'field.radius.95', kind: 'gesture', path: 'field.radius', mul: 1.12, label: 'BROAD FIELD' },
       // Your push field is wider.
-    { level: 96, id: 'palette.11', kind: 'palette', label: 'NEW SKY' },
-      // A new colour world, unlocked forever.
+    { level: 96, id: 'palette.11', kind: 'palette', label: 'JADE' },
+      // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
+      // eleven times told you nothing about which sky you had just been given.
     { level: 97, id: 'effects.maxParticles.97', kind: 'visual', path: 'effects.maxParticles', add: 250, label: 'DENSE PARTICLES' },
       // More particles on screen at once.
     { level: 98, id: 'types.GOLD.scoreFlat.98', kind: 'mod', path: 'types.GOLD.scoreFlat', mul: 1.8, label: 'GOLD VALUE' },
@@ -739,6 +750,12 @@ export const CONFIG = {
                               // looked up half a second late and wants to know what just happened.
     lastUpgradeFade: 1.0,     // s. Fade-out at the end of that.
     lastUpgradeScale: 0.85,   // Size relative to the 'LV n' label. Smaller — it is an aside.
+    orbHueBase: 2,            // Orb hues in play at level 1, of the palette's four. Starting narrow
+                              // is what gives the later fan-outs something to land against.
+    orbHuePerPalettes: 3,     // One further orb hue enters play per this many colour worlds owned.
+                              // A third of the population changes colour in a single frame, twice a
+                              // run, and it costs no upgrade slot to do it.
+    spriteCacheMax: 512,      // Glow sprites held before a hard clear. An unlock rush churns fast.
     fontStack: 'ui-rounded, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
   },
 
@@ -746,10 +763,29 @@ export const CONFIG = {
   // Every few levels permanently unlocks a colour world. No picker, ever.
   // Long sessions drift gently between unlocked palettes.
   paletteRules: {
-    unlockEvery: 3,           // Levels between palette unlocks.
     driftPeriod: 95,          // s. Time to drift from one unlocked palette to the next.
     driftHold: 45,            // s. Time spent settled on a palette before drifting again.
-    driftOnlyWhenCalm: false, // If true, drift pauses during FRENZY. Off: drift is slow enough to hide.
+    driftOnlyWhenCalm: false, // If true, ambient drift pauses outside CALM. An unlock rush ignores it.
+    unlockDriftPeriod: 9.0,   // s. Crossfade into a world you JUST unlocked. Long enough to read as
+                              // weather rather than a cut, short enough that the celebration that
+                              // announced it is still on screen when the new world arrives.
+    unlockHold: 90,           // s held on a freshly unlocked world before the round robin resumes.
+                              // Arriving somewhere you immediately drift out of is barely arriving.
+    unlockWashTime: 1.6,      // s. The expanding light-front that announces a new world.
+    unlockWashAlpha: 0.55,    // Peak brightness of that front. Composited 'lighter' — a lift, not a veil.
+    unlockTrailHoldMul: 0.8,  // Trail fade multiplier during a wash, so the outgoing world's streaks
+                              // visibly burn off while the new world's balls draw over them.
+    unlockMixStep: 12,        // Colour quantisation during a rush (6 normally). Coarser steps halve
+                              // glow-sprite churn on the busiest frames in the game.
+    blendChromaKeep: 0.85,    // 0 = plain sRGB lerp between worlds, which greys out at the midpoint.
+                              // 1 = fully restore the chroma the pair implies. Ember->Deep Sea at the
+                              // halfway point was #9aa49e, dead putty; this makes it a sea-green.
+    gradeFullLevel: 88,       // Level at which the continuous colour grade reaches full strength.
+    gradeChroma: 0.30,        // Max extra chroma on orb and type colours at full grade.
+    gradeDepth: 0.40,         // Max darkening of bg0 toward black at full grade.
+    gradeHorizon: 0.20,       // Max lift of bg1 toward the world's own fog at full grade.
+    gradeSpread: 0.26,        // Max lightness fan across the orb hues, so a crowded late screen reads
+                              // as a population with depth instead of one colour repeated 150 times.
     typeSeparation: 45,       // Minimum redmean colour distance between any two ball colours in a
                               // palette (the seven named types plus the base orb hue). Enforced by
                               // a test. Shipped worlds had CHAIN byte-identical to the orb hue in
