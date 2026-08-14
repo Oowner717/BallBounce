@@ -1,0 +1,13 @@
+{
+  "name": "orbs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Orbs - a dependency-free vanilla-JS Canvas 2D physics toy shipped as an installable offline iOS PWA.",
+  "scripts": {
+    "test": "node test.js",
+    "serve": "python3 -m http.server 8080",
+    "icons": "node tools/make-icons.mjs"
+  },
+  "license": "MIT"
+}
