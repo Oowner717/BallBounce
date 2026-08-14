@@ -728,10 +728,17 @@ export const CONFIG = {
     convertTime: 0.5,         // s. Length of one transmutation flourish.
     tracerTime: 0.9,          // s. The line drawn from the announcement to the ball it names.
     tracerBow: 40,            // px @ref. How far that line bows out from the straight chord.
+    ringTime: 1.1,            // s. An upgrade that changes a distance draws a ghost ring at the
+                              // old distance and a bright one growing to the new one, at TRUE
+                              // size, where you last touched. It is the difference between being
+                              // told a number went up and watching the reach change.
   },
 
   /* ---------------------------------------------------------------- effects -- */
   effects: {
+    flashUpgradeAlpha: 0.14,  // Screen lift when a ball type or a colour world arrives.
+    flashMinorAlpha: 0.07,    // ...and for the other 81 upgrades.
+    upgradeBurst: 26,         // Sparks thrown from the announcement, in the upgrade's own colour.
     maxPerFrame: 48,          // Hard budget on sim-emitted effect events per step. Excess is DROPPED,
                               // never queued — a queued backlog is how a phone dies.
     reservedForProgression: 6, // Slots of that budget held back for events that happen once and

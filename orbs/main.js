@@ -678,6 +678,8 @@ let waves = [];
 let arcs = [];
 let flash = 0;
 let flashMax = 0;
+let flashCol = null;
+let flashAdd = false;
 let shake = 0;
 let celebration = null;    // { text, sub, t, life, big }
 let vortexRings = [];      // live double-tap wells, drawn as counter-rotating arcs
@@ -701,6 +703,7 @@ function softResetEffects() {
   vortexRings.length = 0;
   converts.length = 0;
   tracers.length = 0;
+  proofs.length = 0;
   wash = null;
   shooting = null;
   flash = 0; shake = 0;
@@ -789,9 +792,13 @@ function addArc(x1, y1, x2, y2, color, depth) {
   });
 }
 
-function addFlash(amount) {
+function addFlash(amount, col, additive) {
   flashMax = Math.max(flashMax, Math.min(CFG.effects.flashMaxAlpha, amount));
   flash = CFG.effects.flashTime;
+  flashCol = col || null;
+  // An impact keeps the old veil. A reward is a LIFT: veiling the screen at the exact moment
+  // something good happens dims the HUD, the balls and the reward itself, which is backwards.
+  flashAdd = !!additive;
 }
 
 function addShake(amount) {
@@ -889,13 +896,20 @@ function consumeEvents(P) {
       case 'upgrade': {
         // Every level hands over something with a name. Ball types and colour worlds get
         // the loud treatment; the rest still announce themselves.
+        const up = (CFG.upgrades || []).find((u) => u.id === ev.id) || null;
         const loud = ev.kind === 'type' || ev.kind === 'palette';
+        const tint = upgradeTint(P, up);
         celebrate(ev.palette || ev.label, ev.kind === 'type' ? 'new ball' :
-          (ev.kind === 'palette' ? 'new sky' : 'upgrade'), loud);
-        addFlash(loud ? 0.14 : 0.07);
+          (ev.kind === 'palette' ? 'new sky' : ''), loud, 0, tint);
+        addFlash(loud ? CFG.effects.flashUpgradeAlpha : CFG.effects.flashMinorAlpha, tint, true);
+        spawnParticles(cssW / 2, cssH * 0.42, Math.round(CFG.effects.upgradeBurst * qualityMul()),
+          340 * scale(), tint, 0.7, 2.0 * scale());
         if (loud) addShake(3 * scale());
         // A new world has to arrive while the word announcing it is still on screen.
         if (ev.kind === 'palette') retargetPalette();
+        // ...and a sky upgrade has to be visible in the sky it changed, this frame.
+        if (up && up.path && up.path.indexOf('sky.') === 0) { plateKey = ''; platesReady = false; }
+        queueProof(P, up, tint);
         break;
       }
       case 'convert': {
@@ -959,11 +973,11 @@ function consumeEvents(P) {
   }
 }
 
-function celebrate(text, sub, big, life) {
+function celebrate(text, sub, big, life, tint) {
   // An unlock outranks a level-up: do not let a routine flourish stomp one mid-play.
   if (celebration && celebration.big && !big && celebration.t < celebration.life * 0.5) return;
   celebration = {
-    text, sub, t: 0, big,
+    text, sub, t: 0, big, tint: tint || null,
     life: life || (big ? CFG.levels.unlockCelebrateTime : CFG.levels.levelCelebrateTime),
   };
 }
@@ -1015,6 +1029,15 @@ function updateEffects(dt) {
   if (wash) { wash.t += dt; if (wash.t >= wash.life) wash = null; }
   updateShooting(dt, 1 - Math.min(1, sim.intensity / Math.max(1e-6, CFG.intensity.calmBelow)));
   w = 0;
+  for (let i = 0; i < proofs.length; i++) {
+    const pr = proofs[i];
+    pr.t += dt;
+    if (pr.t >= pr.life) continue;
+    proofs[w++] = pr;
+  }
+  proofs.length = w;
+
+  w = 0;
   for (let i = 0; i < converts.length; i++) {
     const c = converts[i];
     c.t += dt;
@@ -1042,7 +1065,7 @@ function updateEffects(dt) {
   vortexRings.length = vw;
   if (capGlory > 0) capGlory = Math.max(0, capGlory - dt);
   if (flash > 0) flash = Math.max(0, flash - dt);
-  if (flash === 0) flashMax = 0;
+  if (flash === 0) { flashMax = 0; flashCol = null; flashAdd = false; }
   if (shake > 0) shake = Math.max(0, shake - shake * CFG.effects.shakeDecay * dt - 0.01);
   if (celebration) {
     celebration.t += dt;
@@ -1882,6 +1905,54 @@ let lastUpShown = null;
 let lastUpT = 0;
 const lastUpRect = { x: 0, y: 0, w: 0, h: 0 };
 
+/**
+ * The Proof: an upgrade that changes a distance draws itself at that distance.
+ *
+ * This generalises the one legibility pattern the game already had that worked. The tap pulse
+ * event carries its own radius and the renderer draws exactly that, which is why WIDE PULSE is
+ * among the only upgrades you can actually see. Everything measured in reference pixels now does
+ * the same on the frame it is earned: a ghost ring at the old value, a bright ring at the new
+ * one, drawn where you were last touching.
+ */
+let proofs = [];
+
+function queueProof(P, up, tint) {
+  if (!up || !up.path) return;
+  const row = foldUpgrades().find((r) => r.path === up.path);
+  if (!row || row.unit !== 'px') return;
+  const before = readPath(sim.config, up.path);
+  // applyUpgrade has already run by the time the event is consumed, so the value on the config
+  // IS the new one; the old one is recovered from this upgrade's own operation.
+  let old = before;
+  if (typeof up.mul === 'number' && up.mul !== 0) old = before / up.mul;
+  else if (typeof up.add === 'number') old = before - up.add;
+  if (!Number.isFinite(old) || Math.abs(before - old) < 0.5) return;
+  if (proofs.length > 4) proofs.shift();
+  proofs.push({
+    x: lastTouchX || cssW / 2, y: lastTouchY || cssH * 0.5,
+    r0: old * scale(), r1: before * scale(),
+    t: 0, life: CFG.proof.ringTime, col: tint || P.ring,
+  });
+}
+
+function drawProofs(P) {
+  if (!proofs.length) return;
+  ctx.save();
+  for (const p of proofs) {
+    const k = Math.min(1, p.t / p.life);
+    const a = Math.sin(k * Math.PI) * 0.9;
+    if (a <= 0.01) continue;
+    const e = 1 - Math.pow(1 - k, 3);
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = rgba(P.hudDim, a * 0.35);
+    ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(2, p.r0), 0, 6.283); ctx.stroke();
+    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = rgba(p.col, a);
+    ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(2, p.r0 + (p.r1 - p.r0) * e), 0, 6.283); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /** The transmutation: the old colour collapsing inward, the new one blooming out of it. */
 function drawConverts(P) {
   if (!converts.length) return;
@@ -2014,7 +2085,9 @@ function drawHud(P, calm) {
     ctx.textAlign = 'center';
     if (celebration.text) {
       ctx.font = '700 ' + bigSize + 'px ' + F.fontStack;
-      ctx.fillStyle = rgba(P.hud, a);
+      // The word arrives in the colour of the thing it names, so the name is attached to the
+      // thing before you have finished reading it.
+      ctx.fillStyle = rgba(celebration.tint || P.hud, a);
       ctx.fillText(celebration.text, cssW / 2, cssH * 0.42);
     }
     if (celebration.sub) {
@@ -3093,12 +3166,23 @@ function triggerUpgrade(up) {
   if (!up) return;
   applyUpgrade(sim, up, true);            // forced: debug may re-apply deliberately
   sim.lastUpgrade = up;                   // so the debug menu shows the same line real play does
-  if (up.kind === 'palette') retargetPalette();
   const P = palette.cur;
-  celebrate(up.label, up.kind === 'type' ? 'new ball'
-    : (up.kind === 'palette' ? 'new sky' : 'upgrade'), up.kind === 'type' || up.kind === 'palette');
-  addFlash(0.1);
-  if (P) spawnParticles(cssW / 2, cssH * 0.42, 24, 380 * scale(), P.ring, 0.7, 2.2 * scale());
+  if (!P) return;
+  // Deliberately the same body as the `upgrade` event, so what the debug menu shows a developer
+  // is exactly what a player sees. A debug path that celebrates differently is a debug path that
+  // cannot be used to check the celebration.
+  const loud = up.kind === 'type' || up.kind === 'palette';
+  const tint = upgradeTint(P, up);
+  const world = CFG.palettes[Math.min(sim.palettesUnlocked - 1, CFG.palettes.length - 1)];
+  celebrate(up.kind === 'palette' && world ? world.name : up.label,
+    up.kind === 'type' ? 'new ball' : (up.kind === 'palette' ? 'new sky' : ''), loud, 0, tint);
+  addFlash(loud ? CFG.effects.flashUpgradeAlpha : CFG.effects.flashMinorAlpha, tint, true);
+  spawnParticles(cssW / 2, cssH * 0.42, Math.round(CFG.effects.upgradeBurst * qualityMul()),
+    340 * scale(), tint, 0.7, 2.0 * scale());
+  if (loud) addShake(3 * scale());
+  if (up.kind === 'palette') retargetPalette();
+  if (up.path && up.path.indexOf('sky.') === 0) { plateKey = ''; platesReady = false; }
+  queueProof(P, up, tint);
 }
 
 function grantLevels(n) {
@@ -3540,14 +3624,17 @@ function render(dt) {
   drawVortices(P);
   drawBallDetail(P);
   drawConverts(P);
+  drawProofs(P);
   drawTracers(P);
   drawFields(P);
   drawHud(P, calmT);
 
   if (flash > 0) {
     const a = flashMax * (flash / CFG.effects.flashTime);
-    ctx.fillStyle = rgba(P.fog, a);
+    if (flashAdd) ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = rgba(flashCol || P.fog, a);
     ctx.fillRect(-8, -8, cssW + 16, cssH + 16);
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   ctx.restore();
@@ -3623,6 +3710,7 @@ try {
     closeHelp() { closeHelp(); },
     helpSections() { return HELP.map((h) => h.id); },
     get seenHelp() { return sim.seenHelp === true; },
+    proofCount() { return proofs.length; },
     menu(open) { upgradeMenu.open = open !== false; debugOn = debugOn || upgradeMenu.open; },
     // The menu's live hit-boxes, so an automated check can press the same pixels a thumb would.
     get menuState() {
