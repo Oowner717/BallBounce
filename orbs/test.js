@@ -801,6 +801,54 @@ test('gather then release actually throws balls outward (the sling does work)', 
   assert.ok(speedAfter > CONFIG.gather.slingBase * sim.scale * 0.4, 'sling speed too low: ' + speedAfter.toFixed(1));
 });
 
+test('a FAST swipe flings balls along the swipe; a slow drag only pushes them outward', () => {
+  // The brief's headline feel requirement, and the one most easily faked: a field that
+  // only pushes radially would scatter balls symmetrically no matter how fast it moved.
+  const swipe = (speed) => {
+    const sim = freshSim({ 'world.idleDriftStrength': 0, 'world.gravityY': 0 }, 77);
+    const y = sim.height / 2;
+    const dt = 1 / 60;
+    for (let i = 0; i < 60; i++) step(sim, dt, null);
+    const touched = new Map();
+    let x = 40;
+    while (x < sim.width - 40) {
+      for (const b of sim.balls) {
+        if (b.alive && Math.abs(b.y - y) < 70 && Math.abs(b.x - x) < 70 && !touched.has(b.id)) {
+          touched.set(b.id, b);
+        }
+      }
+      step(sim, dt, { pointers: [{ id: 1, x, y }] });
+      x += speed * sim.scale * dt;
+    }
+    for (let i = 0; i < 6; i++) step(sim, dt, { pointers: [] });
+
+    let sx = 0, sy = 0, n = 0, along = 0;
+    for (const b of touched.values()) {
+      if (!b.alive) continue;
+      if (Math.hypot(b.vx, b.vy) < 20 * sim.scale) continue;
+      sx += b.vx; sy += b.vy; n++;
+      if (b.vx > 0) along++;
+    }
+    assert.ok(n >= 6, 'swipe at ' + speed + ' only moved ' + n + ' balls');
+    return { angle: Math.atan2(sy / n, sx / n) * 180 / Math.PI, alongPct: 100 * along / n, n };
+  };
+
+  const slow = swipe(240);
+  const fast = swipe(1500);
+
+  // A fast swipe: most balls end up travelling WITH it, and the mean direction is the
+  // swipe's own direction (0 degrees) rather than something radial.
+  assert.ok(fast.alongPct >= 70,
+    'only ' + fast.alongPct.toFixed(0) + '% of balls travel with a fast swipe');
+  assert.ok(Math.abs(fast.angle) < 30,
+    'fast-swipe mean velocity is ' + fast.angle.toFixed(0) + ' degrees off the swipe direction');
+
+  // And it must be genuinely velocity-dependent, not just "the field always shoves right".
+  assert.ok(fast.alongPct > slow.alongPct + 20,
+    'a fast swipe is no more directional than a slow drag ('
+      + fast.alongPct.toFixed(0) + '% vs ' + slow.alongPct.toFixed(0) + '%) — the fling term is not working');
+});
+
 /* ========================================================================== */
 group('8. Save roundtrip and corruption');
 /* ========================================================================== */
