@@ -3591,6 +3591,7 @@ function render(dt) {
   updateWipe(uiDt);
   updateDebugCorner(uiDt);
   updateHelpCorner(uiDt);
+  applyPendingReload(uiDt);
   updateHelp(dt);
   if (lv1Done > 0) { lv1Done += dt; if (lv1Done > 1.6) lv1Done = 0; }
   adaptQuality();
@@ -3708,10 +3709,148 @@ try {
       paused = false;
       needFirstDtClamp = true;   // clamp the first dt after resume, or everything teleports
       lastTime = 0;
+      checkForUpdate();
     }
   });
   window.addEventListener('pagehide', () => { if (CFG.save.writeOnHide) writeSave(true); });
 } catch (e) { logError('life', e.message); }
+
+/* ========================================================================== */
+/* Picking up a new build                                                     */
+/*                                                                            */
+/* sw.js calls skipWaiting() and clients.claim(), so a new version takes       */
+/* control as soon as it installs. Claiming a page does not RELOAD it though,  */
+/* and the modules already running are the old ones. A home-screen app on iOS  */
+/* is resumed from the switcher rather than re-navigated, so a player could    */
+/* sit on a stale build indefinitely — the only cure being to force-quit the   */
+/* app, which is not a thing anyone thinks to do to a toy.                     */
+/* ========================================================================== */
+
+let pendingReload = 0;        // seconds a reload has been waiting for a quiet moment
+let lastUpdateCheck = -1e9;
+
+/**
+ * Is the build on the server still the build we are running?
+ *
+ * This reads sw.js directly rather than leaning on the service worker lifecycle. Asking the
+ * registration to update() and waiting for it to claim the page turned out not to be dependable
+ * enough to hang the whole update story on — the call is advisory, the browser may coalesce or
+ * defer it, and a fire-and-forget one frequently did nothing at all. Every deploy already bumps
+ * CACHE_VERSION in that file (the worker cannot work without it), so it doubles as a build stamp
+ * that can be read in one no-store fetch of a few kilobytes, on resume, at most once a minute.
+ *
+ * The worker is still told to update as well — that is what actually swaps the cached assets.
+ * This just makes the decision to reload something observable rather than something hoped for.
+ */
+let buildStamp = null;        // CACHE_VERSION as it was when this page loaded
+
+function readBuildStamp() {
+  // Offline is not a failure, it is just not a question worth asking — and attempting it anyway
+  // prints a network error to the console on every resume of an installed offline app, which is
+  // exactly the sort of routine noise that later hides a real one.
+  try { if (navigator.onLine === false) return Promise.resolve(null); } catch (_) {}
+  // The query string is load-bearing. An ALREADY-INSTALLED old worker is what stands between a
+  // stuck app and the fix, and that old worker serves assets cache-first — including, before the
+  // bail added to sw.js, its own script. So a plain './sw.js' fetch is answered from its cache
+  // with the very build we are trying to move off, forever. A unique URL cannot be matched in
+  // any cache, so it always reaches the network, which is the only way this check can ever
+  // notice anything on the exact installs that need it most.
+  return fetch('./sw.js?stamp=' + Math.floor(nowSec() * 1000), { cache: 'no-store' })
+    .then((r) => (r.ok ? r.text() : ''))
+    .then((t) => { const m = t.match(/CACHE_VERSION\s*=\s*'([^']+)'/); return m ? m[1] : null; })
+    .catch(() => null);
+}
+
+function checkForUpdate() {
+  if (!CFG.update.checkOnResume) return;
+  const t = nowSec();
+  if (t - lastUpdateCheck < CFG.update.checkThrottle) return;
+  lastUpdateCheck = t;
+  try {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration()
+        .then((r) => { if (r) return r.update(); })
+        .catch(() => {});
+    }
+  } catch (_) {}
+  // The file on the server is the authority on which build is deployed. Asking the service
+  // worker to update and waiting for it to claim the page was tried first and is not dependable
+  // enough to hang this on — the call is advisory and frequently did nothing at all. So: if the
+  // stamp has moved, drop our caches and reload. Dropping them first is what makes the reload
+  // mean something, because assets are served cache-first and a reload onto a live old cache
+  // hands the page back the exact build it is trying to leave.
+  readBuildStamp().then((v) => {
+    if (!v) return;
+    if (buildStamp === null) { buildStamp = v; return; }
+    if (v === buildStamp || pendingReload !== 0) return;
+    buildStamp = v;
+    dropCachesThen(() => { pendingReload = 1e-6; });
+  });
+}
+
+/** Delete only this app's caches, then continue. Never blocks on failure. */
+function dropCachesThen(done) {
+  const go = () => { try { done(); } catch (_) {} };
+  try {
+    if (!('caches' in window)) { go(); return; }
+    const pre = CFG.update.cachePrefix;
+    caches.keys()
+      .then((names) => Promise.all(names.filter((n) => n.indexOf(pre) === 0).map((n) => caches.delete(n))))
+      .then(go, go);
+  } catch (_) { go(); }
+}
+
+function applyPendingReload(dt) {
+  if (pendingReload <= 0) return;
+  pendingReload += dt;
+  const quiet = sim.untouchedTime >= CFG.update.quietBeforeReload && pointers.size === 0;
+  if (!quiet && pendingReload < CFG.update.maxWaitForQuiet) return;
+  try { writeSave(true); } catch (_) {}
+  pendingReload = 0;
+  try { location.reload(); } catch (_) {}
+}
+
+// Read the build stamp once at startup. Everything after this compares against it.
+try { readBuildStamp().then((v) => { if (buildStamp === null) buildStamp = v; }); } catch (_) {}
+
+/**
+ * Wait for a NEW worker to finish activating, then queue the reload.
+ *
+ * The ordering matters and is the whole reason this is not just "reload when the file changes".
+ * Assets are served cache-first, so reloading before the new worker has activated hands the page
+ * the OLD cached main.js and config.js and nothing changes — which is exactly the trap a stale
+ * install falls into. A new worker precaches under a new cache name during install and deletes
+ * the old one on activate, so only once it is active does a reload actually get the new build.
+ */
+function watchWorker(reg) {
+  if (!reg) return;
+  const follow = (w) => {
+    if (!w) return;
+    w.addEventListener('statechange', () => {
+      if (w.state === 'activated' && pendingReload === 0) pendingReload = 1e-6;
+    });
+  };
+  reg.addEventListener('updatefound', () => follow(reg.installing));
+  follow(reg.waiting);
+}
+
+try {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistration().then(watchWorker).catch(() => {});
+    // `hadController` is load-bearing, and it has to be RE-EVALUATED rather than frozen at boot.
+    // On a first ever visit the page starts with no controller and gets one the moment the worker
+    // claims it; reloading there would be a reload on every player's first launch, and with a slow
+    // install, a loop. But main.js runs before the worker is even registered, so a value captured
+    // once stays false forever and no later update is ever picked up either — which is the exact
+    // bug that let a phone sit on a stale build.
+    let hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      const isUpdate = hadController;
+      hadController = !!navigator.serviceWorker.controller;
+      if (isUpdate && pendingReload === 0) pendingReload = 1e-6;
+    });
+  }
+} catch (e) { logError('life', 'sw update: ' + e.message); }
 
 // Expose a small handle for the headless harness and for poking around in Safari's
 // inspector. Nothing in the app reads this.
@@ -3748,7 +3887,12 @@ try {
     helpSections() { return HELP.map((h) => h.id); },
     get seenHelp() { return sim.seenHelp === true; },
     proofCount() { return proofs.length; },
-    dbgCloseRect() { return { cx: dbgCloseRect.x + dbgCloseRect.w/2, cy: dbgCloseRect.y + dbgCloseRect.h/2 }; },
+    // The close crosses, so an automated check can press the same pixels a thumb would.
+    closeTargets() {
+      return {
+        debug: { cx: dbgCloseRect.x + dbgCloseRect.w / 2, cy: dbgCloseRect.y + dbgCloseRect.h / 2 },
+      };
+    },
     menu(open) { upgradeMenu.open = open !== false; debugOn = debugOn || upgradeMenu.open; },
     // The menu's live hit-boxes, so an automated check can press the same pixels a thumb would.
     get menuState() {

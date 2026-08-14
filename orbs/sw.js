@@ -31,7 +31,7 @@
  */
 
 // BUMP THIS ON EVERY DEPLOY — the browser byte-diffs this file to detect updates.
-const CACHE_VERSION = 'orbs-v6';
+const CACHE_VERSION = 'orbs-v7';
 
 // How long a navigation may wait for the network before the cached shell is painted
 // instead. Only ever armed when a cached shell actually exists.
@@ -221,6 +221,12 @@ self.addEventListener('fetch', function (event) {
     return;
   }
   if (url.origin !== self.location.origin) return;
+
+  // Never serve the worker's own script from the cache. The browser byte-diffs this file to
+  // decide whether a new version exists, and the page reads CACHE_VERSION out of it to tell
+  // which build is deployed — answering either question from a cache means always answering
+  // "the one you already have", which is how an app gets stuck on an old build forever.
+  if (url.pathname === self.location.pathname) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(

@@ -120,7 +120,7 @@ thing without a CLI.
 The first line of real code in `sw.js` is:
 
 ```js
-const CACHE_VERSION = 'orbs-v6';
+const CACHE_VERSION = 'orbs-v7';
 ```
 
 **Bump it on every deploy.** The browser decides a service worker has changed by
@@ -133,6 +133,39 @@ Caches are namespaced by an `orbs-cache-` prefix and only that prefix is ever de
 `CacheStorage` is scoped per **origin**, not per path, and GitHub Pages puts every one of
 your repositories on the same origin — an unprefixed cleanup would wipe the offline data of
 every neighbouring project.
+
+### Picking up a new build
+
+The worker calls `skipWaiting()` and `clients.claim()`, so a new version takes control the moment
+it installs. That is not enough on its own, and the gap is worth writing down because it is
+invisible until somebody is stuck in it:
+
+- Claiming a page does **not reload** it. The modules already running are the old ones.
+- An iOS home-screen app is **resumed** from the app switcher, not re-navigated, so it can go days
+  without a fresh load.
+- Assets are served **cache-first**. So even a reload, if it happens before the new worker has
+  activated and swapped caches, hands the page back the exact build it was trying to leave.
+
+So on resume — throttled to once a minute, and skipped entirely when `navigator.onLine` is false —
+the app reads `CACHE_VERSION` straight out of `sw.js` and compares it to the value it booted with.
+That fetch carries a unique query string, which is load-bearing: an already-installed **old**
+worker is precisely what stands between a stuck app and the fix, and before the bail added to
+`sw.js` it served its own script from its own cache, so a plain `./sw.js` fetch was answered with
+the very build we were trying to move off, forever.
+
+If the stamp has moved, the app deletes its own caches (only the `orbs-cache-` prefix — the origin
+is shared) and reloads at the next quiet moment: two seconds untouched, or twenty-five if you never
+stop playing. Deleting first is what makes the reload mean anything.
+
+Asking `registration.update()` and waiting for the worker to claim the page was tried first and is
+not dependable enough to hang this on — the call is advisory, and a fire-and-forget one frequently
+did nothing at all. It is still called, because it is what actually swaps the cached assets; it is
+just not what the decision to reload rests on.
+
+A first launch never reloads itself. `hadController` is re-evaluated rather than captured once at
+boot, because `main.js` runs before the worker is even registered — a value read once is `false`
+forever, which both suppresses the first-run reload correctly and suppresses every later update
+too.
 
 ---
 

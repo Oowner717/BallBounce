@@ -686,6 +686,32 @@ export const CONFIG = {
     calmSettleTime: 10.0,     // s. Untouched time at which "genuinely quiet" is asserted (used by tests).
   },
 
+  /* ----------------------------------------------------------------- update -- */
+  // Picking up a new build. The service worker calls skipWaiting() and clients.claim(), so a new
+  // version takes control the moment it installs — but claiming a page does NOT reload it, and
+  // the JS modules already running in memory are the old ones. An iOS home-screen app is resumed
+  // from the switcher rather than re-navigated, so without this a player can sit on a stale build
+  // indefinitely and the only cure is force-quitting the app, which nobody thinks to do.
+  update: {
+    checkOnResume: true,      // Ask the service worker to look for a new build when the app comes
+                              // back to the foreground. This is the moment it matters: a phone app
+                              // is resumed far more often than it is launched.
+    checkThrottle: 60,        // s. Minimum gap between those checks, so a player flicking in and
+                              // out of the app does not hammer the network.
+    quietBeforeReload: 2.0,   // s untouched before a pending reload is allowed to happen. A reload
+                              // is instant and harmless — the save is written first and everything
+                              // in it comes back — but yanking the screen out from under a finger
+                              // mid-swipe is not something to do to somebody.
+    maxWaitForQuiet: 25,      // s. If the screen never goes quiet, reload anyway. A player who
+                              // never stops playing still deserves the build with the fixes in it.
+    cachePrefix: 'orbs-cache-', // Must match CACHE_PREFIX in sw.js. Before reloading onto a new
+                              // build, the app's own caches are dropped so the reload cannot be
+                              // answered from them. Assets are served cache-first, so without
+                              // this a reload hands the page back the very build it is leaving.
+                              // Only ever this prefix: CacheStorage is scoped per ORIGIN, and on
+                              // GitHub Pages every repository shares one.
+  },
+
   /* ------------------------------------------------------------------- help -- */
   // The one screen in the game that is allowed to use words. Numbers only — the copy itself
   // lives in main.js, because prose is content and this file is the tuning surface.
