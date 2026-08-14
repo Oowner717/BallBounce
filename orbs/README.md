@@ -154,9 +154,11 @@ comet, the resonances, and the feel properties that are easy to fake.
 
 The ones that earn their keep most often:
 
-- **Determinism** — the same seed and the same scripted inputs must produce a bit-identical
+- **Determinism** — the same seed and the same scripted inputs must produce an identical
   state hash after thousands of steps. This is what keeps `sim.js` honest about not
-  reaching for `Date.now()` or `Math.random()`.
+  reaching for `Date.now()` or `Math.random()`. (That guarantee is per-engine: `Math.sin`
+  and friends are implementation-defined in the last bit, so a replay is not promised to
+  match across Node and Safari. Nothing depends on it.)
 - **Energy sanity** — with idle drift zeroed and no input, total kinetic energy must be
   monotonically non-increasing across every window. This catches positional collision
   correction quietly pumping energy into the world, which makes an untouched screen slowly
@@ -185,7 +187,7 @@ The ones that earn their keep most often:
 | Two-finger triple-tap        | Re-scatter the balls. Does not touch your score. |
 | Four-finger tap, or `D`      | Debug overlay. |
 | `R`                          | Re-scatter (desktop shortcut). |
-| `?soak=1`                    | Synthesises random multi-touch for hands-free stress runs. |
+| `?soak=1`                    | Synthesises random multi-touch for hands-free stress runs. Does not write to your save. |
 | `?debug=1`                   | Start with the overlay open. |
 | `?seed=12345`                | Fixed PRNG seed, for reproducing something. |
 
