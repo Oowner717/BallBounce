@@ -77,41 +77,22 @@ black-translucent status bar.
 
 ## Deployment
 
-### GitHub Pages — needs one click from you first
+### GitHub Pages — live
 
-`.github/workflows/pages.yml` is in the repo and working. It runs the tests, then publishes
-`./orbs` as the **site root**, so the app ends up at `https://<owner>.github.io/<repo>/`
-rather than at `/orbs/`.
+**https://oowner717.github.io/BallBounce/**
 
-**It cannot finish on its own, and has not.** The workflow asks the API to switch Pages on
-(`actions/configure-pages` with `enablement: true`), but the default `GITHUB_TOKEN` is not
-permitted to enable Pages on a repository where it has never been enabled. The run fails at
-that step with:
+`.github/workflows/pages.yml` runs the tests, then publishes `./orbs` as the **site root**,
+so the app is at the bare repo URL rather than at `/orbs/`. It triggers on pushes to
+`main`, `master` or `claude/orbs-physics-toy-6vnxwx`, and can be run by hand from the
+Actions tab.
 
-```
-Create Pages site failed. Error: Resource not accessible by integration
-```
+Pages had to be switched on once by hand (Settings → Pages → Build and deployment →
+Source: "GitHub Actions") because the default `GITHUB_TOKEN` is not permitted to enable
+Pages on a repository where it never has been. That is done; every push now deploys on its
+own.
 
-That is a repository setting, not something a workflow can grant itself. **There is no live
-URL yet.** To get one:
-
-1. **Settings → Pages → Build and deployment → Source: “GitHub Actions”.** This is the one
-   click that cannot be automated from CI.
-2. Re-run the workflow — Actions → *Deploy Orbs to GitHub Pages* → **Run workflow** — or just
-   push any commit to the branch.
-
-```sh
-# or from a shell, once Pages is enabled:
-gh workflow run "Deploy Orbs to GitHub Pages" --ref claude/orbs-physics-toy-6vnxwx
-gh run watch
-```
-
-The published URL is printed by the last step of the run and shown on the Pages settings
-page. It will almost certainly be `https://oowner717.github.io/BallBounce/` — but that is a
-prediction, not a fact. Take the URL from the run output.
-
-The `test` job is deliberately separate from `deploy`, so the test signal stays green and
-meaningful whether or not Pages is enabled.
+To install it on the phone: open that URL in **Safari** → **Share** → **Add to Home
+Screen**.
 
 ### Netlify, as an alternative
 
@@ -157,7 +138,7 @@ Zero installs, `node:assert` only, exits 0 on success. Takes about 70 seconds �
 that is genuine simulation: a 12,000-step soak under random max-strength fields, two
 4,000-step determinism runs, and a 5,000-step chaos run.
 
-73 tests covering determinism, stability, energy conservation, the population cap, the
+76 tests covering determinism, stability, energy conservation, the population cap, the
 effect budget, timer recovery, score/combo/level invariants, save corruption, the sky, the
 comet, the resonances, and the feel properties that are easy to fake.
 
