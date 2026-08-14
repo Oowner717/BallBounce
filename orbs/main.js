@@ -128,6 +128,8 @@ function wipeSave() {
     palette.key = '';
     palette.from = palette.to = 0;
     palette.t = 0;
+    palette.fromP = null; palette.rush = 0;
+    plateKey = ''; platesReady = false;
     softResetEffects();
     saveTimer = 0;
   } catch (e) {
@@ -401,6 +403,177 @@ const bloomACtx = bloomA.getContext('2d');
 const bloomB = document.createElement('canvas');
 const bloomBCtx = bloomB.getContext('2d');
 
+/* -- atmosphere plates ------------------------------------------------------
+ * The background used to be a two-stop gradient allocated fresh EVERY FRAME, plus flat star
+ * dots, and nothing at all existed below about 62% of the screen height. These four bitmaps
+ * hold everything that is slow to draw and almost never changes: the gradient, a horizon glow,
+ * colour clouds, and a noise tile to stop near-black gradients banding on an OLED panel.
+ *
+ * They are rendered at half CSS size and upscaled. Everything on them is a soft gradient, so
+ * the resample is free blur — the same argument the bloom pass already makes. Per-frame cost
+ * for the whole sky is one drawImage, against four gradient allocations and 88 arc fills.
+ */
+const skyPlate = document.createElement('canvas');       // gradient + horizon + nebula + grain
+const skyPlateCtx = skyPlate.getContext('2d');
+const skyPlateCalm = document.createElement('canvas');   // the same, desaturated, for CALM
+const skyPlateCalmCtx = skyPlateCalm.getContext('2d');
+const nebPlate = document.createElement('canvas');       // clouds only, transparent, for FRENZY
+const nebPlateCtx = nebPlate.getContext('2d');
+const vigPlate = document.createElement('canvas');       // pure black vignette, palette-independent
+const vigPlateCtx = vigPlate.getContext('2d');
+
+let plateKey = '';
+let plateDirty = 0;        // bitmask: 1 skyPlate, 2 skyPlateCalm, 4 nebPlate
+let platesReady = false;
+let grainCanvas = null;
+
+/** Plate pixel size: covers the shake overfill, floored so a tiny window still gets a plate. */
+function plateSize() {
+  const S = CFG.sky;
+  const m = CFG.effects.shakeMax * scale() + 2;
+  return [
+    Math.max(S.plateScaleMin, Math.round((cssW + m * 2) * S.plateScale)),
+    Math.max(S.plateScaleMin, Math.round((cssH + m * 2) * S.plateScale)),
+  ];
+}
+
+/**
+ * A white noise tile. White with a random ALPHA, never a grey fill: a grey fill composited
+ * additively would lift the black floor by its own mean, and the black floor is what makes the
+ * additive trails read as the brightest thing on screen.
+ */
+function grainTile() {
+  if (grainCanvas) return grainCanvas;
+  const S = CFG.sky;
+  const n = Math.max(4, S.grainTile | 0);
+  const c = document.createElement('canvas');
+  c.width = c.height = n;
+  const g = c.getContext('2d');
+  const img = g.createImageData(n, n);
+  const d = img.data;
+  for (let i = 0; i < n * n; i++) {
+    d[i * 4] = 255; d[i * 4 + 1] = 255; d[i * 4 + 2] = 255;
+    d[i * 4 + 3] = (Math.random() * S.grainAmp) | 0;
+  }
+  g.putImageData(img, 0, 0);
+  grainCanvas = c;
+  return c;
+}
+
+/** Steps 2 and 3 of the plate — the horizon glow and the colour clouds. Shared by three plates. */
+function paintAtmosphere(g, P, pw, ph) {
+  const S = CFG.sky;
+  g.globalCompositeOperation = 'lighter';
+  // Anchored BELOW the frame so only the top of the falloff shows: it reads as light coming
+  // from under the world rather than as a circle somebody drew near the bottom.
+  const hy = ph * S.horizonY, hr = ph * S.horizonRadius;
+  const hg = g.createRadialGradient(pw * 0.5, hy, 0, pw * 0.5, hy, hr);
+  hg.addColorStop(0.00, rgba(P.fog, S.horizonAlpha));
+  hg.addColorStop(0.55, rgba(P.fog, S.horizonAlpha * 0.35));
+  hg.addColorStop(1.00, rgba(P.fog, 0));
+  g.fillStyle = hg;
+  g.fillRect(0, 0, pw, ph);
+
+  // Clouds cycle fog -> ring -> star, so every world brings its own weather and it crossfades
+  // with the palette drift for free. Spots are fixed rather than save-derived: a brand-new
+  // player has no milestones and therefore no stars, and still deserves a sky with something in it.
+  const cols = [P.fog, P.ring, P.star];
+  const n = Math.max(0, Math.min(S.nebulaMax, S.nebulaCount | 0));
+  for (let i = 0; i < n; i++) {
+    const sp = S.nebulaSpots[i % S.nebulaSpots.length];
+    const cx = sp[0] * pw, cy = sp[1] * ph;
+    const r = Math.max(1, S.nebulaRadius * Math.min(pw, ph) * sp[2]);
+    const col = cols[i % cols.length];
+    const ng = g.createRadialGradient(cx, cy, 0, cx, cy, r);
+    ng.addColorStop(0.00, rgba(col, S.nebulaAlpha));
+    ng.addColorStop(S.nebulaMidStop, rgba(col, S.nebulaAlpha * S.nebulaMidMul));
+    ng.addColorStop(1.00, rgba(col, 0));
+    g.fillStyle = ng;
+    g.fillRect(0, 0, pw, ph);
+  }
+  g.globalCompositeOperation = 'source-over';
+}
+
+function buildPlate(canvasEl, g, P, opaque) {
+  const S = CFG.sky;
+  const [pw, ph] = plateSize();
+  if (canvasEl.width !== pw || canvasEl.height !== ph) { canvasEl.width = pw; canvasEl.height = ph; }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, pw, ph);
+  if (opaque) {
+    // Four stops, not two. The mid stop sits above the halfway mix so the top of the screen
+    // stays properly dark — the balls need black to burn against — while the bottom finally
+    // has a colour in it at all.
+    const grad = g.createLinearGradient(0, 0, 0, ph);
+    grad.addColorStop(0.00, P.bg0);
+    grad.addColorStop(S.bgMidStop, mixHex(P.bg0, P.bg1, S.bgMidMix));
+    grad.addColorStop(0.78, P.bg1);
+    grad.addColorStop(1.00, mixHex(P.bg1, P.fog, S.bgFloorMix));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, pw, ph);
+  }
+  paintAtmosphere(g, P, pw, ph);
+  if (opaque && S.grainAlpha > 0) {
+    const pat = g.createPattern(grainTile(), 'repeat');
+    if (pat) {
+      g.globalCompositeOperation = 'lighter';
+      g.globalAlpha = S.grainAlpha;
+      g.fillStyle = pat;
+      g.fillRect(0, 0, pw, ph);
+      g.globalAlpha = 1;
+      g.globalCompositeOperation = 'source-over';
+    }
+  }
+}
+
+function buildVigPlate() {
+  const S = CFG.sky;
+  const [pw, ph] = plateSize();
+  if (vigPlate.width !== pw || vigPlate.height !== ph) { vigPlate.width = pw; vigPlate.height = ph; }
+  const g = vigPlateCtx;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, pw, ph);
+  const mx = Math.max(pw, ph);
+  const vg = g.createRadialGradient(pw / 2, ph / 2, mx * S.vignetteInner, pw / 2, ph / 2, mx * S.vignetteOuter);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,1)');
+  g.fillStyle = vg;
+  g.fillRect(0, 0, pw, ph);
+}
+
+function plateKeyFor() {
+  const S = CFG.sky;
+  return palette.key + '|' + lastW + 'x' + lastH + '|' + S.nebulaCount + '|' + S.nebulaAlpha
+    + '|' + S.horizonAlpha + '|' + S.grainAlpha + '|' + S.calmChromaDrop;
+}
+
+function ensurePlates(P) {
+  const key = plateKeyFor();
+  if (key !== plateKey) { plateKey = key; plateDirty = 7; }
+  const calmP = () => {
+    const S = CFG.sky;
+    const c = Object.assign({}, P);
+    c.bg0 = chroma(P.bg0, -S.calmChromaDrop);
+    c.bg1 = chroma(P.bg1, -S.calmChromaDrop);
+    return c;
+  };
+  if (!platesReady) {
+    buildPlate(skyPlate, skyPlateCtx, P, true);
+    buildPlate(skyPlateCalm, skyPlateCalmCtx, calmP(), true);
+    buildPlate(nebPlate, nebPlateCtx, P, false);
+    if (!vigPlate.width || vigPlate.width < 2) buildVigPlate();
+    plateDirty = 0;
+    platesReady = true;
+    return;
+  }
+  // One plate per frame. Two full rebuilds landing on the same frame is the only spike here,
+  // and a plate that is one frame stale is invisible: the colour delta per palette-key step
+  // is smaller than one quantisation step.
+  if (plateDirty & 1) { buildPlate(skyPlate, skyPlateCtx, P, true); plateDirty &= ~1; }
+  else if (plateDirty & 2) { buildPlate(skyPlateCalm, skyPlateCalmCtx, calmP(), true); plateDirty &= ~2; }
+  else if (plateDirty & 4) { buildPlate(nebPlate, nebPlateCtx, P, false); plateDirty &= ~4; }
+}
+
 let cssW = 1, cssH = 1, dpr = 1;
 let bloomScale = CFG.render.bloomScale;
 const safe = { t: 0, r: 0, b: 0, l: 0 };
@@ -451,6 +624,9 @@ function resizeLayers(force) {
   trailCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   rebuildBloom();
+  // The plates are sized from cssW/cssH, so they are stale the moment those change.
+  plateKey = ''; platesReady = false;
+  buildVigPlate();
 
   if (sim) simResize(sim, cssW, cssH);
 }
@@ -503,6 +679,11 @@ let converts = [];         // a ball changing type: old colour collapsing, new c
 let tracers = [];          // a line from the announcement to the thing it names
 let capGlory = 0;          // countdown on the level-100 display
 let particleBudget = CFG.effects.maxParticles;
+let shakeX = 0, shakeY = 0;   // this frame's shake offset, so the sky can lag behind it
+// Atmosphere detail tier, shed before physics ever is: 2 = everything, 1 = no FRENZY cloud
+// flare, 0 = also no CALM desaturation pass, fewer stars, no constellation lines. The vignette
+// is never shed — it is one blit and it carries the whole contrast story.
+let bgTier = 2;
 
 let softResets = 0;
 
@@ -536,6 +717,8 @@ function softResetEffects() {
   // recover from a corrupt palette, which is the exact case that wedged the renderer.
   palette.cur = null;
   palette.key = '';
+  palette.fromP = null; palette.rush = 0;
+  plateKey = ''; platesReady = false;
   spriteCache.clear();
   // Counted rather than logged: the ring buffer is small, and a reset message evicting the
   // error that CAUSED it is how you lose the only evidence you had.
@@ -1091,16 +1274,37 @@ function buildInput() {
 /* Drawing                                                                    */
 /* ========================================================================== */
 
-function drawBackground(P, calm) {
+/**
+ * The whole sky, in blits.
+ *
+ * ORDERING RULE that must never be "tidied": every line of this runs BEFORE the additive trail
+ * composite. Move the vignette after it and it dims the balls and the HUD too, and the change
+ * reads to a player as "the game got darker" rather than "the frame closed in".
+ */
+function drawBackground(P, calmT, frenzyT) {
+  ensurePlates(P);
   // Overfill by the shake amplitude: the whole scene is drawn under a translate during a
   // shake, so filling exactly (0,0,cssW,cssH) leaves an unpainted strip at the trailing
   // edge which smears last frame's pixels.
   const m = CFG.effects.shakeMax * scale() + 2;
-  const g = ctx.createLinearGradient(0, -m, 0, cssH + m);
-  g.addColorStop(0, P.bg0);
-  g.addColorStop(1, P.bg1);
-  ctx.fillStyle = g;
-  ctx.fillRect(-m, -m, cssW + m * 2, cssH + m * 2);
+  const W = cssW + m * 2, H = cssH + m * 2;
+
+  ctx.drawImage(skyPlate, -m, -m, W, H);
+  // Quiet desaturates the ROOM, never the balls. They keep every bit of their colour against a
+  // sky that has gone grey around them, which is most of what makes CALM feel like a held breath.
+  if (calmT > 0.02 && bgTier > 0) {
+    ctx.globalAlpha = calmT;
+    ctx.drawImage(skyPlateCalm, -m, -m, W, H);
+    ctx.globalAlpha = 1;
+  }
+  // ...and chaos makes the clouds flare. Zero cost at rest: the branch never runs outside FRENZY.
+  if (frenzyT > 0.02 && bgTier > 1) {
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = CFG.sky.nebulaFrenzyGain * frenzyT;
+    ctx.drawImage(nebPlate, -m, -m, W, H);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
 
   // A new world announces itself as an expanding front of its own light, thrown from wherever
   // your finger was. Composited 'lighter' so it lifts the scene instead of veiling it.
@@ -1116,39 +1320,82 @@ function drawBackground(P, calm) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = g2;
-    ctx.fillRect(-m, -m, cssW + m * 2, cssH + m * 2);
+    ctx.fillRect(-m, -m, W, H);
     ctx.restore();
   }
 
-  // The sky: permanent, save-derived, and best seen when nothing is happening. Celebrating a new
-  // sky while it sits at 28% opacity would be absurd, so a wash brings it to full strength.
-  const skyAlpha = wash ? 1 : calm + (1 - calm) * CFG.sky.calmOnlyAlpha;
-  if (sky.stars.length && skyAlpha > 0.02) {
-    const t = sim.time;
-    ctx.save();
-    if (sky.links.length) {
-      ctx.strokeStyle = rgba(P.star, CFG.sky.linkAlpha * skyAlpha);
-      ctx.lineWidth = 0.6;
-      ctx.beginPath();
-      for (const [i, j] of sky.links) {
-        const a = sky.stars[i], b = sky.stars[j];
-        ctx.moveTo(a.x * cssW, a.y * cssH);
-        ctx.lineTo(b.x * cssW, b.y * cssH);
-      }
-      ctx.stroke();
+  drawStars(P, calmT);
+  drawVignette(calmT, frenzyT);
+}
+
+/**
+ * The stars: permanent, save-derived, and best seen when nothing is happening.
+ *
+ * Two changes from flat dots. They are drawn as soft sprites at three alpha buckets instead of
+ * 88 individually-built rgba strings, and they parallax against the screen shake instead of
+ * translating with it in perfect lockstep — which read as a decal stuck to the glass.
+ */
+function drawStars(P, calmT) {
+  const S = CFG.sky;
+  const skyAlpha = wash ? 1 : calmT + (1 - calmT) * S.calmOnlyAlpha;
+  if (!sky.stars.length || skyAlpha <= 0.02) return;
+  const t = sim.time;
+  const n = bgTier === 0 ? Math.min(sky.stars.length, S.shedStars) : sky.stars.length;
+  ctx.save();
+  // Counter-translate by a fraction of the shake: the sky is far away, so it should lag.
+  ctx.translate(-shakeX * S.parallax, -shakeY * S.parallax);
+  if (sky.links.length && bgTier > 0) {
+    ctx.strokeStyle = rgba(P.star, S.linkAlpha * skyAlpha);
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    for (const [i, j] of sky.links) {
+      const a = sky.stars[i], b = sky.stars[j];
+      if (!a || !b) continue;
+      ctx.moveTo(a.x * cssW, a.y * cssH);
+      ctx.lineTo(b.x * cssW, b.y * cssH);
     }
-    for (const s of sky.stars) {
-      const tw = 1 + CFG.render.starTwinkle * Math.sin(t * CFG.sky.twinkleRate * 6.28 + (s.seed % 1000) * 0.017);
-      const a = Math.min(1, s.mag * tw) * skyAlpha;
-      if (a <= 0.01) continue;
-      const r = 0.7 + s.mag * 1.4;
-      ctx.fillStyle = rgba(P.star, a);
-      ctx.beginPath();
-      ctx.arc(s.x * cssW, s.y * cssH, r, 0, 6.283);
-      ctx.fill();
-    }
-    ctx.restore();
+    ctx.stroke();
   }
+  // One fillStyle for the whole field, one path per alpha bucket. Rounding alpha to a handful
+  // of buckets is invisible on a star and removes 88 string builds and 88 state changes.
+  const buckets = Math.max(1, S.alphaBuckets | 0);
+  for (let bi = 0; bi < buckets; bi++) {
+    const lo = bi / buckets, hi = (bi + 1) / buckets;
+    const a = (lo + hi) * 0.5 * skyAlpha;
+    if (a <= 0.012) continue;
+    let any = false;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const st = sky.stars[i];
+      const tw = 1 + CFG.render.starTwinkle * Math.sin(t * S.twinkleRate * 6.28 + (st.seed % 1000) * 0.017);
+      const m2 = Math.min(1, st.mag * tw);
+      if (m2 < lo || m2 >= hi) continue;
+      const r = 0.7 + st.mag * 1.4;
+      ctx.moveTo(st.x * cssW + r, st.y * cssH);
+      ctx.arc(st.x * cssW, st.y * cssH, r, 0, 6.283);
+      any = true;
+    }
+    if (any) { ctx.fillStyle = rgba(P.star, a); ctx.fill(); }
+  }
+  ctx.restore();
+}
+
+/**
+ * The frame closing in. One black bitmap and one alpha, and it carries more of the CALM/FRENZY
+ * contrast than anything else in the renderer — because it makes every orb read brighter in
+ * FRENZY without adding a single lumen to a stack that already clips. Pure black, pure
+ * source-over, so it can never tint a palette colour. Never shed: it is one blit.
+ */
+function drawVignette(calmT, frenzyT) {
+  const S = CFG.sky;
+  const a = calmT > 0
+    ? S.vignetteCalm + (S.vignette - S.vignetteCalm) * (1 - calmT)
+    : S.vignette + (S.vignetteFrenzy - S.vignette) * frenzyT;
+  if (a <= 0.01 || vigPlate.width < 2) return;
+  const m = CFG.effects.shakeMax * scale() + 2;
+  ctx.globalAlpha = Math.min(1, a);
+  ctx.drawImage(vigPlate, -m, -m, cssW + m * 2, cssH + m * 2);
+  ctx.globalAlpha = 1;
 }
 
 /**
@@ -1978,6 +2225,8 @@ function resetToLevelOne() {
   applySave(sim, defaultSave(BASE_CONFIG));
   CFG = sim.config;
   palette.cur = null; palette.key = '';
+  palette.fromP = null; palette.rush = 0;
+  plateKey = ''; platesReady = false;
   spriteCache.clear();
   sky = deriveStars(serializeSave(sim), CFG);
   particles.length = 0;
@@ -2089,6 +2338,10 @@ function adaptQuality() {
     particleBudget = Math.min(E.maxParticles, Math.round(particleBudget * 1.02 + 4));
   }
 
+  // Atmosphere is the first thing to go when frames get tight, and physics is never the last.
+  const S = CFG.sky;
+  bgTier = fps < S.shedTier0Fps ? 0 : (fps < S.shedTier1Fps ? 1 : 2);
+
   const wantBloom = fps < E.bloomShedFps
     ? Math.max(E.bloomMinScale, CFG.render.bloomScale * 0.5)
     : CFG.render.bloomScale;
@@ -2177,6 +2430,11 @@ function render(dt) {
   // During a world change, hold the streaks longer: the outgoing world burns off on screen
   // while the incoming one draws over it, which is the whole point of a crossfade you can see.
   if (wash) fadeBase *= CFG.paletteRules.unlockTrailHoldMul;
+  // ...and on a screen nobody has touched, scrub it properly. See render.trailFadeIdle: the
+  // fade is a multiply, so below a few units per 255 it subtracts nothing and the layer keeps a
+  // permanent grey residue. Left alone, an idle screen slowly fills with a lattice of old paths.
+  const idle = (sim.untouchedTime - CFG.render.idleFadeAfter) / Math.max(1e-6, CFG.render.idleFadeRamp);
+  if (idle > 0) fadeBase += (CFG.render.trailFadeIdle - fadeBase) * Math.min(1, idle);
   trailCtx.save();
   trailCtx.setTransform(1, 0, 0, 1, 0, 0);
   trailCtx.globalCompositeOperation = 'destination-out';
@@ -2204,10 +2462,11 @@ function render(dt) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const sx = shake > 0 ? (Math.random() - 0.5) * shake : 0;
   const sy = shake > 0 ? (Math.random() - 0.5) * shake : 0;
+  shakeX = sx; shakeY = sy;
   ctx.save();
   ctx.translate(sx, sy);
 
-  drawBackground(P, calmT);
+  drawBackground(P, calmT, frenzyT);
 
   ctx.globalCompositeOperation = 'lighter';
   ctx.drawImage(trail, 0, 0, cssW, cssH);

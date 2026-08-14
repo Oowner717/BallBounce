@@ -728,6 +728,16 @@ export const CONFIG = {
                               // Too LOW and the additive layer saturates to white, which then ghosts
                               // grey on its way out — same symptom, different cause.
     trailFadeCalm: 0.11,      // Slower trail fade in CALM: longer, lazier streaks.
+    trailFadeIdle: 0.40,      // Trail fade once the screen has been untouched for idleFadeAfter.
+                              // This is not a style choice, it is a leak fix. The fade is a
+                              // MULTIPLY on an 8-bit layer, so it removes round(v * fade) per
+                              // frame: at 0.11 every pixel at or below 4/255 subtracts zero and
+                              // sticks forever. Composited additively and then bloomed twice, that
+                              // stuck floor reads as a grey web of everywhere a ball has ever been,
+                              // and it never goes away. Idle is exactly when nobody is watching the
+                              // streak length and exactly when the screen is supposed to be empty.
+    idleFadeAfter: 6.0,       // s untouched before the trail fade starts ramping toward that.
+    idleFadeRamp: 4.0,        // s over which it ramps, so the web dissolves rather than snapping.
     trailFadeFrenzy: 0.24,    // Faster fade in FRENZY, or the screen turns to soup.
     bloomScale: 0.25,         // Bloom buffer size relative to the stage. The resample IS the blur.
     bloomPasses: 2,           // Upscale-composite passes with 'lighter'.
@@ -935,6 +945,64 @@ export const CONFIG = {
     linkAlpha: 0.30,          // Base opacity of a constellation line.
     calmOnlyAlpha: 0.28,      // Sky opacity multiplier outside CALM (it fades when it gets loud).
     twinkleRate: 0.45,        // 1/s. Twinkle speed.
+    alphaBuckets: 4,          // Stars are drawn in this many alpha groups, one path each, instead
+                              // of building 88 rgba strings and 88 separate fills a frame. On a
+                              // star, rounding the alpha to a quarter is not visible.
+    parallax: 0.45,           // How much of the screen shake the sky does NOT take. At 0 it moves
+                              // in perfect lockstep, which reads as a decal stuck to the glass.
+    shedStars: 34,            // Stars still drawn at the lowest atmosphere tier.
+    shedTier1Fps: 46,         // Below this fps the FRENZY cloud flare stops being drawn.
+    shedTier0Fps: 34,         // Below this the CALM desaturation pass and the constellation lines
+                              // go too, and the star field is capped. Physics is never shed.
+
+    /* -- the atmosphere plates ------------------------------------------------
+     * Everything below is baked into cached bitmaps, so its per-frame cost is a
+     * drawImage no matter how elaborate it gets. */
+    plateScale: 0.5,          // Plates render at this fraction of CSS size and upscale. Everything
+                              // on them is a soft gradient, so the resample is free blur — the same
+                              // argument the bloom already makes.
+    plateScaleMin: 96,        // px floor on either plate axis, so a tiny window still gets a plate.
+    bgMidStop: 0.38,          // Position of the third gradient stop. Two stops read as one flat wash.
+    bgMidMix: 0.55,           // How far that stop sits between bg0 and bg1. Above 0.5 keeps the top
+                              // of the screen dark, which is what the balls burn against.
+    bgFloorMix: 0.10,         // How much `fog` mixes into the bottom stop. The bottom third of the
+                              // screen previously had no colour in it at all. Past about 0.15 the
+                              // black floor lifts and the additive trails stop reading as the
+                              // brightest thing on screen.
+    horizonAlpha: 0.09,       // Peak alpha of the glow anchored below the bottom edge.
+    horizonY: 1.06,           // Its centre, in units of plate height. Above 1 keeps it off-screen,
+                              // so only the top of the falloff shows and it reads as light from
+                              // under the world rather than a circle somebody drew.
+    horizonRadius: 0.62,      // Its radius as a fraction of plate height.
+    nebulaCount: 1,           // Colour clouds baked into the plate. Raised by upgrades.
+    nebulaMax: 4,             // Ceiling, so a forced debug re-apply cannot run the count away.
+    nebulaAlpha: 0.055,       // Peak centre alpha, composited 'lighter'. Small ON PURPOSE: the trail
+                              // and two bloom passes are already additive and clip sooner than they
+                              // look, and a bright sky is a sky competing with the balls.
+    nebulaRadius: 0.85,       // Cloud radius as a fraction of the plate's short side.
+    nebulaMidStop: 0.45,      // Middle gradient stop of a cloud.
+    nebulaMidMul: 0.42,       // Alpha there, relative to nebulaAlpha. Below 0.5 gives the edgeless
+                              // falloff that reads as cloud instead of as a drawn circle.
+    nebulaSpots: [[0.24, 0.22, 1.00], [0.78, 0.62, 0.86], [0.50, 0.92, 1.20], [0.86, 0.14, 0.72]],
+                              // Cloud centres as [x, y, radiusScale] in normalised plate space.
+                              // Fixed rather than save-derived: a new player has no milestones and
+                              // therefore no stars, and still deserves weather.
+    nebulaFrenzyGain: 0.35,   // Extra additive pass of the cloud plate at full FRENZY.
+    calmChromaDrop: 0.35,     // How far the background desaturates toward neutral in CALM. The balls
+                              // keep all of their colour; the room around them goes quiet.
+    grainAlpha: 0.35,         // Alpha of the noise tile baked into the plate.
+    grainTile: 64,            // px. Noise tile size, tiled with createPattern.
+    grainAmp: 10,             // 0-255 peak ALPHA of a noise pixel. The tile is white and varies only
+                              // in alpha, never a grey fill: a grey fill composited additively would
+                              // lift the black floor by its own mean.
+    vignette: 0.22,           // Alpha of the black corner falloff at ACTIVE.
+    vignetteCalm: 0.14,       // In CALM. The frame opens out when nothing is happening.
+    vignetteFrenzy: 0.40,     // In FRENZY. The corners crush and the middle reads like a furnace.
+                              // This one number carries more of the CALM/FRENZY contrast than any
+                              // other, because it makes every orb read brighter without adding a
+                              // single lumen to a stack that already clips.
+    vignetteInner: 0.35,      // Inner radius as a fraction of max(w,h); fully transparent.
+    vignetteOuter: 0.78,      // Outer radius as a fraction of max(w,h); full alpha.
   },
 
   /* -------------------------------------------------------------- filigree -- */
