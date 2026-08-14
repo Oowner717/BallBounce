@@ -263,5 +263,38 @@ Designed for a phone that never gets a debugger attached.
 - Wiping the save resets the *running* session too. Deleting the key alone is not enough —
   the next autosave writes the old state straight back and the wipe silently un-happens.
 
-Performance: physics costs about 0.2 ms per frame with ~90 balls. If sustained fps drops,
-the renderer sheds particles and bloom resolution — never physics.
+Performance: physics costs about 0.2 ms per frame with ~90 balls and 0.42 ms at the full
+150. If sustained fps drops, the renderer sheds particles and bloom resolution — never
+physics.
+
+---
+
+## On-device checklist
+
+Everything else has been verified here: `node test.js` is green, offline reload works on
+`localhost`, a 5-minute `?soak=1` run leaves the error buffer empty, the save survives a
+reload (and an offline reload), a wipe gives a clean first run, ten untouched seconds land
+in CALM, three simultaneous fields work, `pointercancel` leaves no stuck field, rotation
+re-clamps every ball, and play continues with `localStorage` throwing.
+
+These are the ones that need a real iPhone, because a headless Chromium cannot tell you
+about them:
+
+- [ ] **Full-bleed under the notch.** Launched from the Home Screen icon: no address bar,
+      no toolbar, black-translucent status bar, and the canvas paints edge to edge
+      including under the notch and around the home indicator.
+- [ ] **The HUD clears the notch.** Score, combo and level bar sit inside the safe area —
+      not tucked under the sensor housing or the home indicator.
+- [ ] **Nothing scrolls or bounces.** No rubber-band at the top or bottom, no pinch zoom,
+      no double-tap zoom, no text selection, no long-press callout.
+- [ ] **Three simultaneous fields** feel independent under three real fingers.
+- [ ] **Gather → sling feels good.** Hold still until the ring forms, then release, and
+      again with a flick. This is the thing most worth tuning by hand; the knobs are
+      `gather.*` in `config.js` and the coupling note above explains which ones interact.
+- [ ] **60fps.** Physics is 0.42 ms at 150 balls, but drawing was only ever measured under
+      software rendering here — the GPU path is untested. If it drops, the debug overlay
+      (four-finger tap) shows the split between `phys` and `draw`.
+- [ ] **Install from HTTPS** via Safari → Share → Add to Home Screen.
+- [ ] **Relaunch with WiFi off.** It should open and play normally.
+- [ ] **The sky gains stars across sessions.** Best seen in CALM, after leaving it alone
+      for ten seconds, over several days of milestones.
