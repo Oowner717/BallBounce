@@ -148,10 +148,11 @@ Zero installs, `node:assert` only, exits 0 on success. Takes about 70 seconds �
 that is genuine simulation: a 12,000-step soak under random max-strength fields, two
 4,000-step determinism runs, and a 5,000-step chaos run.
 
-62 tests covering determinism, stability, energy conservation, the population cap, the
-effect budget, timer recovery, score/combo/level invariants, save corruption, and the sky.
+73 tests covering determinism, stability, energy conservation, the population cap, the
+effect budget, timer recovery, score/combo/level invariants, save corruption, the sky, the
+comet, the resonances, and the feel properties that are easy to fake.
 
-The two that earn their keep most often:
+The ones that earn their keep most often:
 
 - **Determinism** — the same seed and the same scripted inputs must produce a bit-identical
   state hash after thousands of steps. This is what keeps `sim.js` honest about not
@@ -160,6 +161,16 @@ The two that earn their keep most often:
   monotonically non-increasing across every window. This catches positional collision
   correction quietly pumping energy into the world, which makes an untouched screen slowly
   boil.
+- **The gather actually gathers** — balls must reach the solved orbit shell *and* be
+  circulating at close to `orbitSpin`. `radiusGather` once sat in the wrong config section,
+  so the attractor applied no force at all — while the ring still drew, the morph still
+  animated, and releasing still threw whatever had drifted nearby. It looked completely
+  fine. Assert the physics, never the appearance.
+- **Every config path the code reads exists** — a static scan of `sim.js` and `main.js` for
+  `C.<section>.<key>` chains, resolved against `CONFIG`. That is the check that would have
+  caught the above in a second rather than an afternoon.
+- **A fast swipe flings along the swipe** — and measurably more so than a slow drag, so a
+  regression to a plain radial push fails rather than passing quietly.
 
 ---
 
