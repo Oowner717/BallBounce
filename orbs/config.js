@@ -87,12 +87,13 @@ export const CONFIG = {
 
   /* ----------------------------------------------------- gather and sling -- */
   gather: {
-    radiusGather: 240,        // px @ref. Reach once fully morphed into an attractor. Deliberately
+    radiusGather: 220,        // px @ref. Reach once fully morphed into an attractor. Deliberately
                               // MUCH wider than field.radius: the push evacuates its own
                               // neighbourhood, so a same-size attractor would have nothing left
                               // to gather. Reaching past that hole is what makes gather work.
-                              // Sized to catch a bit over half the population on a phone, so
-                              // there is still a crowd left to sling the orbit INTO.
+                              // Measured: this catches ~51% of the population on a 390px screen
+                              // (44 gathered, 42 left), so there is still a real crowd to sling
+                              // the orbit INTO. 250 catches 60%, 190 catches 44%.
                               // NOTE: this key must live in `gather`, not `field` — sim.js reads
                               // C.gather.radiusGather. It sat under `field` once, so the lookup
                               // was undefined, `d < NaN` was always false, and the attractor
@@ -124,7 +125,10 @@ export const CONFIG = {
                               // proper shell spring up close.
     pushOutCap: 0.5,          // Outward spring force inside the shell, as a fraction of `pull`.
     captureRadius: 175,       // px @ref. Balls inside this at release are considered "in the orbit".
-    maxCapture: 46,           // Ceiling on balls a single sling can throw, for frame-time sanity.
+    maxCapture: 72,           // Ceiling on balls a single sling can throw. Kept comfortably above
+                              // what radiusGather actually gathers, so a release throws the WHOLE
+                              // orbit rather than an arbitrary subset of it. The sling loop is
+                              // O(n) over captured balls, so this is cheap.
 
     slingBase: 620,           // px/s @ref. Base speed added to every slung ball.
     slingPerBall: 5.2,        // px/s @ref added per additional captured ball. Big orbits hit harder.
