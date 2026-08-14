@@ -10,6 +10,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { cloneConfig, CONFIG } from './config.js';
 import {
   createSim, step, resize, scatter, makeRng, hashState,
@@ -553,6 +554,17 @@ test('no timer can get stuck under a 20-second storm — everything drains when 
   );
   for (let i = 0; i < Math.ceil((longest + 2) * 60); i++) step(sim, dt, null);
 
+  // Then wait for genuine quiet before asserting. A hard impact landing in the final frames
+  // legitimately sets a fresh cooldown; "no timer gets stuck" means everything drains once
+  // nothing is happening, not that a cooldown may never be running.
+  let quiet = 0;
+  for (let i = 0; i < 60 * 60 && quiet < 60; i++) {
+    step(sim, dt, null);
+    quiet = sim.hardImpactsThisStep === 0 ? quiet + 1 : 0;
+  }
+  assert.ok(quiet >= 60, 'the world never went quiet, so this test could not run');
+  for (let i = 0; i < Math.ceil((longest + 1) * 60); i++) step(sim, dt, null);
+
   for (const b of sim.balls) {
     if (!b.alive) continue;
     for (const k of ['frozenT', 'inertT', 'effectT', 'scoreT', 'splitT', 'spikeT', 'immuneT', 'magnetT', 'chargeT']) {
@@ -807,6 +819,74 @@ test('a recycled pointer id does not drag the old field across the screen', () =
       'phantom field speed ' + f.speed.toFixed(0) + ' px/s after a recycled-id re-tap');
   }
   assert.equal(allFinite(sim), null);
+});
+
+test('holding still gathers a real orbit: balls arrive at the shell AND circulate', () => {
+  // This is the test that was missing. The attractor can look completely alive — the ring
+  // draws, the morph animates, the sling still throws whatever drifted nearby — while
+  // applying no force whatsoever. Assert the physics, not the appearance.
+  const sim = freshSim(null, 31);
+  const cx = sim.width / 2, cy = sim.height / 2;
+  for (let i = 0; i < 60 * 5; i++) step(sim, 1 / 60, { pointers: [{ id: 1, x: cx, y: cy }] });
+
+  const f = sim.pointers.get(1);
+  assert.ok(f && f.gather > 0.99, 'the field never became an attractor');
+
+  // The orbit settles where the spring supplies the centripetal acceleration the spin needs.
+  const G = CONFIG.gather;
+  const k = G.orbitSpring, r0 = G.orbitRadius * sim.scale, v = G.orbitSpin * sim.scale;
+  const shell = (k * r0 + Math.sqrt(k * k * r0 * r0 + 4 * k * v * v)) / (2 * k);
+
+  let captured = 0, nearShell = 0, circulating = 0, sumTan = 0;
+  for (const b of sim.balls) {
+    if (!b.alive) continue;
+    const dx = b.x - f.sx, dy = b.y - f.sy;
+    const d = Math.hypot(dx, dy);
+    if (d > G.captureRadius * sim.scale) continue;
+    captured++;
+    if (d < shell * 1.9) nearShell++;
+    const nx = dx / d, ny = dy / d;
+    const tan = b.vx * -ny + b.vy * nx;
+    sumTan += Math.abs(tan);
+    if (Math.abs(tan) > 80 * sim.scale) circulating++;
+  }
+
+  assert.ok(captured >= 20, 'the attractor only gathered ' + captured + ' balls');
+  assert.ok(nearShell >= captured * 0.7,
+    'only ' + nearShell + '/' + captured + ' gathered balls reached the ' + shell.toFixed(0) + 'px shell');
+  // Gathered but barely moving means gravity/momentum brought them, not the attractor.
+  const meanTan = sumTan / captured;
+  assert.ok(meanTan > G.orbitSpin * sim.scale * 0.5,
+    'gathered balls are not circulating: mean |tangential| = ' + meanTan.toFixed(0)
+      + ' px/s against an orbitSpin target of ' + (G.orbitSpin * sim.scale).toFixed(0));
+  assert.ok(circulating >= captured * 0.8,
+    'only ' + circulating + '/' + captured + ' gathered balls are actually orbiting');
+});
+
+test('the attractor works from anywhere on screen and on any seed', () => {
+  // The failure mode this guards was seed- and position-independent, but a gather that only
+  // works in the middle of the screen would be just as broken in practice.
+  const spots = [[0.5, 0.5], [0.25, 0.2], [0.8, 0.75], [0.5, 0.12], [0.12, 0.5]];
+  for (const seed of [3, 31, 77]) {
+    for (const [fx, fy] of spots) {
+      const sim = freshSim(null, seed);
+      const x = sim.width * fx, y = sim.height * fy;
+      for (let i = 0; i < 60 * 4; i++) step(sim, 1 / 60, { pointers: [{ id: 1, x, y }] });
+      const f = sim.pointers.get(1);
+      let captured = 0, sumTan = 0;
+      for (const b of sim.balls) {
+        if (!b.alive) continue;
+        const dx = b.x - f.sx, dy = b.y - f.sy, d = Math.hypot(dx, dy);
+        if (d > CONFIG.gather.captureRadius * sim.scale) continue;
+        captured++;
+        sumTan += Math.abs(b.vx * (-dy / d) + b.vy * (dx / d));
+      }
+      const where = 'seed ' + seed + ' at ' + (fx * 100) + '%,' + (fy * 100) + '%';
+      assert.ok(captured >= 12, where + ': gathered only ' + captured + ' balls');
+      assert.ok(sumTan / captured > CONFIG.gather.orbitSpin * sim.scale * 0.4,
+        where + ': gathered balls are not circulating (' + (sumTan / captured).toFixed(0) + ' px/s)');
+    }
+  }
 });
 
 test('gather then release actually throws balls outward (the sling does work)', () => {
@@ -1343,6 +1423,40 @@ test('slamming balls into a comet chips it, breaks it, and records a milestone',
 /* ========================================================================== */
 group('12. Config integrity');
 /* ========================================================================== */
+
+test('every config path the code reads actually exists in config.js', () => {
+  // THE test this file was missing. `radiusGather` was declared under `field` while sim.js
+  // read `C.gather.radiusGather`. The lookup was undefined, so `d < NaN` was always false and
+  // the attractor applied no force at all — while still looking completely alive on screen.
+  // Nothing failed. Nothing threw. It just silently did nothing.
+  const src = readFileSync(new URL('./sim.js', import.meta.url), 'utf8')
+    + readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+
+  const sections = new Set(Object.keys(CONFIG));
+  // Match C.a.b / CONFIG.a.b / cfg.a.b chains. Only chains whose first segment is a real
+  // top-level CONFIG section are resolved, so locals like `const C = sim.config.intensity`
+  // (where C.riseTau is correct) are skipped rather than producing false alarms.
+  const re = /\b(?:C|CONFIG|cfg)((?:\.[A-Za-z_$][\w$]*)+)/g;
+  const bad = [];
+  const checked = new Set();
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const parts = m[1].split('.').filter(Boolean);
+    if (!sections.has(parts[0])) continue;
+    const path = parts.join('.');
+    if (checked.has(path)) continue;
+    checked.add(path);
+    let node = CONFIG;
+    for (const seg of parts) {
+      if (node == null || typeof node !== 'object') { node = undefined; break; }
+      node = node[seg];
+    }
+    if (node === undefined) bad.push(path);
+  }
+
+  assert.ok(checked.size > 120, 'the scanner only found ' + checked.size + ' config reads — it is not working');
+  assert.deepEqual(bad, [], 'config paths read by the code but missing from config.js: ' + bad.join(', '));
+});
 
 test('cloneConfig deep-clones and applies dotted overrides without touching CONFIG', () => {
   const c = cloneConfig({ 'world.idleDriftStrength': 0, 'types.GOLD.weight': 99, 'a.b.c': 5 });

@@ -68,14 +68,8 @@ export const CONFIG = {
   // Every pointer is an independent field. Push by default; morphs to an attractor
   // when held nearly still. Released fields sling whatever they gathered.
   field: {
-    radius: 118,              // px @ref. Field reach.
-    radiusGather: 275,        // px @ref. Reach once fully morphed into an attractor. Deliberately
-                              // MUCH wider than the push radius: the push evacuates its own
-                              // neighbourhood, so a same-size attractor would have nothing left
-                              // to gather. Reaching past the hole is what makes gather work.
-                              // There is a sharp cliff here: below ~260 on a 390px screen almost
-                              // nothing arrives (balls stall just outside the rim); above ~330 it
-                              // hoovers up the whole screen and leaves no crowd to sling into.
+    radius: 118,              // px @ref. Push reach. The attractor's reach is a separate knob,
+                              // gather.radiusGather — see the note there.
     strength: 2750,           // px/s^2 @ref. Peak outward push at the field centre.
     falloffExp: 2.0,          // Exponent on (1 - t^2)^n falloff, t = dist/radius. Higher = tighter core.
     minDist: 7,               // px @ref. Distance floor so the centre is not a singularity.
@@ -93,6 +87,18 @@ export const CONFIG = {
 
   /* ----------------------------------------------------- gather and sling -- */
   gather: {
+    radiusGather: 240,        // px @ref. Reach once fully morphed into an attractor. Deliberately
+                              // MUCH wider than field.radius: the push evacuates its own
+                              // neighbourhood, so a same-size attractor would have nothing left
+                              // to gather. Reaching past that hole is what makes gather work.
+                              // Sized to catch a bit over half the population on a phone, so
+                              // there is still a crowd left to sling the orbit INTO.
+                              // NOTE: this key must live in `gather`, not `field` — sim.js reads
+                              // C.gather.radiusGather. It sat under `field` once, so the lookup
+                              // was undefined, `d < NaN` was always false, and the attractor
+                              // silently applied no force at all while still LOOKING alive
+                              // (the ring drew, the morph animated, the sling still threw
+                              // whatever happened to be nearby). See the gather tests.
     stillSpeed: 130,          // px/s @ref. Field speed below which the finger counts as "held still".
     stillTime: 0.18,          // s. How long it must stay still before the morph starts. Long
                               // enough not to trigger on a pause mid-swipe.
