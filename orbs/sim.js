@@ -183,6 +183,7 @@ const INTEGER_PATHS = {
   'types.PRISM.shards': 1, 'types.CHAIN.targets': 1, 'types.CHAIN.depth': 1,
   'types.FROST.maxTargets': 1, 'types.MAGNET.fieldLines': 1,
   'population.softCapBase': 1, 'effects.impactSparks': 1, 'effects.detonateSparks': 1,
+  'sky.nebulaCount': 1, 'sky.maxStars': 1,
   'effects.shatterSparks': 1, 'effects.maxParticles': 1, 'tap.vortexMax': 1,
 };
 

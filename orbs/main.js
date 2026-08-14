@@ -696,6 +696,7 @@ function softResetEffects() {
   converts.length = 0;
   tracers.length = 0;
   wash = null;
+  shooting = null;
   flash = 0; shake = 0;
   celebration = null;
   // A throw between ctx.save() and ctx.restore() leaks state-stack entries every frame.
@@ -1003,6 +1004,7 @@ function updateEffects(dt) {
   if (hintFade > 0) hintFade = Math.max(0, hintFade - dt);
   if (lastUpShown) lastUpT += dt;
   if (wash) { wash.t += dt; if (wash.t >= wash.life) wash = null; }
+  updateShooting(dt, 1 - Math.min(1, sim.intensity / Math.max(1e-6, CFG.intensity.calmBelow)));
   w = 0;
   for (let i = 0; i < converts.length; i++) {
     const c = converts[i];
@@ -1377,6 +1379,76 @@ function drawStars(P, calmT) {
     }
     if (any) { ctx.fillStyle = rgba(P.star, a); ctx.fill(); }
   }
+  // A soft halo under the field, so stars read as light rather than as pixels. One extra pass
+  // over the same paths at a large radius would be expensive, so it is folded into the brightest
+  // bucket only — the dim ones do not carry a visible halo anyway.
+  const glow = S.starGlow;
+  if (glow > 1.001 && bgTier > 0) {
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = rgba(P.star, 0.05 * skyAlpha * (glow - 1));
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const st = sky.stars[i];
+      if (st.mag < 0.5) continue;
+      const r = (0.7 + st.mag * 1.4) * 3.4 * glow;
+      ctx.moveTo(st.x * cssW + r, st.y * cssH);
+      ctx.arc(st.x * cssW, st.y * cssH, r, 0, 6.283);
+    }
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  if (shooting) drawShooting(P, skyAlpha);
+  ctx.restore();
+}
+
+/**
+ * A shooting star. The only thing in the game that rewards sitting still and not touching
+ * anything, so it fires in CALM and nowhere else — if it could happen mid-rally it would be
+ * just another particle in a screen already full of them.
+ */
+let shooting = null;
+
+function updateShooting(dt, calmT) {
+  const S = CFG.sky;
+  if (shooting) {
+    shooting.t += dt;
+    if (shooting.t >= S.shootingTime) shooting = null;
+    return;
+  }
+  if (calmT < 0.999 || sim.untouchedTime < CFG.intensity.calmSettleTime) return;
+  if (Math.random() >= S.shootingChancePerSec * dt) return;
+  const diag = Math.hypot(cssW, cssH);
+  const ang = (Math.random() * 0.7 + 0.25) * Math.PI;      // down and across, never straight up
+  shooting = {
+    t: 0,
+    x0: Math.random() * cssW, y0: Math.random() * cssH * 0.5,
+    dx: Math.cos(ang), dy: Math.abs(Math.sin(ang)) * 0.55,
+    len: diag * S.shootingLength,
+    travel: diag * 0.55,
+  };
+}
+
+function drawShooting(P, skyAlpha) {
+  const S = CFG.sky;
+  const k = shooting.t / S.shootingTime;
+  const a = Math.sin(k * Math.PI) * S.shootingAlpha * skyAlpha;
+  if (a <= 0.01) return;
+  const x = shooting.x0 + shooting.dx * shooting.travel * k;
+  const y = shooting.y0 + shooting.dy * shooting.travel * k;
+  const tx = x - shooting.dx * shooting.len;
+  const ty = y - shooting.dy * shooting.len;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createLinearGradient(x, y, tx, ty);
+  g.addColorStop(0, rgba(P.star, a));
+  g.addColorStop(1, rgba(P.star, 0));
+  ctx.strokeStyle = g;
+  ctx.lineWidth = 1.6 * scale();
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(tx, ty);
+  ctx.stroke();
   ctx.restore();
 }
 

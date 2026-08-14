@@ -179,8 +179,11 @@ export const CONFIG = {
     startCount: 30,           // Balls present on a brand-new save. Deliberately sparse: the
                               // screen should feel roomy at level 1 and crowded at level 100.
     softCapBase: 30,          // Target population at level 1. Raised ONLY by 'MORE ORBS'
-                              // upgrades (twenty of them, +6 each, reaching the hard cap of
-                              // 150 by level 93) so every increase is a visible reward
+                              // upgrades — TEN of them, +6 each. The soft cap also nudges up
+                              // 1.6 per level past level 8, and the two together reach the hard
+                              // cap of 150 at level 46. There used to be twenty MORE ORBS; the
+                              // ten after level 46 raised a number that was already pinned
+                              // behind the clamp and changed nothing on screen at all.
                               // rather than an invisible drift.
     softCapPerLevel: 0,       // No automatic per-level growth; see softCapBase above.
     hardCap: 150,             // Absolute ceiling. Splitters may never push the count past this.
@@ -429,214 +432,214 @@ export const CONFIG = {
   //
   // op is one of: mul (multiply), add (add), set (assign).
   upgrades: [
-    { level: 2, id: 'type.VOLATILE', kind: 'type', type: 'VOLATILE', label: 'VOLATILE' },
+    { level: 2, id: 'type.VOLATILE', kind: 'type', type: 'VOLATILE', label: 'VOLATILE', note: 'A new kind of ball joins the mix.' },
       // A new kind of ball joins the mix.
-    { level: 3, id: 'type.SPLITTER', kind: 'type', type: 'SPLITTER', label: 'SPLITTER' },
+    { level: 3, id: 'type.SPLITTER', kind: 'type', type: 'SPLITTER', label: 'SPLITTER', note: 'A new kind of ball joins the mix.' },
       // A new kind of ball joins the mix.
-    { level: 4, id: 'type.MAGNET', kind: 'type', type: 'MAGNET', label: 'MAGNET' },
+    { level: 4, id: 'type.MAGNET', kind: 'type', type: 'MAGNET', label: 'MAGNET', note: 'A new kind of ball joins the mix.' },
       // A new kind of ball joins the mix.
-    { level: 5, id: 'type.PRISM', kind: 'type', type: 'PRISM', label: 'PRISM' },
+    { level: 5, id: 'type.PRISM', kind: 'type', type: 'PRISM', label: 'PRISM', note: 'A new kind of ball joins the mix.' },
       // A new kind of ball joins the mix.
-    { level: 6, id: 'type.CHAIN', kind: 'type', type: 'CHAIN', label: 'CHAIN' },
+    { level: 6, id: 'type.CHAIN', kind: 'type', type: 'CHAIN', label: 'CHAIN', note: 'A new kind of ball joins the mix.' },
       // A new kind of ball joins the mix.
-    { level: 7, id: 'type.FROST', kind: 'type', type: 'FROST', label: 'FROST' },
+    { level: 7, id: 'type.FROST', kind: 'type', type: 'FROST', label: 'FROST', note: 'A new kind of ball joins the mix.' },
       // A new kind of ball joins the mix.
-    { level: 8, id: 'type.GOLD', kind: 'type', type: 'GOLD', label: 'GOLD' },
+    { level: 8, id: 'type.GOLD', kind: 'type', type: 'GOLD', label: 'GOLD', note: 'A new kind of ball joins the mix.' },
       // A new kind of ball joins the mix.
-    { level: 9, id: 'palette.1', kind: 'palette', label: 'DEEP SEA' },
+    { level: 9, id: 'palette.1', kind: 'palette', label: 'DEEP SEA', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
       // eleven times told you nothing about which sky you had just been given.
-    { level: 10, id: 'cap.10', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+    { level: 10, id: 'cap.10', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
       // Six more balls on screen.
-    { level: 11, id: 'types.VOLATILE.blastRadius.11', kind: 'mod', path: 'types.VOLATILE.blastRadius', mul: 1.18, label: 'WIDER BLAST' },
+    { level: 11, id: 'types.VOLATILE.blastRadius.11', kind: 'mod', path: 'types.VOLATILE.blastRadius', mul: 1.18, label: 'WIDER BLAST', note: 'Volatile detonations reach further.' },
       // Volatile detonations reach further.
-    { level: 12, id: 'render.trailFade.12', kind: 'visual', path: 'render.trailFade', mul: 0.86, label: 'LONG TRAILS' },
+    { level: 12, id: 'render.trailFade.12', kind: 'visual', path: 'render.trailFade', mul: 0.86, label: 'LONG TRAILS', note: 'Motion leaves longer streaks.' },
       // Motion leaves longer streaks.
-    { level: 13, id: 'cap.13', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+    { level: 13, id: 'cap.13', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
       // Six more balls on screen.
-    { level: 14, id: 'types.VOLATILE.blastImpulse.14', kind: 'mod', path: 'types.VOLATILE.blastImpulse', mul: 1.2, label: 'HARDER BLAST' },
+    { level: 14, id: 'types.VOLATILE.blastImpulse.14', kind: 'mod', path: 'types.VOLATILE.blastImpulse', mul: 1.2, label: 'HARDER BLAST', note: 'Detonations shove harder.' },
       // Detonations shove harder.
-    { level: 15, id: 'palette.2', kind: 'palette', label: 'AURORA' },
+    { level: 15, id: 'palette.2', kind: 'palette', label: 'AURORA', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
       // eleven times told you nothing about which sky you had just been given.
-    { level: 16, id: 'tap.pulseRadius.16', kind: 'gesture', path: 'tap.pulseRadius', mul: 1.22, label: 'WIDE PULSE' },
+    { level: 16, id: 'tap.pulseRadius.16', kind: 'gesture', path: 'tap.pulseRadius', mul: 1.22, label: 'WIDE PULSE', note: 'Your tap pulse reaches further.' },
       // Your tap pulse reaches further.
-    { level: 17, id: 'cap.17', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+    { level: 17, id: 'cap.17', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
       // Six more balls on screen.
-    { level: 18, id: 'render.bloomStrength.18', kind: 'visual', path: 'render.bloomStrength', mul: 1.15, label: 'BRIGHTER BLOOM' },
+    { level: 18, id: 'render.bloomStrength.18', kind: 'visual', path: 'render.bloomStrength', mul: 1.15, label: 'BRIGHTER BLOOM', note: 'Everything glows harder.' },
       // Everything glows harder.
-    { level: 19, id: 'types.VOLATILE.inertTime.19', kind: 'mod', path: 'types.VOLATILE.inertTime', mul: 0.78, label: 'FAST RECHARGE' },
+    { level: 19, id: 'types.VOLATILE.inertTime.19', kind: 'mod', path: 'types.VOLATILE.inertTime', mul: 0.78, label: 'FAST RECHARGE', note: 'Volatiles come back online sooner.' },
       // Volatiles come back online sooner.
-    { level: 20, id: 'cap.20', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+    { level: 20, id: 'cap.20', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
       // Six more balls on screen.
-    { level: 21, id: 'palette.3', kind: 'palette', label: 'SYNTHWAVE' },
+    { level: 21, id: 'palette.3', kind: 'palette', label: 'SYNTHWAVE', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
       // eleven times told you nothing about which sky you had just been given.
-    { level: 22, id: 'score.globalMultBase.22', kind: 'score', path: 'score.globalMultBase', add: 0.15, label: 'VALUE +' },
+    { level: 22, id: 'score.globalMultBase.22', kind: 'score', path: 'score.globalMultBase', add: 0.15, label: 'VALUE +', note: 'Everything scores more.' },
       // Everything scores more.
-    { level: 23, id: 'types.VOLATILE.blastRadius.23', kind: 'mod', path: 'types.VOLATILE.blastRadius', mul: 1.15, label: 'WIDER BLAST II' },
+    { level: 23, id: 'types.VOLATILE.blastRadius.23', kind: 'mod', path: 'types.VOLATILE.blastRadius', mul: 1.15, label: 'WIDER BLAST II', note: 'Wider still.' },
       // Wider still.
-    { level: 24, id: 'cap.24', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+    { level: 24, id: 'cap.24', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
       // Six more balls on screen.
-    { level: 25, id: 'balls.glowScale.25', kind: 'visual', path: 'balls.glowScale', mul: 1.1, label: 'BIGGER HALOS' },
+    { level: 25, id: 'balls.glowScale.25', kind: 'visual', path: 'balls.glowScale', mul: 1.1, label: 'BIGGER HALOS', note: 'Orbs carry a wider halo.' },
       // Orbs carry a wider halo.
-    { level: 26, id: 'types.SPLITTER.splitSpeed.26', kind: 'mod', path: 'types.SPLITTER.splitSpeed', mul: 1.25, label: 'SHARP SPLIT' },
+    { level: 26, id: 'types.SPLITTER.splitSpeed.26', kind: 'mod', path: 'types.SPLITTER.splitSpeed', mul: 1.25, label: 'SHARP SPLIT', note: 'Children fly apart faster.' },
       // Children fly apart faster.
-    { level: 27, id: 'cap.27', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+    { level: 27, id: 'cap.27', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
       // Six more balls on screen.
-    { level: 28, id: 'palette.4', kind: 'palette', label: 'MONOCHROME' },
+    { level: 28, id: 'palette.4', kind: 'palette', label: 'MONOCHROME', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
       // eleven times told you nothing about which sky you had just been given.
-    { level: 29, id: 'tap.pulseImpulse.29', kind: 'gesture', path: 'tap.pulseImpulse', mul: 1.25, label: 'HARD PULSE' },
+    { level: 29, id: 'tap.pulseImpulse.29', kind: 'gesture', path: 'tap.pulseImpulse', mul: 1.25, label: 'HARD PULSE', note: 'Your tap pulse shoves harder.' },
       // Your tap pulse shoves harder.
-    { level: 30, id: 'effects.impactSparks.30', kind: 'visual', path: 'effects.impactSparks', add: 4, label: 'MORE SPARKS' },
+    { level: 30, id: 'effects.impactSparks.30', kind: 'visual', path: 'effects.impactSparks', add: 4, label: 'MORE SPARKS', note: 'Impacts throw more sparks.' },
       // Impacts throw more sparks.
-    { level: 31, id: 'cap.31', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+    { level: 31, id: 'cap.31', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
       // Six more balls on screen.
-    { level: 32, id: 'types.SPLITTER.cooldown.32', kind: 'mod', path: 'types.SPLITTER.cooldown', mul: 0.7, label: 'RAPID SPLIT' },
+    { level: 32, id: 'types.SPLITTER.cooldown.32', kind: 'mod', path: 'types.SPLITTER.cooldown', mul: 0.7, label: 'RAPID SPLIT', note: 'Children can split again sooner.' },
       // Children can split again sooner.
-    { level: 33, id: 'score.globalMultBase.33', kind: 'score', path: 'score.globalMultBase', add: 0.2, label: 'VALUE ++' },
+    { level: 33, id: 'score.globalMultBase.33', kind: 'score', path: 'score.globalMultBase', add: 0.2, label: 'VALUE ++', note: 'Everything scores more again.' },
       // Everything scores more again.
-    { level: 34, id: 'types.SPLITTER.childRadius.34', kind: 'mod', path: 'types.SPLITTER.childRadius', mul: 1.12, label: 'FAT CHILDREN' },
+    { level: 34, id: 'types.SPLITTER.childRadius.34', kind: 'mod', path: 'types.SPLITTER.childRadius', mul: 1.12, label: 'FAT CHILDREN', note: 'Split children keep more size.' },
       // Split children keep more size.
-    { level: 35, id: 'cap.35', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+    { level: 35, id: 'cap.35', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
       // Six more balls on screen.
-    { level: 36, id: 'palette.5', kind: 'palette', label: 'SOLAR' },
+    { level: 36, id: 'palette.5', kind: 'palette', label: 'SOLAR', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
       // eleven times told you nothing about which sky you had just been given.
-    { level: 37, id: 'render.trailFadeCalm.37', kind: 'visual', path: 'render.trailFadeCalm', mul: 0.82, label: 'CALM TRAILS' },
+    { level: 37, id: 'render.trailFadeCalm.37', kind: 'visual', path: 'render.trailFadeCalm', mul: 0.82, label: 'CALM TRAILS', note: 'Quiet moments hold their streaks.' },
       // Quiet moments hold their streaks.
-    { level: 38, id: 'types.SPLITTER.inheritSpeed.38', kind: 'mod', path: 'types.SPLITTER.inheritSpeed', mul: 1.12, label: 'MOMENTUM SPLIT' },
+    { level: 38, id: 'types.SPLITTER.inheritSpeed.38', kind: 'mod', path: 'types.SPLITTER.inheritSpeed', mul: 1.12, label: 'MOMENTUM SPLIT', note: 'Children keep more of the parent speed.' },
       // Children keep more of the parent speed.
-    { level: 39, id: 'cap.39', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+    { level: 39, id: 'cap.39', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
       // Six more balls on screen.
-    { level: 40, id: 'tap.vortexTime.40', kind: 'gesture', path: 'tap.vortexTime', mul: 1.3, label: 'LONG VORTEX' },
+    { level: 40, id: 'tap.vortexTime.40', kind: 'gesture', path: 'tap.vortexTime', mul: 1.3, label: 'LONG VORTEX', note: 'Vortices spin for longer.' },
       // Vortices spin for longer.
-    { level: 41, id: 'sky.baseMag.41', kind: 'visual', path: 'sky.baseMag', mul: 1.2, label: 'BRIGHT STARS' },
+    { level: 41, id: 'sky.baseMag.41', kind: 'visual', path: 'sky.baseMag', mul: 1.2, label: 'BRIGHT STARS', note: 'Your constellation burns brighter.' },
       // Your constellation burns brighter.
-    { level: 42, id: 'types.MAGNET.pull.42', kind: 'mod', path: 'types.MAGNET.pull', mul: 1.35, label: 'STRONGER PULL' },
+    { level: 42, id: 'types.MAGNET.pull.42', kind: 'mod', path: 'types.MAGNET.pull', mul: 1.35, label: 'STRONGER PULL', note: 'Magnets pull harder.' },
       // Magnets pull harder.
-    { level: 43, id: 'cap.43', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
+    { level: 43, id: 'cap.43', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
       // Six more balls on screen.
-    { level: 44, id: 'score.comboMultScale.44', kind: 'score', path: 'score.comboMultScale', mul: 1.12, label: 'COMBO VALUE' },
+    { level: 44, id: 'score.comboMultScale.44', kind: 'score', path: 'score.comboMultScale', mul: 1.12, label: 'COMBO VALUE', note: 'Combos multiply harder.' },
       // Combos multiply harder.
-    { level: 45, id: 'palette.6', kind: 'palette', label: 'ULTRAVIOLET' },
+    { level: 45, id: 'palette.6', kind: 'palette', label: 'ULTRAVIOLET', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
       // eleven times told you nothing about which sky you had just been given.
-    { level: 46, id: 'types.MAGNET.pullRadius.46', kind: 'mod', path: 'types.MAGNET.pullRadius', mul: 1.2, label: 'LONG REACH' },
+    { level: 46, id: 'types.MAGNET.pullRadius.46', kind: 'mod', path: 'types.MAGNET.pullRadius', mul: 1.2, label: 'LONG REACH', note: 'Magnets reach further.' },
       // Magnets reach further.
-    { level: 47, id: 'effects.detonateSparks.47', kind: 'visual', path: 'effects.detonateSparks', add: 10, label: 'BLAST SPARKS' },
+    { level: 47, id: 'effects.detonateSparks.47', kind: 'visual', path: 'effects.detonateSparks', add: 10, label: 'BLAST SPARKS', note: 'Detonations throw more debris.' },
       // Detonations throw more debris.
-    { level: 48, id: 'cap.48', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
-      // Six more balls on screen.
-    { level: 49, id: 'types.MAGNET.spikePull.49', kind: 'mod', path: 'types.MAGNET.spikePull', mul: 1.3, label: 'MAGNET SPIKE' },
+    { level: 48, id: 'sky.nebulaCount.48', kind: 'visual', path: 'sky.nebulaCount', add: 1, label: 'NEBULA', note: 'A second colour cloud drifts into the sky.' },
+      // A second colour cloud drifts into the sky.
+    { level: 49, id: 'types.MAGNET.spikePull.49', kind: 'mod', path: 'types.MAGNET.spikePull', mul: 1.3, label: 'MAGNET SPIKE', note: 'A struck magnet yanks much harder.' },
       // A struck magnet yanks much harder.
-    { level: 50, id: 'tap.vortexSpin.50', kind: 'gesture', path: 'tap.vortexSpin', mul: 1.25, label: 'FAST VORTEX' },
+    { level: 50, id: 'tap.vortexSpin.50', kind: 'gesture', path: 'tap.vortexSpin', mul: 1.25, label: 'FAST VORTEX', note: 'Vortices spin faster.' },
       // Vortices spin faster.
-    { level: 51, id: 'render.bloomStrengthCalm.51', kind: 'visual', path: 'render.bloomStrengthCalm', mul: 1.25, label: 'CALM GLOW' },
+    { level: 51, id: 'render.bloomStrengthCalm.51', kind: 'visual', path: 'render.bloomStrengthCalm', mul: 1.25, label: 'CALM GLOW', note: 'A quiet screen glows more.' },
       // A quiet screen glows more.
-    { level: 52, id: 'cap.52', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
-      // Six more balls on screen.
-    { level: 53, id: 'types.MAGNET.fieldLines.53', kind: 'mod', path: 'types.MAGNET.fieldLines', add: 3, label: 'FIELD LINES' },
+    { level: 52, id: 'sky.vignette.52', kind: 'visual', path: 'sky.vignette', mul: 1.3, label: 'DEEP SKY', note: 'The edges of the world darken.' },
+      // The edges of the world darken.
+    { level: 53, id: 'types.MAGNET.fieldLines.53', kind: 'mod', path: 'types.MAGNET.fieldLines', add: 3, label: 'FIELD LINES', note: 'More visible magnet field lines.' },
       // More visible magnet field lines.
-    { level: 54, id: 'palette.7', kind: 'palette', label: 'VENOM' },
+    { level: 54, id: 'palette.7', kind: 'palette', label: 'VENOM', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
       // eleven times told you nothing about which sky you had just been given.
-    { level: 55, id: 'score.globalMultBase.55', kind: 'score', path: 'score.globalMultBase', add: 0.25, label: 'VALUE +++' },
+    { level: 55, id: 'score.globalMultBase.55', kind: 'score', path: 'score.globalMultBase', add: 0.25, label: 'VALUE +++', note: 'More still.' },
       // More still.
-    { level: 56, id: 'types.PRISM.shards.56', kind: 'mod', path: 'types.PRISM.shards', add: 4, label: 'MORE SHARDS' },
+    { level: 56, id: 'types.PRISM.shards.56', kind: 'mod', path: 'types.PRISM.shards', add: 4, label: 'MORE SHARDS', note: 'Prisms throw more shards.' },
       // Prisms throw more shards.
-    { level: 57, id: 'cap.57', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
-      // Six more balls on screen.
-    { level: 58, id: 'sky.linksPerStars.58', kind: 'visual', path: 'sky.linksPerStars', mul: 1.3, label: 'CONSTELLATIONS' },
+    { level: 57, id: 'sky.horizonAlpha.57', kind: 'visual', path: 'sky.horizonAlpha', mul: 1.7, label: 'HORIZON', note: 'Light rises from below the bottom of the screen.' },
+      // Light rises from below the bottom of the screen.
+    { level: 58, id: 'sky.linksPerStars.58', kind: 'visual', path: 'sky.linksPerStars', mul: 1.3, label: 'CONSTELLATIONS', note: 'More lines join your stars.' },
       // More lines join your stars.
-    { level: 59, id: 'types.PRISM.shardSpeed.59', kind: 'mod', path: 'types.PRISM.shardSpeed', mul: 1.2, label: 'FAST SHARDS' },
+    { level: 59, id: 'types.PRISM.shardSpeed.59', kind: 'mod', path: 'types.PRISM.shardSpeed', mul: 1.2, label: 'FAST SHARDS', note: 'Shards travel faster.' },
       // Shards travel faster.
-    { level: 60, id: 'tap.pulseRadius.60', kind: 'gesture', path: 'tap.pulseRadius', mul: 1.2, label: 'WIDE PULSE II' },
+    { level: 60, id: 'tap.pulseRadius.60', kind: 'gesture', path: 'tap.pulseRadius', mul: 1.2, label: 'WIDE PULSE II', note: 'Wider still.' },
       // Wider still.
-    { level: 61, id: 'cap.61', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
-      // Six more balls on screen.
-    { level: 62, id: 'effects.shockwaveTime.62', kind: 'visual', path: 'effects.shockwaveTime', mul: 1.3, label: 'LONG SHOCKWAVE' },
+    { level: 61, id: 'palette.12', kind: 'palette', label: 'DRIFTWOOD', note: 'A new colour world, unlocked forever.' },
+      // A new colour world, unlocked forever.
+    { level: 62, id: 'effects.shockwaveTime.62', kind: 'visual', path: 'effects.shockwaveTime', mul: 1.3, label: 'LONG SHOCKWAVE', note: 'Shockwave rings linger.' },
       // Shockwave rings linger.
-    { level: 63, id: 'palette.8', kind: 'palette', label: 'BLOODMOON' },
+    { level: 63, id: 'palette.8', kind: 'palette', label: 'BLOODMOON', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
       // eleven times told you nothing about which sky you had just been given.
-    { level: 64, id: 'types.PRISM.shardLife.64', kind: 'mod', path: 'types.PRISM.shardLife', mul: 1.35, label: 'LONG SHARDS' },
+    { level: 64, id: 'types.PRISM.shardLife.64', kind: 'mod', path: 'types.PRISM.shardLife', mul: 1.35, label: 'LONG SHARDS', note: 'Shards live longer.' },
       // Shards live longer.
-    { level: 65, id: 'score.comboMultScale.65', kind: 'score', path: 'score.comboMultScale', mul: 1.12, label: 'COMBO VALUE II' },
+    { level: 65, id: 'score.comboMultScale.65', kind: 'score', path: 'score.comboMultScale', mul: 1.12, label: 'COMBO VALUE II', note: 'Combos multiply harder again.' },
       // Combos multiply harder again.
-    { level: 66, id: 'cap.66', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
-      // Six more balls on screen.
-    { level: 67, id: 'types.PRISM.shards.67', kind: 'mod', path: 'types.PRISM.shards', add: 5, label: 'MORE SHARDS II' },
+    { level: 66, id: 'sky.nebulaAlpha.66', kind: 'visual', path: 'sky.nebulaAlpha', mul: 1.45, label: 'DEEP NEBULA', note: 'The clouds thicken.' },
+      // The clouds thicken.
+    { level: 67, id: 'types.PRISM.shards.67', kind: 'mod', path: 'types.PRISM.shards', add: 5, label: 'MORE SHARDS II', note: 'A full spray.' },
       // A full spray.
-    { level: 68, id: 'filigree.alpha.68', kind: 'visual', path: 'filigree.alpha', mul: 1.3, label: 'BRIGHT FILIGREE' },
+    { level: 68, id: 'filigree.alpha.68', kind: 'visual', path: 'filigree.alpha', mul: 1.3, label: 'BRIGHT FILIGREE', note: 'Ring ornament stands out.' },
       // Ring ornament stands out.
-    { level: 69, id: 'types.CHAIN.targets.69', kind: 'mod', path: 'types.CHAIN.targets', add: 1, label: 'FOURTH ARC' },
+    { level: 69, id: 'types.CHAIN.targets.69', kind: 'mod', path: 'types.CHAIN.targets', add: 1, label: 'FOURTH ARC', note: 'Chains jolt one more ball.' },
       // Chains jolt one more ball.
-    { level: 70, id: 'cap.70', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
-      // Six more balls on screen.
-    { level: 71, id: 'tap.vortexRadius.71', kind: 'gesture', path: 'tap.vortexRadius', mul: 1.22, label: 'BIG VORTEX' },
+    { level: 70, id: 'sky.starGlow.70', kind: 'visual', path: 'sky.starGlow', mul: 1.35, label: 'STARLIGHT', note: 'Every star carries a halo.' },
+      // Every star carries a halo.
+    { level: 71, id: 'tap.vortexRadius.71', kind: 'gesture', path: 'tap.vortexRadius', mul: 1.22, label: 'BIG VORTEX', note: 'Vortices reach further.' },
       // Vortices reach further.
-    { level: 72, id: 'palette.9', kind: 'palette', label: 'COBALT' },
+    { level: 72, id: 'palette.9', kind: 'palette', label: 'COBALT', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
       // eleven times told you nothing about which sky you had just been given.
-    { level: 73, id: 'render.starTwinkle.73', kind: 'visual', path: 'render.starTwinkle', mul: 1.4, label: 'TWINKLE' },
+    { level: 73, id: 'render.starTwinkle.73', kind: 'visual', path: 'render.starTwinkle', mul: 1.4, label: 'TWINKLE', note: 'Stars shimmer more.' },
       // Stars shimmer more.
-    { level: 74, id: 'types.CHAIN.range.74', kind: 'mod', path: 'types.CHAIN.range', mul: 1.25, label: 'LONG ARC' },
+    { level: 74, id: 'types.CHAIN.range.74', kind: 'mod', path: 'types.CHAIN.range', mul: 1.25, label: 'LONG ARC', note: 'Chains reach further.' },
       // Chains reach further.
-    { level: 75, id: 'cap.75', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
-      // Six more balls on screen.
-    { level: 76, id: 'types.CHAIN.depth.76', kind: 'mod', path: 'types.CHAIN.depth', add: 1, label: 'DEEPER CHAIN' },
+    { level: 75, id: 'sky.shootingChancePerSec.75', kind: 'visual', path: 'sky.shootingChancePerSec', mul: 3.0, label: 'STARFALL', note: 'Shooting stars come three times as often.' },
+      // Shooting stars come three times as often.
+    { level: 76, id: 'types.CHAIN.depth.76', kind: 'mod', path: 'types.CHAIN.depth', add: 1, label: 'DEEPER CHAIN', note: 'Chains hop one more time.' },
       // Chains hop one more time.
-    { level: 77, id: 'effects.shatterSparks.77', kind: 'visual', path: 'effects.shatterSparks', add: 8, label: 'ICE DEBRIS' },
+    { level: 77, id: 'effects.shatterSparks.77', kind: 'visual', path: 'effects.shatterSparks', add: 8, label: 'ICE DEBRIS', note: 'Shattering ice throws more.' },
       // Shattering ice throws more.
-    { level: 78, id: 'types.CHAIN.impulse.78', kind: 'mod', path: 'types.CHAIN.impulse', mul: 1.3, label: 'HARD JOLT' },
+    { level: 78, id: 'types.CHAIN.impulse.78', kind: 'mod', path: 'types.CHAIN.impulse', mul: 1.3, label: 'HARD JOLT', note: 'Chain jolts hit harder.' },
       // Chain jolts hit harder.
-    { level: 79, id: 'gather.slingBase.79', kind: 'gesture', path: 'gather.slingBase', mul: 1.2, label: 'STRONG SLING' },
+    { level: 79, id: 'gather.slingBase.79', kind: 'gesture', path: 'gather.slingBase', mul: 1.2, label: 'STRONG SLING', note: 'Released orbits are thrown harder.' },
       // Released orbits are thrown harder.
-    { level: 80, id: 'cap.80', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
-      // Six more balls on screen.
-    { level: 81, id: 'paletteRules.driftPeriod.81', kind: 'visual', path: 'paletteRules.driftPeriod', mul: 0.8, label: 'FASTER DRIFT' },
+    { level: 80, id: 'sky.maxStars.80', kind: 'visual', path: 'sky.maxStars', add: 40, label: 'DEEP FIELD', note: 'Room for forty more stars.' },
+      // Room for forty more stars.
+    { level: 81, id: 'paletteRules.driftPeriod.81', kind: 'visual', path: 'paletteRules.driftPeriod', mul: 0.8, label: 'FASTER DRIFT', note: 'Colour worlds blend sooner.' },
       // Colour worlds blend sooner.
-    { level: 82, id: 'types.FROST.maxTargets.82', kind: 'mod', path: 'types.FROST.maxTargets', add: 3, label: 'DEEP FREEZE' },
+    { level: 82, id: 'types.FROST.maxTargets.82', kind: 'mod', path: 'types.FROST.maxTargets', add: 3, label: 'DEEP FREEZE', note: 'Frost catches more neighbours.' },
       // Frost catches more neighbours.
-    { level: 83, id: 'types.FROST.radius.83', kind: 'mod', path: 'types.FROST.radius', mul: 1.22, label: 'WIDE FREEZE' },
+    { level: 83, id: 'types.FROST.radius.83', kind: 'mod', path: 'types.FROST.radius', mul: 1.22, label: 'WIDE FREEZE', note: 'Frost reaches further.' },
       // Frost reaches further.
-    { level: 84, id: 'palette.10', kind: 'palette', label: 'BLOSSOM' },
+    { level: 84, id: 'palette.10', kind: 'palette', label: 'BLOSSOM', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
       // eleven times told you nothing about which sky you had just been given.
-    { level: 85, id: 'render.bloomStrengthFrenzy.85', kind: 'visual', path: 'render.bloomStrengthFrenzy', mul: 1.2, label: 'FRENZY GLOW' },
+    { level: 85, id: 'render.bloomStrengthFrenzy.85', kind: 'visual', path: 'render.bloomStrengthFrenzy', mul: 1.2, label: 'FRENZY GLOW', note: 'Chaos burns brighter.' },
       // Chaos burns brighter.
-    { level: 86, id: 'types.FROST.freezeTime.86', kind: 'mod', path: 'types.FROST.freezeTime', mul: 1.3, label: 'LONG FREEZE' },
+    { level: 86, id: 'types.FROST.freezeTime.86', kind: 'mod', path: 'types.FROST.freezeTime', mul: 1.3, label: 'LONG FREEZE', note: 'Ice holds longer.' },
       // Ice holds longer.
-    { level: 87, id: 'gather.radiusGather.87', kind: 'gesture', path: 'gather.radiusGather', mul: 1.15, label: 'DEEP GATHER' },
+    { level: 87, id: 'gather.radiusGather.87', kind: 'gesture', path: 'gather.radiusGather', mul: 1.15, label: 'DEEP GATHER', note: 'Your attractor reaches further.' },
       // Your attractor reaches further.
-    { level: 88, id: 'cap.88', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
-      // Six more balls on screen.
-    { level: 89, id: 'comet.chancePerSec.89', kind: 'visual', path: 'comet.chancePerSec', mul: 2.0, label: 'COMET WATCH' },
+    { level: 88, id: 'sky.nebulaCount.88', kind: 'visual', path: 'sky.nebulaCount', add: 1, label: 'NEBULA II', note: 'A third cloud.' },
+      // A third cloud.
+    { level: 89, id: 'comet.chancePerSec.89', kind: 'visual', path: 'comet.chancePerSec', mul: 2.0, label: 'COMET WATCH', note: 'Comets appear more often.' },
       // Comets appear more often.
-    { level: 90, id: 'types.FROST.shatterImpulse.90', kind: 'mod', path: 'types.FROST.shatterImpulse', mul: 1.4, label: 'HARD SHATTER' },
+    { level: 90, id: 'types.FROST.shatterImpulse.90', kind: 'mod', path: 'types.FROST.shatterImpulse', mul: 1.4, label: 'HARD SHATTER', note: 'Thawing balls burst harder.' },
       // Thawing balls burst harder.
-    { level: 91, id: 'types.GOLD.weight.91', kind: 'mod', path: 'types.GOLD.weight', mul: 1.6, label: 'MORE GOLD' },
+    { level: 91, id: 'types.GOLD.weight.91', kind: 'mod', path: 'types.GOLD.weight', mul: 1.6, label: 'MORE GOLD', convert: { type: 'GOLD', n: 3 }, note: 'Gold turns up more often.' },
       // Gold turns up more often.
-    { level: 92, id: 'render.ringRadius.92', kind: 'visual', path: 'render.ringRadius', mul: 1.12, label: 'WIDE RING' },
+    { level: 92, id: 'render.ringRadius.92', kind: 'visual', path: 'render.ringRadius', mul: 1.12, label: 'WIDE RING', note: 'Your finger ring is larger.' },
       // Your finger ring is larger.
-    { level: 93, id: 'cap.93', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS' },
-      // Six more balls on screen.
-    { level: 94, id: 'types.GOLD.comboJump.94', kind: 'mod', path: 'types.GOLD.comboJump', add: 3, label: 'GOLD RUSH' },
+    { level: 93, id: 'sky.vignetteFrenzy.93', kind: 'visual', path: 'sky.vignetteFrenzy', mul: 1.25, label: 'CRUSHED CORNERS', note: 'Chaos closes the frame in harder.' },
+      // Chaos closes the frame in harder.
+    { level: 94, id: 'types.GOLD.comboJump.94', kind: 'mod', path: 'types.GOLD.comboJump', add: 3, label: 'GOLD RUSH', note: 'Gold jumps the combo further.' },
       // Gold jumps the combo further.
-    { level: 95, id: 'field.radius.95', kind: 'gesture', path: 'field.radius', mul: 1.12, label: 'BROAD FIELD' },
+    { level: 95, id: 'field.radius.95', kind: 'gesture', path: 'field.radius', mul: 1.12, label: 'BROAD FIELD', note: 'Your push field is wider.' },
       // Your push field is wider.
-    { level: 96, id: 'palette.11', kind: 'palette', label: 'JADE' },
+    { level: 96, id: 'palette.11', kind: 'palette', label: 'JADE', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
       // eleven times told you nothing about which sky you had just been given.
-    { level: 97, id: 'effects.maxParticles.97', kind: 'visual', path: 'effects.maxParticles', add: 250, label: 'DENSE PARTICLES' },
+    { level: 97, id: 'effects.maxParticles.97', kind: 'visual', path: 'effects.maxParticles', add: 250, label: 'DENSE PARTICLES', note: 'More particles on screen at once.' },
       // More particles on screen at once.
-    { level: 98, id: 'types.GOLD.scoreFlat.98', kind: 'mod', path: 'types.GOLD.scoreFlat', mul: 1.8, label: 'GOLD VALUE' },
+    { level: 98, id: 'types.GOLD.scoreFlat.98', kind: 'mod', path: 'types.GOLD.scoreFlat', mul: 1.8, label: 'GOLD VALUE', note: 'Gold is worth much more.' },
       // Gold is worth much more.
-    { level: 99, id: 'types.GOLD.weight.99', kind: 'mod', path: 'types.GOLD.weight', mul: 1.5, label: 'MORE GOLD II' },
+    { level: 99, id: 'types.GOLD.weight.99', kind: 'mod', path: 'types.GOLD.weight', mul: 1.5, label: 'MORE GOLD II', convert: { type: 'GOLD', n: 4 }, note: 'Gold again.' },
       // Gold again.
-    { level: 100, id: 'field.flingGain.100', kind: 'gesture', path: 'field.flingGain', mul: 1.18, label: 'STRONG FLING' },
+    { level: 100, id: 'field.flingGain.100', kind: 'gesture', path: 'field.flingGain', mul: 1.18, label: 'STRONG FLING', note: 'Swipes carry balls harder.' },
       // Swipes carry balls harder.
   ],
 
@@ -928,6 +931,18 @@ export const CONFIG = {
         PRISM: '#eafff5', CHAIN: '#c8ff3d', FROST: '#8fd4ff', GOLD: '#ffcf3d',
       },
     },
+    {
+      name: 'Driftwood',      // Ash and ember-dust. The quiet one, and the only late reward that
+                              // makes the screen calmer instead of louder — relief after sixty
+                              // levels of neon is itself a kind of contrast.
+      bg0: '#070504', bg1: '#1a1108', fog: '#c08a4e',
+      hud: '#f0e2cd', hudDim: '#8f7a5e', ring: '#d9a862', star: '#f4e8d2',
+      orbHues: ['#d99a5c', '#c4763f', '#e8c38a', '#a86b45'],
+      type: {
+        VOLATILE: '#ff4a22', SPLITTER: '#cfe05a', MAGNET: '#a98cd8',
+        PRISM: '#fff6e4', CHAIN: '#5fd3d0', FROST: '#bcd9e8', GOLD: '#ffd24a',
+      },
+    },
   ],
 
   /* ------------------------------------------------------------------- sky -- */
@@ -945,6 +960,13 @@ export const CONFIG = {
     linkAlpha: 0.30,          // Base opacity of a constellation line.
     calmOnlyAlpha: 0.28,      // Sky opacity multiplier outside CALM (it fades when it gets loud).
     twinkleRate: 0.45,        // 1/s. Twinkle speed.
+    starGlow: 1.0,            // Multiplier on the soft halo drawn behind each star. Raised at 70.
+    shootingChancePerSec: 0.02, // Chance per second of a shooting star, CALM ONLY. It is the one
+                              // thing in the game that rewards sitting still and not touching
+                              // anything, so it must never fire while you are playing. Raised at 75.
+    shootingTime: 1.25,       // s. How long one crosses the sky.
+    shootingLength: 0.16,     // Tail length as a fraction of the screen diagonal.
+    shootingAlpha: 0.85,      // Peak brightness of the head.
     alphaBuckets: 4,          // Stars are drawn in this many alpha groups, one path each, instead
                               // of building 88 rgba strings and 88 separate fills a frame. On a
                               // star, rounding the alpha to a quarter is not visible.
@@ -965,11 +987,14 @@ export const CONFIG = {
     bgMidStop: 0.38,          // Position of the third gradient stop. Two stops read as one flat wash.
     bgMidMix: 0.55,           // How far that stop sits between bg0 and bg1. Above 0.5 keeps the top
                               // of the screen dark, which is what the balls burn against.
-    bgFloorMix: 0.10,         // How much `fog` mixes into the bottom stop. The bottom third of the
+    bgFloorMix: 0.05,         // How much `fog` mixes into the bottom stop. Kept small at level 1 so
+                              // the sky ladder has somewhere to climb from. The bottom third of the
                               // screen previously had no colour in it at all. Past about 0.15 the
                               // black floor lifts and the additive trails stop reading as the
                               // brightest thing on screen.
-    horizonAlpha: 0.09,       // Peak alpha of the glow anchored below the bottom edge.
+    horizonAlpha: 0.055,      // Peak alpha of the glow anchored below the bottom edge. Starts low on
+                              // purpose: HORIZON at level 57 multiplies it by 1.7, and an upgrade
+                              // that brightens something already bright is not an upgrade.
     horizonY: 1.06,           // Its centre, in units of plate height. Above 1 keeps it off-screen,
                               // so only the top of the falloff shows and it reads as light from
                               // under the world rather than a circle somebody drew.

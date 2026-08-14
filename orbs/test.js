@@ -1940,28 +1940,58 @@ test('progression survives a save/load round trip, upgrades and all', () => {
 });
 
 test('the ball population starts small and grows only through upgrades', () => {
-  const low = freshSim(null, 11);
+  // atLevel, not applyUpgradesTo alone: the soft cap is softCapBase PLUS a per-level nudge, so a
+  // sim whose upgrades were applied but whose level never moved reports a cap that no real player
+  // ever sees. This test used to make exactly that mistake, which is why it kept passing while ten
+  // MORE ORBS upgrades raised a number that was already pinned behind the hard-cap clamp.
+  const atLevel = (l, seed) => {
+    const s2 = freshSim(null, seed || 5);
+    s2.level = l;
+    applyUpgradesTo(s2, l);
+    return s2;
+  };
+  const low = atLevel(1, 11);
   assert.ok(low.softCap <= 40, 'level 1 starts with ' + low.softCap + ' balls — too crowded');
   assert.ok(low.aliveCount <= low.softCap);
 
-  const high = freshSim(null, 11);
-  applyUpgradesTo(high, CONFIG.levels.cap);
+  const high = atLevel(CONFIG.levels.cap, 11);
   assert.equal(high.softCap, CONFIG.population.hardCap,
     'level ' + CONFIG.levels.cap + ' should reach the hard cap, got ' + high.softCap);
 
   // Monotonic the whole way up, and never over the hard cap.
   let prev = 0;
   for (let l = 1; l <= CONFIG.levels.cap; l++) {
-    const s2 = freshSim(null, 5);
-    applyUpgradesTo(s2, l);
+    const s2 = atLevel(l);
     assert.ok(s2.softCap >= prev, 'ball cap fell at level ' + l);
     assert.ok(s2.softCap <= CONFIG.population.hardCap, 'over hard cap at level ' + l);
     prev = s2.softCap;
   }
+
+  // Every MORE ORBS upgrade must still MOVE the cap. Ten of them used to fire after the cap was
+  // already pinned at 150, so the player was handed "MORE ORBS" ten times and got none.
+  for (const u of CONFIG.upgrades.filter((x) => x.path === 'population.softCapBase')) {
+    const before = atLevel(u.level - 1).softCap;
+    const after = atLevel(u.level).softCap;
+    assert.ok(after > before, 'MORE ORBS at level ' + u.level + ' changed nothing: cap stayed at ' + after);
+  }
 });
 
-test('all twelve colour worlds are reachable, and none before its level', () => {
-  assert.ok(CONFIG.palettes.length >= 12, 'only ' + CONFIG.palettes.length + ' palettes');
+test('every upgrade carries a note a player could read', () => {
+  // The description of each upgrade used to live only in a // comment, which is invisible at
+  // runtime — so the help screen had nothing to show and the player had nothing to read. Nothing
+  // but this test would catch a note and a label that drift apart.
+  for (const u of CONFIG.upgrades) {
+    assert.ok(typeof u.note === 'string' && u.note.length > 4,
+      'upgrade ' + u.id + ' has no note');
+    assert.ok(u.note.length <= 92, 'note on ' + u.id + ' is ' + u.note.length + ' chars — too long to lay out');
+    assert.ok(/[.!]$/.test(u.note), 'note on ' + u.id + ' is not a sentence: ' + u.note);
+    assert.ok(typeof u.label === 'string' && u.label.length > 0 && u.label === u.label.toUpperCase(),
+      'label on ' + u.id + ' is not a plain upper-case name');
+  }
+});
+
+test('every colour world is reachable, and none before its level', () => {
+  assert.ok(CONFIG.palettes.length >= 13, 'only ' + CONFIG.palettes.length + ' palettes');
   const paletteUps = CONFIG.upgrades.filter((u) => u.kind === 'palette');
   assert.equal(1 + paletteUps.length, CONFIG.palettes.length,
     'palette upgrades (' + paletteUps.length + ') do not unlock every world');
