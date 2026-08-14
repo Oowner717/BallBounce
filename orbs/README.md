@@ -188,16 +188,29 @@ The ones that earn their keep most often:
 | `U`                          | Upgrade menu — every upgrade as a button, tap to fire it. |
 | `←` `→`                      | Page through the upgrade menu. |
 
-The debug overlay shows fps, physics and draw milliseconds, ball and particle counts,
-sanitizer hits, dropped effect events, soft resets, the error ring buffer, and a
-**hold-to-wipe** target for erasing the save.
+### Opening it on a phone
 
-The **upgrade menu** — `U` on a keyboard, or **four-finger tap** (debug overlay on) then
-**three-finger tap** on a phone, which is the whole point of it — lists all 99 upgrades as tappable
-buttons — level, name and kind, with the ones you already own marked. Tapping one fires it
-immediately, so any upgrade can be seen without playing to it. `+1 LV` / `+10 LV` advance
-levels properly (granting each upgrade on the way), `ALL` applies everything, `RESET` puts
-the save back to a clean level 1.
+**Hold one finger in the top-left corner for a second and a half.** A ring fills around your
+fingertip as you hold, so the gesture shows you it is working rather than being a secret you
+have to know. That is the only entry point that can be relied on: there is no `D` key on a
+phone, and iOS reserves three- and four-finger gestures for the system, so a multi-finger tap
+may simply never reach the page. A hold anywhere else on the screen is an ordinary gather and
+does nothing to the overlay. Holding the corner again closes it.
+
+The debug overlay shows fps, physics and draw milliseconds, ball and particle counts,
+sanitizer hits, dropped effect events, soft resets, the error ring buffer, and three
+targets you can press:
+
+| Target | What it does |
+| --- | --- |
+| `HOLD TO WIPE SAVE` | Hold 1.6s. Erases the save entirely. |
+| `UPGRADES` | Opens the upgrade menu. |
+| `RESET TO LV 1` | One tap. Back to a clean level 1 — no upgrades, no score, starting population — and it is written to storage immediately, so it survives a reload. |
+
+The **upgrade menu** lists all 99 upgrades as tappable buttons — level, name and kind, with
+the ones you already own marked. Tapping one fires it immediately, so any upgrade can be seen
+without playing to it. `+1 LV` / `+10 LV` advance levels properly (granting each upgrade on
+the way), `ALL` applies everything, `RESET` is the same clean level 1 as above.
 
 ---
 

@@ -736,6 +736,8 @@ let lastTapX = 0, lastTapY = 0;
 let debugOn = FORCE_DEBUG || CFG.debug.enabled;
 let wipeHold = 0;
 let wipeDone = 0;
+let cornerHold = 0;
+let cornerArmed = true;   // Cleared once a hold fires, so one long press is one toggle.
 
 function canvasPos(e) {
   let rect = { left: 0, top: 0 };
@@ -748,6 +750,7 @@ function onPointerDown(e) {
     if (SOAK) return;
     const [x, y] = canvasPos(e);
     if (upgradeMenuHit(x, y)) { e.preventDefault(); return; }
+    if (debugButtonHit(x, y)) { e.preventDefault(); return; }
     if (pointers.size === 0) { gestureStart = nowSec(); gestureMaxDown = 0; gestureMoved = 0; }
     pointers.set(e.pointerId, { x, y });
     gestureMaxDown = Math.max(gestureMaxDown, pointers.size);
@@ -1474,6 +1477,9 @@ function roundRect(c, x, y, w, h, r) {
 /* ---- debug overlay -------------------------------------------------------- */
 
 const wipeRect = { x: 0, y: 0, w: 0, h: 0 };
+const upgBtnRect = { x: 0, y: 0, w: 0, h: 0 };   // "UPGRADES" button in the debug overlay
+const lv1BtnRect = { x: 0, y: 0, w: 0, h: 0 };   // "RESET TO LV 1" button beside it
+let lv1Done = 0;                                 // brief confirmation timer on that button
 
 /* ---- upgrade menu: every upgrade, one tappable button each -------------- */
 
@@ -1575,13 +1581,7 @@ function upgradeMenuHit(px, py) {
       else if (b.act === 'lv1') grantLevels(1);
       else if (b.act === 'lv10') grantLevels(10);
       else if (b.act === 'all') for (const u of (CFG.upgrades || [])) applyUpgrade(sim, u, false);
-      else if (b.act === 'reset') {
-        applySave(sim, defaultSave(BASE_CONFIG));
-        CFG = sim.config;
-        palette.cur = null; palette.key = '';
-        spriteCache.clear();
-        sky = deriveStars(serializeSave(sim), CFG);
-      }
+      else if (b.act === 'reset') resetToLevelOne();
       return true;
     }
   }
@@ -1636,7 +1636,8 @@ function drawDebug(P, physMs, fps) {
     : ['errors: none'];
   for (const l of errLines) maxW = Math.max(maxW, ctx.measureText(l).width);
 
-  const boxH = (lines.length + errLines.length + 2) * lh + 30;
+  // + 30 for the wipe target, + 26 for the row of tap buttons under it.
+  const boxH = (lines.length + errLines.length + 2) * lh + 30 + 26;
   ctx.fillStyle = 'rgba(0,0,0,0.62)';
   ctx.fillRect(x - 5, y - 5, maxW + 16, boxH);
 
@@ -1656,6 +1657,88 @@ function drawDebug(P, physMs, fps) {
   ctx.fillRect(wipeRect.x, wipeRect.y, wipeRect.w * k, wipeRect.h);
   ctx.fillStyle = '#fff';
   ctx.fillText(wipeDone > 0 ? 'WIPED' : 'HOLD TO WIPE SAVE', wipeRect.x + 6, wipeRect.y + 5);
+
+  // Two plain tap buttons beside it. The upgrade menu needs a visible way in, and a way back
+  // to a clean level 1 belongs where you can reach it without going through the menu first.
+  y += 26;
+  const label = (rect, text, fill) => {
+    ctx.fillStyle = fill;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(text, rect.x + 6, rect.y + 5);
+  };
+  upgBtnRect.x = x; upgBtnRect.y = y; upgBtnRect.w = 92; upgBtnRect.h = 20;
+  label(upgBtnRect, 'UPGRADES', 'rgba(30,70,120,0.85)');
+  lv1BtnRect.x = x + 100; lv1BtnRect.y = y; lv1BtnRect.w = 118; lv1BtnRect.h = 20;
+  label(lv1BtnRect, lv1Done > 0 ? 'BACK AT LV 1' : 'RESET TO LV 1', 'rgba(96,72,20,0.85)');
+  ctx.restore();
+}
+
+/** Puts the run back to a clean level 1 — no upgrades, no score, starting population. */
+function resetToLevelOne() {
+  applySave(sim, defaultSave(BASE_CONFIG));
+  CFG = sim.config;
+  palette.cur = null; palette.key = '';
+  spriteCache.clear();
+  sky = deriveStars(serializeSave(sim), CFG);
+  particles.length = 0;
+  celebration = null;
+  capGlory = 0;
+  popups.length = 0;
+  writeSave(true);
+  lv1Done = 0.001;
+}
+
+/** Returns true if the point landed on one of the overlay's buttons. */
+function debugButtonHit(px, py) {
+  if (!debugOn || upgradeMenu.open) return false;
+  const hit = (r) => r.w > 0 && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  if (hit(upgBtnRect)) { upgradeMenu.open = true; return true; }
+  if (hit(lv1BtnRect)) { resetToLevelOne(); return true; }
+  return false;
+}
+
+/**
+ * One finger held in the top-left corner toggles the debug overlay.
+ *
+ * This exists because every other route is unreachable on the device the toy is for: there is
+ * no D key on a phone, and iOS reserves three- and four-finger gestures for itself, so a
+ * multi-finger tap may never arrive. A single finger held in a corner always does.
+ */
+function updateDebugCorner(dt) {
+  const s = CFG.debug.cornerSize;
+  let inside = false;
+  for (const p of pointers.values()) {
+    if (p.x >= safe.l && p.x <= safe.l + s && p.y >= safe.t && p.y <= safe.t + s) inside = true;
+  }
+  if (!inside) { cornerHold = 0; cornerArmed = true; return; }
+  cornerHold += dt;
+  if (cornerArmed && cornerHold >= CFG.debug.cornerHoldTime) {
+    cornerArmed = false;
+    debugOn = !debugOn;
+    if (!debugOn) upgradeMenu.open = false;
+  }
+}
+
+/** The filling arc that makes the corner hold discoverable instead of a secret. */
+function drawDebugCorner(P) {
+  if (!cornerArmed) return;
+  const k = (cornerHold - CFG.debug.cornerArcDelay)
+    / (CFG.debug.cornerHoldTime - CFG.debug.cornerArcDelay);
+  if (k <= 0) return;
+  const s = CFG.debug.cornerSize;
+  const cx = safe.l + s * 0.5;
+  const cy = safe.t + s * 0.5;
+  const r = s * 0.34;
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = rgba(P.ring, 0.18);
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = rgba(P.ring, 0.85);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, k));
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -1778,6 +1861,8 @@ function render(dt) {
   consumeEvents(P);
   updateEffects(dt);
   updateWipe(dt);
+  updateDebugCorner(dt);
+  if (lv1Done > 0) { lv1Done += dt; if (lv1Done > 1.6) lv1Done = 0; }
   adaptQuality();
 
   // Rolling score counter.
@@ -1849,6 +1934,7 @@ function render(dt) {
 
   // The two debug panels occupy the same corner, so only one shows at a time.
   if (debugOn && !upgradeMenu.open) drawDebug(P, physMs, fps);
+  drawDebugCorner(P);
   if (upgradeMenu.open) drawUpgradeMenu(P);
 }
 
@@ -1916,6 +2002,11 @@ try {
         open: upgradeMenu.open, page: upgradeMenu.page,
         rows: upgradeMenu.rows.map((r) => ({ id: r.up.id, level: r.up.level, cx: r.x + r.w / 2, cy: r.y + r.h / 2 })),
         buttons: upgradeMenu.buttons.map((b) => ({ act: b.act, cx: b.x + b.w / 2, cy: b.y + b.h / 2 })),
+        debug: debugOn,
+        overlay: {
+          upgrades: { cx: upgBtnRect.x + upgBtnRect.w / 2, cy: upgBtnRect.y + upgBtnRect.h / 2 },
+          resetLv1: { cx: lv1BtnRect.x + lv1BtnRect.w / 2, cy: lv1BtnRect.y + lv1BtnRect.h / 2 },
+        },
       };
     },
   };

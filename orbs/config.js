@@ -942,6 +942,12 @@ export const CONFIG = {
     frameFailSoftReset: 2,    // Consecutive frame-loop throws before the effects layer soft-resets.
     fpsWindow: 40,            // Frames averaged for the fps readout.
     wipeHoldTime: 1.6,        // s. Hold on the overlay's wipe target to erase the save.
+    cornerSize: 56,           // px. Side of the top-left corner patch you hold to open the overlay.
+                              // A phone has no D key, and iOS eats multi-finger taps, so one
+                              // finger held in a corner is the only entry that reliably works.
+    cornerHoldTime: 1.5,      // s. How long to hold there. Long enough that play never trips it.
+    cornerArcDelay: 0.35,     // s. Silence before the progress arc appears, so an ordinary
+                              // corner touch does not flash a widget at you.
   },
 };
 
