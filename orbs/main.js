@@ -92,6 +92,9 @@ function readSave() {
 
 let saveTimer = 0;
 function writeSave(force) {
+  // ?soak=1 drives hours of synthetic max-strength input. Persisting that would overwrite
+  // the player's real progress with a stress run's numbers.
+  if (SOAK) { saveTimer = 0; return; }
   try {
     const payload = serializeSave(sim);
     payload.seenHint = seenHint;
@@ -793,11 +796,15 @@ function buildInput() {
 /* ========================================================================== */
 
 function drawBackground(P, calm) {
-  const g = ctx.createLinearGradient(0, 0, 0, cssH);
+  // Overfill by the shake amplitude: the whole scene is drawn under a translate during a
+  // shake, so filling exactly (0,0,cssW,cssH) leaves an unpainted strip at the trailing
+  // edge which smears last frame's pixels.
+  const m = CONFIG.effects.shakeMax * scale() + 2;
+  const g = ctx.createLinearGradient(0, -m, 0, cssH + m);
   g.addColorStop(0, P.bg0);
   g.addColorStop(1, P.bg1);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, cssW, cssH);
+  ctx.fillRect(-m, -m, cssW + m * 2, cssH + m * 2);
 
   // The sky: permanent, save-derived, and best seen when nothing is happening.
   const skyAlpha = calm + (1 - calm) * CONFIG.sky.calmOnlyAlpha;
