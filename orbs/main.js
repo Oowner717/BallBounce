@@ -2016,17 +2016,12 @@ function drawHud(P, calm) {
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  // A soft dark halo behind the HUD text. Without it the numbers are unreadable whenever a
-  // bright orb drifts under them, and there is no DOM chrome available to sit them on.
-  ctx.shadowColor = 'rgba(0,0,0,0.75)';
-  ctx.shadowBlur = 9;
 
   // Score — rolls, never snaps.
   const scoreText = formatScore(displayScore);
   const size = Math.max(26, Math.min(46, cssW * 0.105));
   ctx.font = '600 ' + size + 'px ' + F.fontStack;
-  ctx.fillStyle = rgba(P.hud, alpha);
-  ctx.fillText(scoreText, cx, top);
+  inkText(scoreText, cx, top, size, rgba(P.hud, alpha));
 
   // Combo, right under the score.
   let y = top + size * 1.05;
@@ -2034,17 +2029,22 @@ function drawHud(P, calm) {
     const cs = Math.max(12, size * 0.38);
     ctx.font = '600 ' + cs + 'px ' + F.fontStack;
     const pulse = 0.7 + 0.3 * Math.min(1, sim.comboTimer / CFG.score.comboWindow);
-    ctx.fillStyle = rgba(P.ring, alpha * pulse);
-    ctx.fillText('×' + sim.comboMult.toFixed(2) + '   ' + sim.comboCount, cx, y);
+    inkText('×' + sim.comboMult.toFixed(2) + '   ' + sim.comboCount, cx, y, cs, rgba(P.ring, alpha * pulse));
     y += cs * 1.25;
   } else {
     y += Math.max(12, size * 0.38) * 1.25;
   }
 
-  // Level bar.
+  // Level bar. The unfilled half is a dim tint of the palette, which is the same order of
+  // brightness as whatever is flying behind it, so the bar gets a dark plate of its own first —
+  // otherwise "how far through the level am I" is only legible on a quiet screen.
   const barW = Math.min(200, (right - left) * 0.55);
   const barH = F.levelBarHeight;
   const prog = sim.atLevelCap ? 1 : Math.max(0, Math.min(1, sim.xp / Math.max(1, sim.xpNeeded)));
+  const pad = barH;
+  ctx.fillStyle = 'rgba(0,0,0,' + (F.textHaloAlpha * 0.75).toFixed(3) + ')';
+  roundRect(ctx, cx - barW / 2 - pad, y - pad, barW + pad * 2, barH + pad * 2, (barH + pad * 2) / 2);
+  ctx.fill();
   ctx.fillStyle = rgba(P.hudDim, alpha * 0.5);
   roundRect(ctx, cx - barW / 2, y, barW, barH, barH / 2);
   ctx.fill();
@@ -2054,8 +2054,8 @@ function drawHud(P, calm) {
 
   const ls = Math.max(10, size * 0.27);
   ctx.font = '500 ' + ls + 'px ' + F.fontStack;
-  ctx.fillStyle = rgba(P.hudDim, alpha);
-  ctx.fillText(sim.atLevelCap ? 'LV ' + sim.level + ' — MAX' : 'LV ' + sim.level, cx, y + barH + 5);
+  inkText(sim.atLevelCap ? 'LV ' + sim.level + ' — MAX' : 'LV ' + sim.level,
+    cx, y + barH + 5, ls, rgba(P.hudDim, alpha));
 
   // What you were just given, in its own colour, for as long as it takes to look up.
   if (sim.lastUpgrade && sim.lastUpgrade !== lastUpShown) { lastUpShown = sim.lastUpgrade; lastUpT = 0; }
@@ -2064,23 +2064,23 @@ function drawHud(P, calm) {
       ? (F.lastUpgradeTime - lastUpT) / F.lastUpgradeFade : 1;
     const us = ls * F.lastUpgradeScale;
     ctx.font = '600 ' + us + 'px ' + F.fontStack;
-    ctx.fillStyle = rgba(upgradeTint(P, lastUpShown), alpha * out * 0.95);
     const ly = y + barH + 5 + ls * 1.35;
-    ctx.fillText(lastUpShown.label, cx, ly);
+    inkText(lastUpShown.label, cx, ly, us, rgba(upgradeTint(P, lastUpShown), alpha * out * 0.95));
     const w = ctx.measureText(lastUpShown.label).width + 24;
     lastUpRect.x = cx - w / 2; lastUpRect.y = ly - 4; lastUpRect.w = w; lastUpRect.h = us + 10;
   } else {
     lastUpRect.w = 0;
   }
 
-  // Floating score popups.
+  // Floating score popups. These are the ones that most needed this: they are small, they are
+  // tinted the colour of the type that paid out, and they spawn exactly where the collision was
+  // — which is to say on top of the brightest thing on screen, every time.
   ctx.textBaseline = 'middle';
   for (const p of popups) {
     const k = p.t / p.life;
     const a = Math.min(1, (1 - k) * 2.2);
     ctx.font = '600 ' + p.size + 'px ' + F.fontStack;
-    ctx.fillStyle = rgba(p.color, a * 0.95);
-    ctx.fillText(p.text, p.x, p.y - CFG.effects.popupRise * scale() * k);
+    inkText(p.text, p.x, p.y - CFG.effects.popupRise * scale() * k, p.size, rgba(p.color, a * 0.95));
   }
 
   // Celebration.
@@ -2093,13 +2093,12 @@ function drawHud(P, calm) {
       ctx.font = '700 ' + bigSize + 'px ' + F.fontStack;
       // The word arrives in the colour of the thing it names, so the name is attached to the
       // thing before you have finished reading it.
-      ctx.fillStyle = rgba(celebration.tint || P.hud, a);
-      ctx.fillText(celebration.text, cssW / 2, cssH * 0.42);
+      inkText(celebration.text, cssW / 2, cssH * 0.42, bigSize, rgba(celebration.tint || P.hud, a));
     }
     if (celebration.sub) {
-      ctx.font = '500 ' + bigSize * 0.32 + 'px ' + F.fontStack;
-      ctx.fillStyle = rgba(P.ring, a * 0.9);
-      ctx.fillText(celebration.sub.toUpperCase(), cssW / 2, cssH * 0.42 + bigSize * 0.75);
+      const ss = bigSize * 0.32;
+      ctx.font = '500 ' + ss + 'px ' + F.fontStack;
+      inkText(celebration.sub.toUpperCase(), cssW / 2, cssH * 0.42 + bigSize * 0.75, ss, rgba(P.ring, a * 0.9));
     }
   }
 
@@ -2146,21 +2145,17 @@ function drawHud(P, calm) {
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(0,0,0,0.9)';
-    ctx.shadowBlur = 18;
+    // This one sits on top of its own 24-ray starburst, so it needs the outline more than
+    // anything else in the game, not less.
     const big = Math.max(52, Math.min(112, cssW * 0.27));
     ctx.font = '700 ' + big + 'px ' + F.fontStack;
-    ctx.fillStyle = rgba('#ffffff', a);
-    ctx.fillText('100', cx2, cy2);
+    inkText('100', cx2, cy2, big, rgba('#ffffff', a));
     ctx.font = '700 ' + big * 0.21 + 'px ' + F.fontStack;
-    ctx.fillStyle = rgba(P.ring, a);
-    ctx.fillText('LEVEL CAP', cx2, cy2 - big * 0.62);
+    inkText('LEVEL CAP', cx2, cy2 - big * 0.62, big * 0.21, rgba(P.ring, a));
     ctx.font = '600 ' + big * 0.17 + 'px ' + F.fontStack;
-    ctx.fillStyle = rgba(P.hud, a * 0.95);
-    ctx.fillText('EVERY UPGRADE UNLOCKED', cx2, cy2 + big * 0.58);
+    inkText('EVERY UPGRADE UNLOCKED', cx2, cy2 + big * 0.58, big * 0.17, rgba(P.hud, a * 0.95));
     ctx.font = '500 ' + big * 0.135 + 'px ' + F.fontStack;
-    ctx.fillStyle = rgba(P.hudDim, a * 0.95);
-    ctx.fillText('KEEP PLAYING — THE NUMBER NEVER STOPS', cx2, cy2 + big * 0.82);
+    inkText('KEEP PLAYING — THE NUMBER NEVER STOPS', cx2, cy2 + big * 0.82, big * 0.135, rgba(P.hudDim, a * 0.95));
     ctx.restore();
   }
 
@@ -2168,13 +2163,46 @@ function drawHud(P, calm) {
   if ((!seenHint || hintFade > 0) && !SOAK) {
     const out = seenHint ? Math.max(0, hintFade / Math.max(1e-6, CFG.input.hintFadeTime)) : 1;
     const pulse = (0.35 + 0.35 * (0.5 + 0.5 * Math.sin(sim.time * 6.283 / CFG.input.hintPulsePeriod))) * out;
-    ctx.font = '500 ' + Math.max(15, cssW * 0.045) + 'px ' + F.fontStack;
-    ctx.fillStyle = rgba(P.hud, pulse);
+    const hs = Math.max(15, cssW * 0.045);
+    ctx.font = '500 ' + hs + 'px ' + F.fontStack;
     ctx.textAlign = 'center';
-    ctx.fillText('touch', cssW / 2, cssH * 0.62);
+    inkText('touch', cssW / 2, cssH * 0.62, hs, rgba(P.hud, pulse));
   }
 
   ctx.restore();
+}
+
+/**
+ * Draw text so it survives a bright, moving background: a blurred dark halo, then a dark
+ * outline, then the fill.
+ *
+ * The halo is drawn as two stroked passes rather than one. A single shadow pass is a fixed
+ * amount of darkness spread over the blur radius, and against a white orb at full bloom that
+ * is simply not enough; compounding two passes squares the transmittance and puts a genuinely
+ * dark pool under the glyph without widening it. The outline is stroked UNDER the fill (not
+ * over it) so the letterforms keep their designed weight instead of being eaten from both
+ * sides — stroke centres on the path, so half of it lands inside the glyph and the fill then
+ * covers exactly that half.
+ *
+ * `size` is the font size in px, which the caller has already set on ctx.
+ */
+function inkText(text, x, y, size, fillStyle) {
+  const F = CFG.render;
+  const w = size * F.textOutline;
+  ctx.save();
+  ctx.lineWidth = w;
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+  ctx.strokeStyle = 'rgba(0,0,0,' + F.textOutlineAlpha + ')';
+  ctx.shadowColor = 'rgba(0,0,0,' + F.textHaloAlpha + ')';
+  ctx.shadowBlur = F.textHaloBlur;
+  ctx.strokeText(text, x, y);
+  ctx.strokeText(text, x, y);
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.restore();
+  ctx.fillStyle = fillStyle;
+  ctx.fillText(text, x, y);
 }
 
 function roundRect(c, x, y, w, h, r) {
@@ -3199,18 +3227,14 @@ function drawDemo(P) {
     ctx.strokeStyle = rgba(P.ring, a);
     ctx.beginPath(); ctx.arc(cx, cy, R * 0.92, -Math.PI / 2, -Math.PI / 2 + 6.283 * (cur / span)); ctx.stroke();
   }
-  // The caption draws over the bare scene, so it keeps the HUD's halo.
-  ctx.shadowColor = 'rgba(0,0,0,0.75)';
-  ctx.shadowBlur = 9;
+  // The caption draws over the bare scene, so it gets the same treatment as the HUD.
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const u = helpUnit();
   ctx.font = '600 ' + (u * 1.15) + 'px ' + CFG.render.fontStack;
-  ctx.fillStyle = rgba(P.hud, a);
-  ctx.fillText(r.name, cx, cssH * 0.82);
+  inkText(r.name, cx, cssH * 0.82, u * 1.15, rgba(P.hud, a));
   ctx.font = '600 ' + (u * 0.95) + 'px ' + CFG.render.fontStack;
-  ctx.fillStyle = rgba(P.ring, a);
-  ctx.fillText(helpNum(base, r.unit) + '  →  ' + helpNum(cur, r.unit), cx, cssH * 0.82 + u * 1.6);
+  inkText(helpNum(base, r.unit) + '  →  ' + helpNum(cur, r.unit), cx, cssH * 0.82 + u * 1.6, u * 0.95, rgba(P.ring, a));
   ctx.restore();
 }
 
@@ -3256,11 +3280,19 @@ function triggerUpgrade(up) {
 }
 
 function grantLevels(n) {
+  const before = sim.palettesUnlocked;
   for (let i = 0; i < n; i++) {
     if (sim.atLevelCap) break;
     sim.xp = sim.xpNeeded;                // the next step() levels up and applies the upgrade
     simStep(sim, 1 / 60, null);
   }
+  // step() clears sim.events at the top, so only the LAST step's events ever reach
+  // consumeEvents — and it is consumeEvents that retargets the palette and drops the cached sky
+  // plates. Jumping many levels at once would otherwise walk past a colour world or a sky
+  // upgrade and leave the renderer still painting the old one. Both are idempotent, so doing
+  // them unconditionally here is cheaper than trying to work out whether we crossed one.
+  if (sim.palettesUnlocked !== before) retargetPalette();
+  plateKey = ''; platesReady = false;
 }
 
 function drawUpgradeMenu(P) {
@@ -3329,15 +3361,22 @@ function drawUpgradeMenu(P) {
     rows.push({ x, y: ry, w, h: rowH - 2, up });
   }
 
+  // LV 99 lands you one level short of the cap on purpose: from there the next level-up is the
+  // real one, so the cap celebration can be triggered on demand instead of only by playing to it.
   const by = top + headH + UPG_PER_PAGE * rowH + 4;
-  const labels = ['< PREV', 'NEXT >', '+1 LV', '+10 LV', 'ALL', 'RESET'];
-  const acts = ['prev', 'next', 'lv1', 'lv10', 'all', 'reset'];
-  const bw = (w - 5 * 3) / labels.length;
+  const labels = ['< PREV', 'NEXT >', '+1 LV', '+10 LV', 'LV 99', 'ALL', 'RESET'];
+  const acts = ['prev', 'next', 'lv1', 'lv10', 'lv99', 'all', 'reset'];
+  const gap = 2;
+  const bw = (w - (labels.length - 1) * gap) / labels.length;
+  ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
   for (let i = 0; i < labels.length; i++) {
-    const bx = x + i * (bw + 3);
-    ctx.fillStyle = 'rgba(70,80,110,0.75)';
+    const bx = x + i * (bw + gap);
+    // 'LV 99' is a no-op once you are already at or past it; show that rather than offering a
+    // button that silently does nothing.
+    const dead = acts[i] === 'lv99' && sim.level >= 99;
+    ctx.fillStyle = dead ? 'rgba(50,56,74,0.75)' : 'rgba(70,80,110,0.75)';
     ctx.fillRect(bx, by, bw, 22);
-    ctx.fillStyle = '#e6ecff';
+    ctx.fillStyle = dead ? '#6c7590' : '#e6ecff';
     ctx.textAlign = 'center';
     ctx.fillText(labels[i], bx + bw / 2, by + 11);
     btns.push({ x: bx, y: by, w: bw, h: 22, act: acts[i] });
@@ -3399,6 +3438,7 @@ function upgradeMenuUp() {
   else if (d.act === 'next') upgradeMenu.page++;
   else if (d.act === 'lv1') grantLevels(1);
   else if (d.act === 'lv10') grantLevels(10);
+  else if (d.act === 'lv99') grantLevels(Math.max(0, 99 - sim.level));
   else if (d.act === 'all') for (const u of (CFG.upgrades || [])) applyUpgrade(sim, u, false);
   else if (d.act === 'reset') resetToLevelOne();
   else if (d.up) triggerUpgrade(d.up);
@@ -3766,7 +3806,6 @@ function render(dt) {
   drawProofs(P);
   drawTracers(P);
   drawFields(P);
-  drawHud(P, calmT);
 
   if (flash > 0) {
     const a = flashMax * (flash / CFG.effects.flashTime);
@@ -3777,6 +3816,12 @@ function render(dt) {
   }
 
   ctx.restore();
+
+  // The HUD is drawn AFTER the shake is released, and after the flash. The world is allowed to
+  // lurch; the numbers you are trying to read are not. Inside the translate the score jittered
+  // by up to shakeMax in a fresh random direction every frame, which is exactly the moment —
+  // a big cascade — when you most want to see what you just scored.
+  drawHud(P, calmT);
 
   // The two debug panels occupy the same corner, so only one shows at a time.
   if (debugOn && !upgradeMenu.open && !help.open) drawDebug(P, physMs, fps);

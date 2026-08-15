@@ -322,8 +322,20 @@ otherwise hold, and it swallows every touch inside itself, so without that cross
 out were a keyboard and a three-finger tap that iOS is entitled to eat. It lists all 99 upgrades
 as tappable buttons — level, name and kind, with
 the ones you already own marked. Tapping one fires it immediately, so any upgrade can be seen
-without playing to it. `+1 LV` / `+10 LV` advance levels properly (granting each upgrade on
-the way), `ALL` applies everything, `RESET` is the same clean level 1 as above.
+without playing to it. `+1 LV` / `+10 LV` / `LV 99` advance levels properly (granting each
+upgrade on the way), `ALL` applies everything, `RESET` is the same clean level 1 as above.
+
+`LV 99` stops one short of the cap on purpose. From there the next level-up is the real one, so
+the level-100 arrival — a seven-second display that fires **once, ever**, per save — can be
+triggered on demand instead of only by playing forty minutes to it. It greys out once you are
+already at 99 or past it, rather than being a button that silently does nothing.
+
+Granting levels in bulk needed one fix to be honest. `step()` clears its event list at the top
+of every step, and `grantLevels` runs one step per level, so all but the last step's events are
+discarded — and it is the event handler that retargets the palette and drops the cached sky
+plates. Jumping 98 levels therefore walked straight past twelve colour worlds and left the
+renderer painting Ember, the level-1 world, with all thirteen unlocked behind it. `grantLevels`
+now does both refreshes itself. Verified by removing them: the renderer sits on Ember forever.
 
 ---
 
@@ -373,6 +385,38 @@ stay invisible until it had propagated into ball positions, possibly beyond any 
 
 Cost: the median run to level 100 went from 55.5 to **64.3 minutes** (mean 66.0, range 49.6–89.9)
 — measured on the curve of the day, which has since been re-paced; see below.
+
+### The numbers had the same problem, and a worse one
+
+Readable causality is no use if you cannot read the readout. Two things were wrong with the HUD.
+
+**It rode the screen shake.** `drawHud` was called inside the `ctx.translate(shakeX, shakeY)` that
+lurches the whole scene, so the score, the combo, the level bar and every floating `+N` were
+displaced by up to `effects.shakeMax` in a **fresh random direction every frame** — a per-frame
+jitter, not a smooth shake. It was worst during a big cascade, which is exactly the moment the
+numbers matter. The HUD is now drawn after the shake is released, and after the flash, so it also
+stops being washed out by the flash it used to sit under. The world lurches; the readout does not.
+
+Verified rather than asserted: wrapping `fillText` and recording `getTransform()` when the HUD
+draws, with the stage confirmed shaking in both builds, gives **40 of 40 frames under a non-zero
+translate before, 0 of 40 after**. Pixel-diffing was tried first and is useless here — the
+background is as bright and as busy as the text.
+
+**A blurred drop shadow is not enough contrast.** The old halo was one `shadowBlur` pass, and blur
+is soft by definition: with a white orb at full bloom directly behind a digit, glyph edge and
+background meet at similar luminance and the digit dissolves. Text now gets a dark **outline**
+stroked under the fill — a hard edge at a known contrast whatever is behind it — with the blurred
+halo kept underneath to soften the outline's own edge so it does not read as stickered on. The
+stroke goes *under* the fill, so letterforms keep their designed weight instead of being eaten
+from both sides. The halo is two passes rather than one: a single pass spreads a fixed amount of
+darkness over the blur radius, and compounding squares the transmittance without widening the
+glyph. The thin level bar gets a dark plate of its own, since a 3px bar tinted from the palette is
+the same order of brightness as whatever is flying behind it.
+
+This is **faster**, unexpectedly. Draw time at level 100 under load went 23.1 → **15.1 ms**. The old
+code set one shadow for the whole HUD block, so the level bar's fills and every popup fill carried
+a blur they did not need; scoping the shadow to the two stroke passes and clearing it before each
+fill removes more shadowed operations than the extra strokes add.
 
 ---
 

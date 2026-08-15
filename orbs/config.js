@@ -891,8 +891,19 @@ export const CONFIG = {
     bloomStrengthFrenzy: 0.62,// Full bloom when loud.
     starTwinkle: 0.35,        // Amplitude of star twinkle.
     hudMargin: 16,            // px. HUD inset, applied *inside* env(safe-area-inset-*).
-    hudAlphaCalm: 0.5,        // HUD opacity when calm — the numbers recede when nothing is happening.
-    hudAlphaActive: 0.95,     // HUD opacity when playing.
+    hudAlphaCalm: 0.62,       // HUD opacity when calm — the numbers recede when nothing is happening.
+    hudAlphaActive: 1.0,      // HUD opacity when playing. This is the moment you most want to read
+                              // the score, so it is not dimmed at all.
+    // Readability of HUD text over a bright, moving field. A blurred drop shadow alone loses to a
+    // white orb sitting directly behind a digit: the blur is soft by definition, so the glyph edge
+    // and the background meet at similar luminance. A dark OUTLINE stroked under the fill gives a
+    // hard edge at a known contrast no matter what is behind it; the shadow then softens the
+    // outline's own edge so the text does not read as stickered on. Both, not either.
+    textOutline: 0.16,        // Outline width as a fraction of font size. Stroked before the fill,
+                              // with round joins so counters and thin stems do not fill in.
+    textOutlineAlpha: 0.72,   // Opacity of that outline.
+    textHaloBlur: 10,         // px. Blur radius of the halo behind the outline.
+    textHaloAlpha: 0.6,       // Opacity of the halo. Two passes are drawn, so this compounds.
     ringRadius: 34,           // px @ref. Radius of the combo ring drawn at each finger.
     ringWidth: 3.0,           // px @ref. Combo ring stroke width.
     fieldRingAlpha: 0.5,      // Base opacity of the finger ring.
