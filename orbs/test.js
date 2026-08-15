@@ -399,6 +399,107 @@ test('restitution < 1, no input, no drift → kinetic energy decays hard', () =>
   assert.ok(e1 < e0 * 0.05, 'KE only fell from ' + e0.toFixed(1) + ' to ' + e1.toFixed(1));
 });
 
+test('type effects add energy only while their charge lasts, then it only decays', () => {
+  // THE HOLE THIS FILLS: every existing energy test runs with chargeT at zero, and every type
+  // effect is gated on charge, so NOT ONE of them ever fires a detonation, a chain jolt, a freeze
+  // or a shard. Measured: 30 seconds of violently energised balls with no charge produces zero
+  // type-effect events. So the impulses those effects inject — blast, chain kick, shatter, magnet
+  // yank — were completely unguarded, and any change that defers an impulse would sail through.
+  //
+  // The invariant is NOT "energy never rises". It should rise: an effect spends charge, and
+  // charge is energy you put in with your finger. The invariant is that once the charge is gone
+  // there is nothing left to spend, so energy can only fall. That is exactly what a late or
+  // duplicated impulse would violate.
+  // respawnDelay is pinned because a NEW ball legitimately enters the world with velocity, and at
+  // the population cap the toy keeps churning — despawning a drifter and spawning a replacement —
+  // so the ball count hides a steady trickle of fresh energy. That is correct behaviour and it is
+  // not what this test is about. The existing energy tests dodge it by never letting the cap move.
+  const sim = freshSim(Object.assign({}, ENERGY_OVERRIDES, {
+    'world.gravityY': 0, 'world.gravityX': 0, 'population.respawnDelay': 1e9,
+  }), 24680);
+  sim.level = CONFIG.levels.cap;
+  applyUpgradesTo(sim, CONFIG.levels.cap);           // every type unlocked, every fan-out upgrade on
+  for (let i = 0; i < 600; i++) step(sim, 1 / 60, null);
+
+  // Deal the types out by hand. Unlocking a type only converts a handful of live orbs, and with
+  // respawning pinned nothing new arrives carrying one — so without this the screen stays pure ORB
+  // and the test quietly measures nothing, which is the exact failure it exists to prevent.
+  const kinds = CONFIG.unlockOrder.slice();
+  const rng = makeRng(999);
+  let charged = 0, k = 0;
+  for (const b of sim.balls) {
+    if (!b.alive) continue;
+    const a2 = rng.float() * Math.PI * 2;
+    const sp = 500 * sim.scale * rng.range(0.6, 1);
+    b.vx = Math.cos(a2) * sp;
+    b.vy = Math.sin(a2) * sp;
+    b.type = kinds[k++ % kinds.length];
+    b.effectT = 0; b.inertT = 0; b.frozenT = 0;
+    b.chargeT = CONFIG.charge.slingTime;             // as though the whole screen had just been slung
+    charged++;
+  }
+  assert.ok(charged > 30, 'only ' + charged + ' balls to charge — this proves nothing');
+
+  const fired = {};
+  let peak = 0;
+  const e0 = totalKineticEnergy(sim);
+  // Phase 1: run until the charge is genuinely gone, rather than for a guessed interval. Hops
+  // REFRESH charge on their targets (at a decayed value), so a cascade outlives the 2.8s it
+  // started with. That it dies out at all is the property that stops the toy running forever,
+  // so assert it directly instead of assuming it.
+  const limit = Math.ceil(CONFIG.charge.slingTime * 6 * 60);
+  let spent = -1;
+  for (let i = 0; i < limit; i++) {
+    step(sim, 1 / 60, null);
+    for (const ev of sim.events) fired[ev.type] = (fired[ev.type] || 0) + 1;
+    peak = Math.max(peak, totalKineticEnergy(sim));
+    let any = 0;
+    for (const b of sim.balls) if (b.alive && b.chargeT > 0) any++;
+    if (any === 0) { spent = i / 60; break; }
+  }
+  assert.ok(spent >= 0, 'charge never ran out in ' + (limit / 60).toFixed(1)
+    + 's of silence — a cascade that cannot end is how an untouched screen boils');
+  // If nothing fired, the rest of this test is vacuous — which is precisely the failure mode of
+  // the tests this one exists to backstop.
+  const effects = ['detonate', 'chain', 'freeze', 'shard', 'split', 'magnetSpike'];
+  const seen = effects.filter((k) => fired[k]);
+  assert.ok(seen.length >= 3, 'only ' + JSON.stringify(seen) + ' fired — this test is not exercising type effects');
+  assert.ok(peak > e0, 'energy never rose, so no effect actually injected anything');
+
+  // Phase 2: the charge is gone, so nothing is left to pay for new impulses.
+  //
+  // The assertion is deliberately NOT window-over-window monotonicity, because MAGNET makes that
+  // false for honest reasons: a magnet is a potential well, and a well that is itself drifting
+  // does real work on what falls into it. Measured, that produces local kinetic spikes of up to
+  // +90% on a trend that still decays to nothing. Demanding monotonicity here would be asserting
+  // that attractors do not exist. What must hold is that the world RUNS DOWN: no window ever
+  // climbs back above where it started, and the end is a small fraction of the beginning. That
+  // still fails loudly if anything injects impulses with no charge behind them.
+  // Let the cascade's own kinetic energy bleed off BEFORE taking the reference. Measured against
+  // the value the instant the charge died, the bar sits so high that a runaway confined to a
+  // couple of balls hides underneath it — the speed clamp bounds each one, and a handful of
+  // clamped balls is small next to a screen that has just detonated.
+  for (let i = 0; i < 180; i++) step(sim, 1 / 60, null);
+  const settled = totalKineticEnergy(sim);
+  const windows = [];
+  let acc = 0, n = 0;
+  for (let i = 0; i < 1800; i++) {
+    step(sim, 1 / 60, null);
+    acc += totalKineticEnergy(sim); n++;
+    if (n === 60) { windows.push(acc / n); acc = 0; n = 0; }
+  }
+  for (let i = 0; i < windows.length; i++) {
+    assert.ok(windows[i] <= settled,
+      'kinetic energy climbed back above where it settled, ' + (i + 1) + 's after the last charge died: '
+      + windows[i].toFixed(1) + ' vs ' + settled.toFixed(1)
+      + ' — something is injecting impulses with nothing left to pay for them');
+  }
+  const last = windows[windows.length - 1];
+  assert.ok(last < settled * 0.25,
+    'the world did not run down: ' + settled.toFixed(1) + ' -> ' + last.toFixed(1)
+    + ' over 30 untouched seconds');
+});
+
 test('with gravity also zeroed, KE is monotonically non-increasing across every window', () => {
   const sim = energizedSim({ 'world.gravityY': 0, 'world.gravityX': 0 });
   const windows = [];
