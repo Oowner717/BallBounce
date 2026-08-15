@@ -442,14 +442,25 @@ export const CONFIG = {
     //
     // To re-pace the game, move these numbers. Bigger = slower. Past the last anchor the
     // final segment's exponent continues, so play never runs out of curve.
-    // Scaled to 0.72 of the raw measurement: with the real level loop, upgrades arrive
-    // later than the forced-linear pace assumed, and the lag compounds.
+    //
+    // Now at 0.144 of the raw measurement. The earlier 0.72 was calibrated against a player
+    // whose finger is down ~90% of the time and who sweeps the whole screen constantly; that
+    // player reached the cap in about an hour, but someone tapping and swiping at a moderate
+    // pace — finger down about half the time, half-screen flicks, real pauses — took over
+    // three hours. Re-measured against the moderate player and cut 5x, so the middle half of
+    // those runs now finish between 32 and 45 minutes. See the pacing note in the README.
+    //
+    // Every anchor is scaled by the same factor: the measured SHAPE still holds, only the
+    // height changed. The dial is well behaved — the 5x cut bought a 5.0x speedup, so time to
+    // the cap is proportional to this scale over at least that range. Individual runs are
+    // chaotic though: a few percent here reshuffles which upgrade lands before which
+    // milestone, and one seed can move 2-3x either way. Only the distribution is stable.
     // Level 1 is set below the fitted value on purpose: with the population starting at 30
     // the opening is quieter, and the first ball type should still arrive inside ~15s.
     curve: [
-      [1, 8468], [2, 32764], [3, 88029], [5, 89445], [8, 90887], [12, 344081], [18, 2063838],
-      [26, 11394527], [36, 33564446], [50, 72436159], [68, 137423281], [85, 319000844],
-      [99, 407041980],
+      [1, 1694], [2, 6553], [3, 17606], [5, 17889], [8, 18177], [12, 68816], [18, 412770],
+      [26, 2278900], [36, 6712900], [50, 14487000], [68, 27485000], [85, 63800000],
+      [99, 81408000],
     ],
     cap: 100,                 // Level cap. Play continues past it, but the level stops rising
                               // and a one-time grand celebration fires on arrival.

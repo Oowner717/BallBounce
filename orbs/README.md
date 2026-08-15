@@ -6,10 +6,11 @@ touch, a soft force field follows your finger and shoves them around. **Tap** fo
 gathers balls into orbit — let go and it slings the whole orbit into the crowd. Hard
 collisions score, and every ball type does something different when it gets hit hard.
 
-Levelling to the cap of 100 takes about an hour, and every level hands you a named upgrade
-you can actually see land: it arrives in the colour of whatever it changed, and an upgrade that
-changes a distance draws that distance at true size where your finger was. How close to an hour
-depends a great deal on how you play — see the note on pacing below.
+Levelling to the cap of 100 takes something like forty minutes of moderate play, and every level
+hands you a named upgrade you can actually see land: it arrives in the colour of whatever it
+changed, and an upgrade that changes a distance draws that distance at true size where your
+finger was. How close to forty minutes depends a great deal on how you play — see the note on
+pacing below.
 
 Hold a finger in the **bottom-right corner** for a moment and a help sheet opens, including one
 row for every number your ninety-nine upgrades have touched, showing what it started at, what it
@@ -370,7 +371,8 @@ reindexes the ball array underneath them, and they re-validate type at drain bec
 can retype a ball mid-flight. The queue is in the determinism hash: without it, a reordering would
 stay invisible until it had propagated into ball positions, possibly beyond any test's horizon.
 
-Cost: the median run to level 100 went from 55.5 to **64.3 minutes** (mean 66.0, range 49.6–89.9).
+Cost: the median run to level 100 went from 55.5 to **64.3 minutes** (mean 66.0, range 49.6–89.9)
+— measured on the curve of the day, which has since been re-paced; see below.
 
 ---
 
@@ -393,14 +395,55 @@ formula could not fit the real shape, which is nearly flat through the early lev
 then climbs steeply once the population and multipliers open up; one curve fitted to both
 ends made the first ten levels either trivial or a wall.
 
-The curve is scaled so that a **median** run reaches the cap in about an hour, and "median" is
-doing real work in that sentence. Twelve simulated players at the shipped scale finished in
-50, 54, 54, 57, 60, 62, **65**, 67, 70, 75, 82 and 90 minutes — median 64.3m, mean 66.0m. The
-spread is not measurement error; it is the toy. Someone who parks a finger, gathers a fat
-orbit and slings it into a packed screen earns several times what someone drifting through a
-sparse one does, and a lucky FRENZY chain can pay for two levels at once. An hour is the
-middle of the distribution, not a promise. Tuning it any tighter than that would be fitting
-noise: the 12-sample median has a wider confidence interval than the last adjustment made.
+### How long the cap actually takes
+
+The curve is scaled against a **moderate** player: finger down about half the time, flicks
+that cross half the screen rather than all of it, and real pauses between them. Forty
+simulated moderate players finished in a **median 38 minutes**, with the middle half of them
+between **32 and 45**.
+
+That "moderate" is load-bearing, and getting it wrong is what the last re-pacing fixed. The
+curve used to be tuned against a player whose finger is down ninety percent of the time and
+who sweeps the full screen continuously — an hour for *that* player was the number this file
+used to quote. The same curve took a moderate player a **median of three hours and eleven
+minutes**, and one run in eight never got there at all inside five and a half hours. Tuning
+against the most intense way to play and reporting it as the pace is a measurement error, not
+a design choice. The whole curve was cut to **a fifth** of what it was.
+
+How you play matters more than anything else in the game. On the shipped curve, forty runs of
+each profile:
+
+| | finger down | median | middle half |
+|---|---|---|---|
+| **Relentless** — constant full-screen sweeps | 89% | 19m | 18–25m |
+| **Moderate** — half-screen flicks, real pauses | 49% | **38m** | 32–45m |
+| **Barely playing** — occasional taps, long gaps | 12% | 4h22m | 3h13m – never |
+
+That last row is not a bug, it is the combo. `comboWindow` is 2.5s, and someone who rests
+longer than that between touches never keeps a multiplier alive; scoring is close to linear in
+collisions for them where it is closer to quadratic for everyone else. Twelve of those forty
+never reached the cap at all inside five and a half hours. The toy is not an idle game and
+does not pretend to be — the multiplier is the whole economy, and it is gated on staying in
+contact with the screen.
+
+The spread inside a single row is not measurement error either; it is the toy. Someone who
+parks a finger, gathers a fat orbit and slings it into a packed screen earns several times
+what someone drifting through a sparse one does, and a lucky FRENZY chain can pay for two
+levels at once. Thirty-eight minutes is the middle of the distribution, not a promise: the
+slowest of the forty moderate runs took 86.
+
+Two things are worth knowing before touching the anchors. The response is **proportional**:
+cutting the curve 5× cut the moderate median from 191 to 38 minutes, an exponent of 1.00 over
+that range. That is not obvious — reaching a level sooner also brings that level's upgrade
+sooner, which raises the score rate, so the compounding could have made the speedup outrun
+the cut. It does not, measurably, so scaling the anchors is a well-behaved dial.
+
+The second thing is that individual trajectories are **chaotic**. Nudging the curve by 8%
+reshuffles which upgrade lands before which milestone, and single seeds move by 2–3× in
+*either* direction. Only the distribution is stable, and it is heavy-tailed enough that
+8- and 20-seed medians bounce by five minutes or more — enough to invent a knee in the
+response curve that forty seeds show is not there. That is the reason these numbers come from
+forty seeds, and the reason tuning tighter than the nearest few minutes is fitting noise.
 
 The curve had to be re-scaled by 1.8× when unlocked ball types started actually appearing on
 screen. That one fix roughly halved the time to the cap — seven types arriving at level 2 to 8
