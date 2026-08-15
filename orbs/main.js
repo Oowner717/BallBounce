@@ -784,11 +784,13 @@ function addWave(x, y, r, strength, color) {
   waves.push({ x, y, r0: r * 0.18, r1: r, t: 0, life: CFG.effects.shockwaveTime, strength, color });
 }
 
-function addArc(x1, y1, x2, y2, color, depth) {
+function addArc(x1, y1, x2, y2, color) {
+  // No render-side delay any more. The simulation now emits each `chain` event at the instant
+  // its kick actually lands, so holding the arc back would draw every link one delay behind the
+  // ball it depicts — manufacturing precisely the illegibility the stagger exists to remove.
   if (arcs.length > 60) arcs.shift();
   arcs.push({
     x1, y1, x2, y2, t: 0, life: CFG.types.CHAIN.arcTime, color,
-    delay: (depth || 0) * CFG.types.CHAIN.hopDelay,
     seed: Math.random() * 1000,
   });
 }
@@ -838,7 +840,7 @@ function consumeEvents(P) {
         spawnParticles(ev.x, ev.y, Math.round(8 * qualityMul()), 200 * scale(), P.type.SPLITTER, 0.4, 1.6 * scale());
         break;
       case 'chain':
-        addArc(ev.x1, ev.y1, ev.x2, ev.y2, P.type.CHAIN, ev.depth);
+        addArc(ev.x1, ev.y1, ev.x2, ev.y2, P.type.CHAIN);
         break;
       case 'freeze':
         spawnParticles(ev.x, ev.y, Math.round(4 * qualityMul()), 90 * scale(), P.type.FROST, 0.5, 1.5 * scale());
@@ -1019,7 +1021,7 @@ function updateEffects(dt) {
   for (let i = 0; i < arcs.length; i++) {
     const a = arcs[i];
     a.t += dt;
-    if (a.t >= a.life + a.delay) continue;
+    if (a.t >= a.life) continue;
     arcs[w++] = a;
   }
   arcs.length = w;
@@ -1602,8 +1604,7 @@ function drawShardsAndParticlesToTrail(P) {
   }
 
   for (const a of arcs) {
-    if (a.t < a.delay) continue;          // this link has not fired yet
-    const k = 1 - (a.t - a.delay) / a.life;
+    const k = 1 - a.t / a.life;
     g.globalAlpha = Math.max(0, k);
     g.strokeStyle = a.color;
     g.lineWidth = Math.max(1, 2.2 * k * scale());

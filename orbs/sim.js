@@ -453,12 +453,15 @@ export function applySave(sim, raw) {
   sim.palettesUnlocked = 1;
   sim.lastUpgrade = null;
   sim.pendingConvert = null;
+  clearPending(sim);
   refreshDerived(sim);
   applyUpgradesTo(sim, sim.level);
   sim.atLevelCap = sim.level >= sim.config.levels.cap;
   for (const b of sim.balls) {
     if (b.alive && sim.unlocked.indexOf(b.type) < 0) b.type = 'ORB';
   }
+  // Again after the retype loop, so no ball carries a stale obligation into a "first run".
+  clearPending(sim);
   refreshDerived(sim);
   return sim;
 }
@@ -557,6 +560,13 @@ export function createSim(opts = {}) {
     palettesUnlocked: 1,
     lastUpgrade: null,
     pendingConvert: null,   // { type, n, t } — ORBs still owed a retype after an unlock
+    pending: [],            // chain rings authorised but not yet landed. See config.cascade.
+    pendingCount: 0,        // LIVE entries. NOT pending.length: mid-drain that array still holds
+                            // already-fired corpses awaiting compaction, and capping against it
+                            // would let a cascade's own ring-1 corpses refuse its ring-2 enqueues.
+    pendingSeq: 0,
+    pendingDropped: 0,      // this step only
+    pendingDroppedTotal: 0,
     atLevelCap: false,
     capCelebrated: save.capCelebrated === true,
     vortices: [],
@@ -706,6 +716,9 @@ function makeBall(sim, x, y, r, type, fade) {
     dying: false,
     born: sim.time,
     effectT: 0,
+    pendingN: 0,      // rings owed FROM this ball: 0 or 1. NOT a timer — set at enqueue, cleared
+                      // on the entry's terminal path, and deliberately never decremented by dt in
+                      // updateTimers. One countdown, in one place, is the whole point.
     scoreT: 0,
     inertT: 0,
     frozenT: 0,
@@ -766,6 +779,9 @@ function clampIntoBounds(sim, b) {
 
 /** Re-scatter every ball. Score, level and combo are deliberately untouched. */
 export function scatter(sim) {
+  // Every ball teleports, so a ring radiating from the old position would draw an arc across
+  // the whole world and kick in a direction that stopped meaning anything.
+  clearPending(sim);
   const C = sim.config, rng = sim.rng, s = sim.scale;
   for (const b of sim.balls) {
     if (!b.alive) continue;
@@ -1573,7 +1589,11 @@ function processImpacts(sim) {
 
 function fireTypeEffect(sim, b, other, im) {
   const C = sim.config;
-  if (b.effectT > 0) return;
+  // pendingN closes the re-entry hole a stagger opens: without it the effect cooldown expires
+  // during the hop delay, the same ball fires again, and the cascade sustains itself after the
+  // finger has gone. It also closes the chainDetonate resonance hole, which deliberately zeroes
+  // effectT and so has no guard of its own.
+  if (b.effectT > 0 || b.pendingN > 0) return;
   switch (b.type) {
     case 'VOLATILE': detonate(sim, b, 1); break;
     case 'SPLITTER': splitBall(sim, b); break;
@@ -1840,61 +1860,177 @@ function updateShards(sim, dt) {
 
 /* ------------------------------------------------------------------ CHAIN -- */
 
-function chainJolt(sim, source) {
-  const C = sim.config;
-  const cfg = C.types.CHAIN;
-  const s = sim.scale;
-  source.effectT = C.collision.effectCooldown;
-  sim.effectsThisStep++;
+/* ---------------------------------------------------------------- cascade -- */
+/*
+ * A chain used to resolve every one of its rings inside a single step, so the whole cascade
+ * landed on one frame and the player saw a result with no visible cause. These primitives let a
+ * ring be authorised now and land later, so the same cascade reads as a front moving outward.
+ *
+ * Nothing about the physics changes: the kick magnitude, the search radius, how many balls a ring
+ * catches and what it all scores are identical. Only WHEN a ring lands moved.
+ */
 
-  const range2 = (cfg.range * s) * (cfg.range * s);
-  const hit = new Set([source.id]);
-  let frontier = [source];
-  let gained = 0;
+function enqueueRing(sim, cas, target, depth, carried) {
+  const P = sim.config.cascade;
+  if (!target.alive || target.dying) return;
+  // One obligation per ball. This is simultaneously the cross-cascade dedupe and the re-entry
+  // lock that stops a ball being scheduled twice by two chains in the same step.
+  if (target.pendingN > 0) return;
+  if (sim.pendingCount >= P.maxPending) {
+    // REFUSE at the cap, never evict. A late burst must not starve the tail of a cascade the
+    // player is already watching — the same reasoning as the per-frame event budget.
+    sim.pendingDropped++;
+    sim.pendingDroppedTotal++;
+    return;
+  }
+  sim.pending.push({
+    seq: sim.pendingSeq++, t: P.hopDelay, age: 0,
+    fromId: target.id, fromType: target.type, depth: depth, carried: carried, cas: cas,
+  });
+  sim.pendingCount++;
+  cas.open++;
+  target.pendingN++;
+}
 
-  for (let depth = 0; depth < cfg.depth; depth++) {
-    const next = [];
-    for (const from of frontier) {
-      // Nearest N unhit balls within range. Deterministic: sorted by (distance, id).
-      const cand = [];
-      for (const o of sim.balls) {
-        if (!o.alive || o.dying || hit.has(o.id)) continue;
-        const dx = o.x - from.x, dy = o.y - from.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 <= range2) cand.push([d2, o.id, o]);
-      }
-      cand.sort((p, q) => (p[0] - q[0]) || (p[1] - q[1]));
-      const take = Math.min(cfg.targets, cand.length);
-      for (let i = 0; i < take; i++) {
-        const o = cand[i][2];
-        hit.add(o.id);
-        const dx = o.x - from.x, dy = o.y - from.y;
-        const d = Math.max(1e-4, Math.hypot(dx, dy));
-        const kick = cfg.impulse * s;
-        o.vx += (dx / d) * kick;
-        o.vy += (dy / d) * kick;
-        o.pulse = 1;
-        passCharge(sim, from, o);
-        gained += cfg.scoreEach;
-        pushEvent(sim, { type: 'chain', x1: from.x, y1: from.y, x2: o.x, y2: o.y, depth });
+function findBall(sim, id) {
+  for (let i = 0; i < sim.balls.length; i++) if (sim.balls[i].id === id) return sim.balls[i];
+  return null;    // dead, despawned, or compacted away while the ring was in flight
+}
 
-        // Resonance: a chain jolt landing on a volatile is a guaranteed detonation.
-        const cres = sim._res.chainDetonate;
-        if (cres && o.type === 'VOLATILE' && o.inertT <= 0) {
-          if (cres.ignoreCooldown) o.effectT = 0;
-          if (o.effectT <= 0) {
-            detonate(sim, o, cres.scoreMul);
-            pushEvent(sim, { type: 'resonance', id: 'chainDetonate', x: o.x, y: o.y });
-          }
-        }
-        next.push(o);
-      }
-    }
-    frontier = next;
-    if (frontier.length === 0) break;
+/** Pay a cascade exactly once, when its last ring has resolved. */
+function finishCascade(sim, cas, at) {
+  if (cas.open > 0 || cas.paid) return;
+  cas.paid = true;
+  if (cas.gained <= 0) return;
+  const o = findBall(sim, cas.originId);
+  const x = o ? o.x : (at ? at.x : sim.width * 0.5);
+  const y = o ? o.y : (at ? at.y : sim.height * 0.5);
+  addScore(sim, cas.gained * cas.mult, x, y, 'chain');
+}
+
+/** Drop everything owed, paying nothing. Wipe and scatter only — never the ordinary tail. */
+function clearPending(sim) {
+  sim.pending.length = 0;
+  sim.pendingCount = 0;
+  for (const b of sim.balls) b.pendingN = 0;
+}
+
+function drainPending(sim, dt) {
+  const C = sim.config, P = C.cascade, q = sim.pending;
+  if (q.length === 0) return;
+
+  // Deliberately the same expression updateTimers uses: a ring waiting in the queue must age at
+  // exactly the rate it would have aged riding a ball. Neither generous nor punitive.
+  const past = sim.untouchedTime - C.charge.untouchedGrace;
+  const decay = (sim.pointers.size > 0 || past <= 0)
+    ? 1
+    : 1 + (C.charge.untouchedDecay - 1) * clamp(past, 0, 1);
+  // Charge reaches zero by 3s of silence, so anything still owed past this is a promise made by
+  // a finger that has left. This is what the "untouched screen goes quiet" guarantee rests on.
+  const stale = sim.untouchedTime > P.untouchedFlush;
+
+  // Snapshot the length. chainRing below PUSHES onto this same array, and iterating a live
+  // q.length would resolve new entries in the very pass that created them — collapsing the whole
+  // cascade back into one frame, silently, with every existing test still green.
+  const n = q.length;
+  let write = 0;
+
+  for (let i = 0; i < n; i++) {
+    const e = q[i];
+    e.t -= dt;
+    e.age += dt;
+    e.carried = Math.max(0, e.carried - dt * decay);
+
+    const expired = stale || e.age > P.maxAge || e.carried < C.charge.minTransfer;
+    if (!expired && e.t > 0) { q[write++] = e; continue; }
+
+    // Terminal: the one and only place an entry is released.
+    const b = findBall(sim, e.fromId);
+    if (b) b.pendingN = Math.max(0, b.pendingN - 1);
+    sim.pendingCount--;
+    e.cas.open--;
+
+    // Re-validate against the world as it is NOW, not as it was at enqueue: the ball may have
+    // died, been despawned, split, or been retyped in the meantime.
+    const ok = !expired && b && b.alive && !b.dying && b.type === e.fromType;
+    if (ok) chainRing(sim, b, e.cas, e.depth, e.carried);
+    finishCascade(sim, e.cas, b);
   }
 
-  if (gained > 0) addScore(sim, gained * sim.comboMult * sim.globalMult, source.x, source.y, 'chain');
+  // Entries enqueued BY this drain sit at [n, q.length). Slide them behind the survivors; they
+  // are deliberately not ticked this step.
+  for (let i = n; i < q.length; i++) q[write++] = q[i];
+  q.length = write;
+}
+
+/* ------------------------------------------------------------------ CHAIN -- */
+
+function chainJolt(sim, source) {
+  const C = sim.config;
+  source.effectT = C.collision.effectCooldown;
+  // Counted once per cascade, exactly as before. A ring that lands later never bumps it, so
+  // intensity is never raised on the strength of a promise.
+  sim.effectsThisStep++;
+  const cas = {
+    hit: new Set([source.id]),
+    // Snapshot the multipliers at the impact. Without this a deferred ring would be worth MORE
+    // than an instant one, because the rally's combo keeps climbing during the delay.
+    mult: sim.comboMult * sim.globalMult,
+    originId: source.id,
+    gained: 0, open: 0, paid: false,
+  };
+  // Ring 0 is synchronous: an impact answers on the frame it happened. Only propagation waits.
+  chainRing(sim, source, cas, 0, source.chargeT * C.charge.effectTransfer);
+  finishCascade(sim, cas, source);
+}
+
+/** One ring of a cascade. Synchronous for depth 0, from drainPending for depth 1 and beyond. */
+function chainRing(sim, from, cas, depth, carried) {
+  const C = sim.config, cfg = C.types.CHAIN, s = sim.scale;
+  const range2 = (cfg.range * s) * (cfg.range * s);
+
+  // Nearest N unhit balls within range. Deterministic: sorted by (distance, id), unchanged.
+  const cand = [];
+  for (const o of sim.balls) {
+    if (!o.alive || o.dying || cas.hit.has(o.id)) continue;
+    const dx = o.x - from.x, dy = o.y - from.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= range2) cand.push([d2, o.id, o]);
+  }
+  cand.sort((p, q2) => (p[0] - q2[0]) || (p[1] - q2[1]));
+
+  const take = Math.min(cfg.targets, cand.length);
+  const next = carried * C.charge.effectTransfer;
+  const goOn = (depth + 1) < cfg.depth && next >= C.charge.minTransfer;
+
+  for (let i = 0; i < take; i++) {
+    const o = cand[i][2];
+    cas.hit.add(o.id);
+    const dx = o.x - from.x, dy = o.y - from.y;
+    const d = Math.max(1e-4, Math.hypot(dx, dy));
+    const kick = cfg.impulse * s;    // a constant: deferral moves ARRIVAL, never magnitude
+    o.vx += (dx / d) * kick;
+    o.vy += (dy / d) * kick;
+    o.pulse = 1;
+    // passCharge's exact semantics, against the snapshot this ring carried with it.
+    if (next >= C.charge.minTransfer && o.chargeT < next) o.chargeT = next;
+    cas.gained += cfg.scoreEach;
+    pushEvent(sim, { type: 'chain', x1: from.x, y1: from.y, x2: o.x, y2: o.y, depth: depth });
+
+    // Resonance: a chain jolt landing on a volatile is a guaranteed detonation. Resolved in the
+    // SAME tick as the hop that caused it — one delay, not two — and guarded by pendingN, which
+    // this path needs because it deliberately clears the ordinary cooldown.
+    const cres = sim._res.chainDetonate;
+    if (cres && o.type === 'VOLATILE' && o.inertT <= 0 && o.pendingN <= 0) {
+      if (cres.ignoreCooldown) o.effectT = 0;
+      if (o.effectT <= 0) {
+        detonate(sim, o, cres.scoreMul);
+        pushEvent(sim, { type: 'resonance', id: 'chainDetonate', x: o.x, y: o.y });
+      }
+    }
+
+    if (goOn) enqueueRing(sim, cas, o, depth + 1, next);
+  }
 }
 
 /* ------------------------------------------------------------------ FROST -- */
@@ -2349,6 +2485,7 @@ export function step(sim, dtRaw, input) {
 
   sim.events.length = 0;
   sim.eventsDropped = 0;
+  sim.pendingDropped = 0;
   sim.scoreThisStep = 0;
   sim.hardImpactsThisStep = 0;
   sim.effectsThisStep = 0;
@@ -2359,6 +2496,10 @@ export function step(sim, dtRaw, input) {
 
   updatePointers(sim, dt, input);
   consumeTaps(sim, input);
+  // Fixed site, once per step, BEFORE the substep loop — so a ring that lands is integrated by
+  // applyForces on the same frame and can still cause a hard impact this step, exactly like the
+  // within-step coupling it replaces. A drain position that varies is an instant divergence.
+  drainPending(sim, dt);
 
   const sub = Math.max(1, C.world.substeps | 0);
   const h = dt / sub;
@@ -2406,10 +2547,18 @@ export function hashState(sim) {
       String(b.id), b.type, b.alive ? '1' : '0',
       q(b.x), q(b.y), q(b.vx), q(b.vy), q(b.r),
       q(b.fade), q(b.frozenT), q(b.inertT), q(b.effectT), q(b.chargeT),
+      String(b.pendingN),
     );
   }
   parts.push('vx', String(sim.vortices.length));
   for (const v of sim.vortices) parts.push(q(v.x), q(v.y), q(v.t));
+  // The queue must be hashed, or the determinism harness is blind to exactly the mechanism this
+  // change introduced: a queue-order divergence would only surface once it had propagated into
+  // ball positions, possibly thousands of steps later.
+  parts.push('pq', String(sim.pending.length));
+  for (const e of sim.pending) {
+    parts.push(q(e.t), q(e.carried), String(e.fromId), String(e.depth));
+  }
   parts.push('sh', String(sim.shards.length));
   for (const s of sim.shards) parts.push(q(s.x), q(s.y), q(s.vx), q(s.vy), q(s.life), String(s.bounces));
   parts.push(

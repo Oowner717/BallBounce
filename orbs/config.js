@@ -181,6 +181,39 @@ export const CONFIG = {
                               // start actively forgetting.
   },
 
+  /* --------------------------------------------------------------- cascade -- */
+  // A chain cascade used to arrive as one flash: every ring resolved inside a single simulation
+  // step, so twelve balls — thirty-nine at level 100 — moved on the same frame and the player saw
+  // a result with no visible cause. Measured before this existed: 226 impacts per second at level
+  // 28, about four per frame, with a single chain jolt able to touch 56% of the population at once.
+  // These knobs spread the rings over time so the same cascade reads as a front moving through the
+  // crowd. Nothing here changes radius, impulse, speed, ball count, or how many balls a ring
+  // catches — only WHEN each ring lands. Ring 0 is always immediate: an impact answers on the
+  // frame it happened, and only the propagation waits.
+  cascade: {
+    hopDelay: 0.055,          // s. Gap between one chain ring and the next. A TIME, accumulated
+                              // against dt — never a frame count (three frames is 100ms at 30fps
+                              // and 25ms at 120fps) and never multiplied by sim.scale, because a
+                              // phone and a tablet must feel the same. Below about 0.04 the rings
+                              // blur back into one flash; above about 0.08 it reads as a stutter
+                              // rather than a front. Deliberately not exactly 0.05, which is
+                              // 3.000 frames at 60fps — a knife edge that flips between three and
+                              // four frames on dt noise.
+    maxPending: 64,           // Hard ceiling on scheduled rings. At the cap a new ring is REFUSED
+                              // and counted, never queued behind the others — the same philosophy
+                              // as effects.maxPerFrame, where a queued backlog is how a phone
+                              // dies. Refusing rather than dropping the oldest means a late burst
+                              // cannot starve the tail of a cascade already on screen.
+    maxAge: 0.5,              // s. An entry older than this is dropped whatever else is true.
+                              // Belt and braces behind the charge terminator, so the tail of any
+                              // cascade is provably bounded by this one number.
+    untouchedFlush: 3.5,      // s. Once the screen has been untouched this long, everything still
+                              // owed is dropped. Charge is measured at zero by 3.0s, so nothing
+                              // in flight is still legitimately owed — and this is the guarantee
+                              // the "untouched screen goes quiet" test rests on, independent of
+                              // any argument about charge arithmetic.
+  },
+
   /* ------------------------------------------------------------ population -- */
   population: {
     startCount: 30,           // Balls present on a brand-new save. Deliberately sparse: the
@@ -243,7 +276,7 @@ export const CONFIG = {
     VOLATILE: {
       weight: 15, score: 2.0, unlockLevel: 2,
       label: 'VOLATILE',
-      blastRadius: 108,       // px @ref. Reach of the detonation impulse.
+      blastRadius: 90,        // px @ref. Reach of the detonation impulse.
       blastImpulse: 940,      // px/s @ref. Peak velocity change at the blast centre.
       blastFalloffExp: 1.6,   // Exponent on the blast falloff.
       inertTime: 4.0,         // s. Recharge lockout after detonating. Rendered as a visible refill.
@@ -281,7 +314,7 @@ export const CONFIG = {
     PRISM: {
       weight: 10, score: 1.8, unlockLevel: 5,
       label: 'PRISM',
-      shards: 7,              // Shards emitted per hard impact.
+      shards: 6,              // Shards emitted per hard impact.
       shardSpeed: 720,        // px/s @ref. Shard launch speed.
       shardSpeedJitter: 0.4,  // Fractional randomisation of shard speed.
       shardLife: 1.5,         // s. Shard lifetime.
@@ -297,17 +330,22 @@ export const CONFIG = {
       label: 'CHAIN',
       targets: 3,             // Balls jolted per link.
       depth: 2,               // Total links: the ball, then one more hop. "Chains once more."
-      range: 175,             // px @ref. Search radius for the next jolt target.
+      range: 140,             // px @ref. Search radius for the next jolt target. At 175 a hop
+                              // crossed nearly half the world, which reads as lightning
+                              // teleporting rather than jumping to a neighbour. Costs almost no
+                              // score: `targets` binds long before `range` does, so the smaller
+                              // disc still holds far more candidates than a ring can take.
       impulse: 330,           // px/s @ref. Velocity kick delivered by a jolt.
       scoreEach: 4,           // Flat score per jolted ball, before multipliers.
-      arcTime: 0.28,          // s. Lifetime of the drawn lightning arc (render only).
-      hopDelay: 0.05,         // s. Visual delay between links (render only).
+      arcTime: 0.28,          // s. Lifetime of the drawn lightning arc (render only). The whole
+                              // cascade must fit inside this, or the first arc has faded before
+                              // the last ring fires and it stops reading as one figure.
     },
     FROST: {
       weight: 9, score: 1.7, unlockLevel: 7,
       label: 'FROST',
-      radius: 104,            // px @ref. Freeze reach.
-      maxTargets: 6,          // Balls frozen per hard impact.
+      radius: 92,             // px @ref. Freeze reach.
+      maxTargets: 5,          // Balls frozen per hard impact.
       freezeTime: 1.0,        // s. Freeze duration, then they shatter free.
       frozenDrag: 7.5,        // 1/s. Heavy damping while frozen; they barely move.
       frozenRestitution: 0.55,// Frozen balls thud instead of bouncing.

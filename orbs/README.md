@@ -120,7 +120,7 @@ thing without a CLI.
 The first line of real code in `sw.js` is:
 
 ```js
-const CACHE_VERSION = 'orbs-v8';
+const CACHE_VERSION = 'orbs-v9';
 ```
 
 **Bump it on every deploy.** The browser decides a service worker has changed by
@@ -180,7 +180,7 @@ Zero installs, `node:assert` only, exits 0 on success. Takes about 70 seconds �
 that is genuine simulation: a 12,000-step soak under random max-strength fields, two
 4,000-step determinism runs, and a 5,000-step chaos run.
 
-100 tests covering determinism, stability, energy conservation, the population cap, the
+106 tests covering determinism, stability, energy conservation, the population cap, the
 effect budget, timer recovery, score/combo/level invariants, save corruption, the sky, the
 comet, the resonances, the upgrade table, and the feel properties that are easy to fake.
 
@@ -326,6 +326,54 @@ the way), `ALL` applies everything, `RESET` is the same clean level 1 as above.
 
 ---
 
+## Legibility: why a cascade is a sequence, not a flash
+
+Measured on the shipped build: **56 events per second at level 1, 725 at level 28, 1971 at level
+100** — about four impacts per *frame* at 28 and eight at 100. At that rate individual causality is
+unrecoverable, and no amount of rendering fixes it.
+
+Two things were tried and rejected on measurement, which is worth recording because both sound right:
+
+- **Slowing the balls.** Median speed only rises 187 → 338 px/s across the entire game, a 1.8×
+  factor, while the event rate rises 35×. The rate tracks population as roughly n² (five times the
+  balls, twenty times the impacts). Slowing balls attacks the small term, and because score is
+  impact *energy*, halving speed quarters the economy.
+- **Drawing effects only for impacts traceable to your finger.** Tested: 725 → 685 events/s, a 5%
+  cut. With a finger on the screen, charge is everywhere, so it is not a discriminator.
+
+What shipped instead attacks **simultaneity**, not count. A CHAIN cascade used to resolve every one
+of its rings inside a single simulation step. It now resolves one ring per `cascade.hopDelay`
+(55 ms), so the same cascade arrives as a front moving outward. Ring 0 is still synchronous — an
+impact must answer on the frame it happened; only propagation waits.
+
+| what one event does on ONE frame | before | after |
+|---|---|---|
+| chain, level 28 | 12 balls | **3** |
+| chain, level 100 | 84 balls | **4** |
+| blast, level 60+ | 31 balls | **21** |
+
+The total is unchanged — a level-100 chain still reaches 84 balls. They just arrive in three
+readable rings instead of one flash.
+
+Alongside it, fan-out was trimmed where a single event covered too much ground: blast radius
+108 → 90 (area −31%), chain range 175 → 140 (a hop was crossing half the world, which reads as
+lightning teleporting rather than jumping to a neighbour), frost radius 104 → 92 and targets 6 → 5,
+prism shards 7 → 6. Chain `targets` and `depth` were deliberately **left alone** — the stagger is
+what makes depth readable, so cutting it would remove the sequence the change just bought.
+
+The queue is the risky part, so it is bounded from several directions at once: one ring owed per
+ball, a hard cap that **refuses** rather than backlogs, an absolute age limit, and a flush once the
+screen has been untouched for 3.5s. That last one is what guarantees a deferred kick can never land
+inside the ten-second quiet window and fire a hard impact — CHAIN's impulse is more than twice the
+hard-impact threshold. Entries hold ball **ids**, never references or indices, because `compact()`
+reindexes the ball array underneath them, and they re-validate type at drain because a type unlock
+can retype a ball mid-flight. The queue is in the determinism hash: without it, a reordering would
+stay invisible until it had propagated into ball positions, possibly beyond any test's horizon.
+
+Cost: the median run to level 100 went from 55.5 to **64.3 minutes** (mean 66.0, range 49.6–89.9).
+
+---
+
 ## Progression
 
 **One upgrade per level, 2 → 100.** Every level-up hands over something with a name, and
@@ -347,7 +395,7 @@ ends made the first ten levels either trivial or a wall.
 
 The curve is scaled so that a **median** run reaches the cap in about an hour, and "median" is
 doing real work in that sentence. Twelve simulated players at the shipped scale finished in
-33, 36, 43, 48, 49, 54, **56**, 60, 73, 76, 82 and 91 minutes — median 55.5m, mean 58.4m. The
+50, 54, 54, 57, 60, 62, **65**, 67, 70, 75, 82 and 90 minutes — median 64.3m, mean 66.0m. The
 spread is not measurement error; it is the toy. Someone who parks a finger, gathers a fat
 orbit and slings it into a packed screen earns several times what someone drifting through a
 sparse one does, and a lucky FRENZY chain can pay for two levels at once. An hour is the

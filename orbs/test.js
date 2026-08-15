@@ -849,10 +849,18 @@ test('no timer can get stuck under a 20-second storm — everything drains when 
 
   for (const b of sim.balls) {
     if (!b.alive) continue;
-    for (const k of ['frozenT', 'inertT', 'effectT', 'scoreT', 'splitT', 'spikeT', 'immuneT', 'magnetT', 'chargeT']) {
+    // pendingN is on this list even though it is a COUNT, not a timer: a leaked obligation mutes
+    // that ball's type effect permanently, which is a stuck state by any useful definition.
+    for (const k of ['frozenT', 'inertT', 'effectT', 'scoreT', 'splitT', 'spikeT', 'immuneT', 'magnetT', 'chargeT', 'pendingN']) {
       assert.equal(b[k], 0, 'ball ' + b.id + ' has ' + k + ' = ' + b[k] + ' stuck');
     }
   }
+  // `longest` deliberately does NOT include a cascade term. The worst legitimate tail is
+  // (CHAIN.depth - 1) * cascade.hopDelay = 0.11s, far inside effectCooldown, and cascade.maxAge
+  // bounds it absolutely. That hardcoded list is a maintenance trap, so this is written down
+  // rather than left to be rediscovered.
+  assert.equal(sim.pending.length, 0, 'chain rings were still owed after the world went quiet');
+  assert.equal(sim.pendingCount, 0);
 });
 
 test('a frozen ball detonated mid-freeze still ends up thawed (no stranded state)', () => {
@@ -1033,6 +1041,11 @@ test('an untouched screen is genuinely CALM after ten seconds', () => {
     step(sim, dt, null);
     if (i > 60 * 8) hardImpacts += sim.hardImpactsThisStep;   // the last two seconds
   }
+  // Nothing may still be owed. cascade.untouchedFlush drops anything in flight well before this,
+  // which is the guarantee that a deferred chain ring cannot land inside the quiet window and
+  // fire a hard impact — CHAIN.impulse is more than twice hardImpactSpeed.
+  assert.equal(sim.pending.length, 0, 'a chain ring was still owed after ten quiet seconds');
+  assert.equal(sim.pendingCount, 0);
   assert.equal(sim.mode, 'CALM', 'still ' + sim.mode + ' at intensity ' + sim.intensity.toFixed(3) + ' after 10 quiet seconds');
   assert.ok(sim.intensity < CONFIG.intensity.calmBelow, 'intensity ' + sim.intensity.toFixed(3));
   assert.ok(sim.untouchedTime >= CONFIG.intensity.calmSettleTime - 0.001);
@@ -1573,6 +1586,201 @@ test('detonating next to a frozen ball becomes a shatter nova', () => {
   assert.equal(det.nova, true, 'a frozen neighbour did not trigger the nova resonance');
   assert.ok(sim.events.some((e) => e.type === 'resonance' && e.id === 'shatterNova'));
   assert.equal(b.frozenT, 0, 'the nova did not shatter the frozen ball');
+});
+
+// A ball may owe at most one ring, so a 30-ball screen can never fill a 64-slot queue — the
+// cap-refusal path would go untested and the assertion would be vacuous.
+const CROWD = { 'population.startCount': 150, 'population.softCapBase': 150 };
+
+test('a chain cascade lands one ring at a time, not all in one step', () => {
+  // The whole point of the change. Before it, every ring of a cascade resolved inside one
+  // simulation step, so twelve balls moved on the same frame and the player saw a result with no
+  // visible cause. This test fails if the stagger is removed — and, more importantly, if a later
+  // refactor drops the `n = q.length` snapshot in drainPending, which would resolve newly queued
+  // rings in the same pass that created them and silently collapse the cascade back into one
+  // frame with every other test in this file still green.
+  // At the level cap CHAIN has depth 3, so ring 1's drain enqueues ring 2. That is what exercises
+  // the q.length snapshot: with a live length, the drain would resolve the ring it just queued in
+  // the same pass and two depths would land on one frame.
+  const sim = freshSim(CROWD, 606);
+  applyUpgradesTo(sim, CONFIG.levels.cap);
+  const alive = sim.balls.filter((b) => b.alive);
+  for (const b of alive) { b.x = -9999; b.y = -9999; b.vx = 0; b.vy = 0; b.type = 'ORB'; }
+  const src = alive[0];
+  src.x = sim.width * 0.5; src.y = sim.height * 0.5; src.vx = 0; src.vy = 0;
+  src.type = 'CHAIN'; src.chargeT = 3; src.effectT = 0;
+  const reach = CONFIG.types.CHAIN.range * sim.scale * 0.5;
+  // Two shells. Ring 0 catches the inner one; ring 1 radiates from those and needs an OUTER shell
+  // to find, or the cascade stops after one hop and this test fails for the wrong reason.
+  for (let i = 1; i <= 4; i++) {
+    const b = alive[i];
+    b.x = src.x + Math.cos(i) * reach; b.y = src.y + Math.sin(i) * reach;
+    b.vx = 0; b.vy = 0; b.chargeT = 3; b.effectT = 0;
+  }
+  for (let i = 5; i <= 12 && i < alive.length - 1; i++) {
+    const b = alive[i];
+    b.x = src.x + Math.cos(i) * reach * 1.7; b.y = src.y + Math.sin(i) * reach * 1.7;
+    b.vx = 0; b.vy = 0; b.chargeT = 3; b.effectT = 0;
+  }
+  // Drive a hard impact into the source.
+  // A fresh sim starts untouchedTime at calmSettleTime so it opens in CALM — which is already
+  // past cascade.untouchedFlush, so every queued ring would be dropped on its first tick. A real
+  // cascade only ever happens with a finger recently on the screen, so say so.
+  sim.untouchedTime = 0;
+  const hammer = alive[alive.length - 1];
+  hammer.x = src.x - src.r * 1.6; hammer.y = src.y;
+  hammer.vx = CONFIG.collision.hardImpactSpeed * sim.scale * 4; hammer.vy = 0;
+  hammer.chargeT = 3;
+
+  const byStep = [];
+  for (let i = 0; i < 24; i++) {
+    sim.untouchedTime = 0;              // as though a finger were still on the screen
+    step(sim, 1 / 60, null);
+    byStep.push(sim.events.filter((e) => e.type === 'chain').map((e) => e.depth));
+  }
+  const first = byStep.findIndex((d) => d.length > 0);
+  assert.ok(first >= 0, 'no chain event ever fired, so this proves nothing');
+  assert.ok(byStep[first].every((d) => d === 0),
+    'the first chain step emitted depth ' + JSON.stringify(byStep[first]) + ' — the whole cascade landed at once');
+  // Every depth must land on a step of its own, and each strictly after the one before it.
+  const want = CONFIG.cascade.hopDelay * 60;
+  const maxDepth = Math.max(...byStep.flat());
+  assert.ok(maxDepth >= 1, 'no deeper ring ever landed — the cascade never propagated');
+  let prevStep = first;
+  for (let d = 1; d <= maxDepth; d++) {
+    const at = byStep.findIndex((row, i) => i > first && row.indexOf(d) >= 0);
+    assert.ok(at > prevStep,
+      'ring ' + d + ' landed on step ' + at + ', not after ring ' + (d - 1) + ' on step ' + prevStep
+      + ' — two depths resolved in the same pass, so the cascade is still one flash');
+    const gap = at - prevStep;
+    assert.ok(gap >= Math.floor(want) - 1,
+      'ring ' + d + ' landed ' + gap + ' steps after the previous one, expected about ' + want.toFixed(1));
+    assert.ok(gap <= Math.ceil(want) + 2,
+      'ring ' + d + ' took ' + gap + ' steps, far longer than the configured ' + want.toFixed(1));
+    prevStep = at;
+  }
+  // And no step may ever carry two different depths.
+  for (const row of byStep) {
+    const uniq = [...new Set(row)];
+    assert.ok(uniq.length <= 1, 'one step emitted depths ' + JSON.stringify(uniq) + ' together');
+  }
+});
+
+test('the pending queue is bounded and refuses at its cap', () => {
+  // "Excess is DROPPED, never queued — a queued backlog is how a phone dies" is the rule the
+  // per-frame event budget already follows, and a scheduler is exactly where it gets forgotten.
+  const sim = freshSim(CROWD, 607);
+  applyUpgradesTo(sim, CONFIG.levels.cap);
+  let k = 0;
+  for (const b of sim.balls) {
+    if (!b.alive) continue;
+    b.type = 'CHAIN'; b.chargeT = 2; b.effectT = 0;
+    const sp = CONFIG.collision.hardImpactSpeed * sim.scale * 3;
+    b.vx = (k % 2 ? sp : -sp); b.vy = (k % 3 ? sp : -sp); k++;
+  }
+  const input = { pointers: [{ id: 1, x: sim.width * 0.5, y: sim.height * 0.5 }], taps: [], scatter: false };
+  for (let i = 0; i < 600; i++) {
+    step(sim, 1 / 60, input);
+    assert.ok(sim.pending.length <= CONFIG.cascade.maxPending,
+      'queue reached ' + sim.pending.length + ', over the cap of ' + CONFIG.cascade.maxPending);
+    assert.ok(sim.pendingCount <= sim.aliveCount,
+      'more rings owed (' + sim.pendingCount + ') than there are balls to owe them (' + sim.aliveCount + ')');
+    assert.ok(sim.events.length <= CONFIG.effects.maxPerFrame);
+  }
+  assert.ok(sim.pendingDroppedTotal > 0,
+    'the cap was never reached, so refuse-at-cap is untested — make this storm harder');
+
+  for (const b of sim.balls) { b.chargeT = 0; b.type = 'ORB'; }
+  for (let i = 0; i < 300; i++) step(sim, 1 / 60, null);
+  assert.equal(sim.pending.length, 0, 'rings were still owed after five quiet seconds');
+  assert.equal(sim.pendingCount, 0);
+  for (const b of sim.balls) {
+    if (b.alive) assert.equal(b.pendingN, 0, 'ball ' + b.id + ' is permanently muted by a leaked obligation');
+  }
+});
+
+test('a wipe clears chain rings that were still owed', () => {
+  const sim = freshSim(CROWD, 608);
+  applyUpgradesTo(sim, CONFIG.levels.cap);
+  let k = 0;
+  for (const b of sim.balls) {
+    if (!b.alive) continue;
+    b.type = 'CHAIN'; b.chargeT = 2; b.effectT = 0;
+    const sp = CONFIG.collision.hardImpactSpeed * sim.scale * 3;
+    b.vx = (k++ % 2 ? sp : -sp); b.vy = sp;
+  }
+  let queued = false;
+  for (let i = 0; i < 120 && !queued; i++) { sim.untouchedTime = 0; step(sim, 1 / 60, null); queued = sim.pending.length > 0; }
+  assert.ok(queued, 'nothing was ever queued, so this proves nothing');
+
+  applySave(sim, defaultSave(CONFIG));
+  assert.equal(sim.pending.length, 0, 'a wiped save still owed the previous run a chain ring');
+  assert.equal(sim.pendingCount, 0);
+  for (const b of sim.balls) if (b.alive) assert.equal(b.pendingN, 0);
+  let after = 0;
+  for (let i = 0; i < 30; i++) { step(sim, 1 / 60, null); after += sim.events.filter((e) => e.type === 'chain').length; }
+  assert.equal(after, 0, 'a chain from the previous run fired inside what is supposed to be a first run');
+});
+
+test('a ring whose source dies in flight is dropped, not resurrected', () => {
+  // Entries hold ids, never object references or indices, because compact() reindexes the whole
+  // ball array underneath them. They also re-check the type, because a pendingConvert retype can
+  // land between enqueue and drain.
+  for (const mode of ['kill', 'retype']) {
+    const sim = freshSim(CROWD, 609);
+    applyUpgradesTo(sim, CONFIG.levels.cap);
+    let k = 0;
+    for (const b of sim.balls) {
+      if (!b.alive) continue;
+      b.type = 'CHAIN'; b.chargeT = 2; b.effectT = 0;
+      const sp = CONFIG.collision.hardImpactSpeed * sim.scale * 3;
+      b.vx = (k++ % 2 ? sp : -sp); b.vy = sp;
+    }
+    let queued = false;
+    for (let i = 0; i < 120 && !queued; i++) { sim.untouchedTime = 0; step(sim, 1 / 60, null); queued = sim.pending.length > 0; }
+    assert.ok(queued, 'nothing queued in mode ' + mode);
+
+    const victimId = sim.pending[0].fromId;
+    const victim = sim.balls.find((b) => b.id === victimId);
+    assert.ok(victim, 'the queued source is not in the ball array');
+    if (mode === 'kill') { victim.alive = false; sim.aliveCount--; sim.needsCompact = true; }
+    else { victim.type = 'ORB'; }
+
+    for (let i = 0; i < 20; i++) step(sim, 1 / 60, null);
+    assert.equal(allFinite(sim), null, 'state went non-finite in mode ' + mode);
+    assert.ok(sim.pendingCount >= 0, 'pendingCount went negative in mode ' + mode);
+  }
+});
+
+test('the pending queue is inside the determinism hash', () => {
+  // Without this the harness is blind to precisely the new mechanism: a queue-order divergence
+  // would only surface once it had propagated into ball positions, possibly thousands of steps
+  // later, or beyond the horizon of any test in this file.
+  const build = () => {
+    const sim = freshSim(CROWD, 610);
+    applyUpgradesTo(sim, CONFIG.levels.cap);
+    let k = 0;
+    for (const b of sim.balls) {
+      if (!b.alive) continue;
+      b.type = 'CHAIN'; b.chargeT = 2; b.effectT = 0;
+      const sp = CONFIG.collision.hardImpactSpeed * sim.scale * 3;
+      b.vx = (k++ % 2 ? sp : -sp); b.vy = sp;
+    }
+    let queued = false;
+    for (let i = 0; i < 120 && !queued; i++) { sim.untouchedTime = 0; step(sim, 1 / 60, null); queued = sim.pending.length > 0; }
+    return { sim, queued };
+  };
+  const a = build(), b = build();
+  assert.ok(a.queued && b.queued, 'nothing queued, so this proves nothing');
+  assert.equal(hashState(a.sim), hashState(b.sim), 'two identical runs diverged');
+
+  const before = hashState(a.sim);
+  a.sim.pending[0].t += 1e-3;
+  assert.notEqual(hashState(a.sim), before, 'the queue is not in the hash — a reordering would be invisible');
+  a.sim.pending[0].t -= 1e-3;
+  assert.equal(hashState(a.sim), before, 'the hash did not come back, so it is reading something else too');
+  a.sim.pending[0].t += 1e-9;
+  assert.equal(hashState(a.sim), before, 'float noise is not being quantised away, so the hash is unstable');
 });
 
 test('a chain jolt landing on a volatile detonates it, cooldown or not', () => {
