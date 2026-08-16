@@ -677,8 +677,18 @@ test('splitter storm under full multi-touch still respects the cap', () => {
 group('5. Effect storm');
 /* ========================================================================== */
 
+// Same reasoning as CROWD further down: a stress fixture pins its own population rather than
+// inheriting the shipped one, or the storm being tested stops being a storm.
+const BUDGET_CROWD = {
+  'population.startCount': 150, 'population.softCapBase': 150, 'population.hardCap': 150,
+};
+
 test('detonating every ball in one step respects the per-frame effect budget', () => {
-  const sim = freshSim(null, 2468);
+  // Crowded on purpose. The budget is 48 events; detonating a sparse screen does not reach it,
+  // so on the shipped population this test stopped exercising the drop path partway through and
+  // asserted a condition it was no longer creating. The budget logic is what is under test here,
+  // not how many balls the game happens to ship with.
+  const sim = freshSim(BUDGET_CROWD, 2468);
   step(sim, 1 / 60, null);
   const budget = CONFIG.effects.maxPerFrame;
 
@@ -1216,7 +1226,13 @@ test('a FAST swipe flings balls along the swipe; a slow drag only pushes them ou
   // The brief's headline feel requirement, and the one most easily faked: a field that
   // only pushes radially would scatter balls symmetrically no matter how fast it moved.
   const swipe = (speed) => {
-    const sim = freshSim({ 'world.idleDriftStrength': 0, 'world.gravityY': 0 }, 77);
+    // Population pinned, not inherited. This measures the DIRECTION a swipe throws balls, which
+    // is a statistic over the balls the swipe happens to pass through — a sparser screen puts
+    // too few in the band to measure, and the test fails on sample size rather than on feel.
+    const sim = freshSim({
+      'world.idleDriftStrength': 0, 'world.gravityY': 0,
+      'population.startCount': 30, 'population.softCapBase': 30,
+    }, 77);
     const y = sim.height / 2;
     const dt = 1 / 60;
     for (let i = 0; i < 60; i++) step(sim, dt, null);
@@ -1588,9 +1604,14 @@ test('detonating next to a frozen ball becomes a shatter nova', () => {
   assert.equal(b.frozenT, 0, 'the nova did not shatter the frozen ball');
 });
 
-// A ball may owe at most one ring, so a 30-ball screen can never fill a 64-slot queue — the
+// A ball may owe at most one ring, so a sparse screen can never fill a 64-slot queue — the
 // cap-refusal path would go untested and the assertion would be vacuous.
-const CROWD = { 'population.startCount': 150, 'population.softCapBase': 150 };
+//
+// hardCap is raised alongside the other two ON PURPOSE. createSim clamps startCount by softCap
+// and softCap by hardCap, so once the shipped hardCap dropped to 90 this override silently
+// produced 90 balls instead of 150 and quietly weakened every test using it. A stress fixture
+// must not track the shipped population — that is the whole point of it being a fixture.
+const CROWD = { 'population.startCount': 150, 'population.softCapBase': 150, 'population.hardCap': 150 };
 
 test('a chain cascade lands one ring at a time, not all in one step', () => {
   // The whole point of the change. Before it, every ring of a cascade resolved inside one

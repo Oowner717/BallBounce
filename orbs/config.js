@@ -216,17 +216,27 @@ export const CONFIG = {
 
   /* ------------------------------------------------------------ population -- */
   population: {
-    startCount: 30,           // Balls present on a brand-new save. Deliberately sparse: the
+    // The whole population curve was cut to 0.6 of what it was — start, base, per-level nudge,
+    // the MORE ORBS steps and the hard cap all moved together, so the SHAPE is unchanged and
+    // only the height dropped. Measured through the real level loop, the mean ratio to the old
+    // curve over levels 1-100 is 0.598 and no single level deviates from 0.6 by more than 1.5%.
+    startCount: 18,           // Balls present on a brand-new save. Deliberately sparse: the
                               // screen should feel roomy at level 1 and crowded at level 100.
-    softCapBase: 30,          // Target population at level 1. Raised ONLY by 'MORE ORBS'
-                              // upgrades — TEN of them, +6 each. The soft cap also nudges up
-                              // 1.6 per level past level 8, and the two together reach the hard
-                              // cap of 150 at level 46. There used to be twenty MORE ORBS; the
-                              // ten after level 46 raised a number that was already pinned
-                              // behind the clamp and changed nothing on screen at all.
-                              // rather than an invisible drift.
+    softCapBase: 18,          // Target population at level 1. Raised ONLY by 'MORE ORBS'
+                              // upgrades — TEN of them, +4 each. The soft cap also nudges up
+                              // 0.82 per level past level 8, and the two together reach the hard
+                              // cap of 90 at level 47. There used to be twenty MORE ORBS; the
+                              // ten after the clamp raised a number that was already pinned
+                              // behind it and changed nothing on screen at all.
+                              //
+                              // The nudge is 0.82, NOT 0.6 * 1.6 = 0.96, and that is not a typo.
+                              // softCapBase is in INTEGER_PATHS, so every MORE ORBS step is
+                              // rounded as it lands: 0.6 * 6 = 3.6 rounds up at every one of the
+                              // ten steps and delivers exactly what +4 would. The base therefore
+                              // over-shoots a true 0.6x curve, and the nudge comes down to pay
+                              // for it. Fitted, not guessed.
     softCapPerLevel: 0,       // No automatic per-level growth; see softCapBase above.
-    hardCap: 150,             // Absolute ceiling. Splitters may never push the count past this.
+    hardCap: 90,              // Absolute ceiling. Splitters may never push the count past this.
     unlockBurst: 5,           // Balls of a newly unlocked type made by RETYPING existing ORBs the
                               // moment it unlocks. Never spawned: no ball enters or leaves, so no
                               // energy enters the world and an untouched screen still goes quiet.
@@ -243,7 +253,9 @@ export const CONFIG = {
     despawnMargin: 34,        // px @ref. Only balls this close to an edge are eligible to despawn.
     despawnMaxSpeed: 70,      // px/s @ref. Only slow balls despawn, so nothing vanishes mid-flight.
     despawnInterval: 0.55,    // s. Minimum time between despawns; keeps churn invisible.
-    overCapUrgency: 6,        // Over-cap count at which the despawn interval collapses to near zero.
+    overCapUrgency: 4,        // Over-cap count at which the despawn interval collapses to near zero.
+                              // Scaled with the population: being six over a cap of 150 and six
+                              // over a cap of 90 are not the same amount of crowding.
     spawnEdgeInset: 12,       // px @ref. How far inside the edge new balls appear.
     spawnSpeed: 46,           // px/s @ref. Initial drift speed of a spawned ball.
     scatterSpeed: 210,        // px/s @ref. Speed given to balls by a two-finger triple-tap re-scatter.
@@ -443,31 +455,40 @@ export const CONFIG = {
     // To re-pace the game, move these numbers. Bigger = slower. Past the last anchor the
     // final segment's exponent continues, so play never runs out of curve.
     //
-    // Now at 0.144 of the raw measurement. The earlier 0.72 was calibrated against a player
-    // whose finger is down ~90% of the time and who sweeps the whole screen constantly; that
-    // player reached the cap in about an hour, but someone tapping and swiping at a moderate
-    // pace — finger down about half the time, half-screen flicks, real pauses — took over
-    // three hours. Re-measured against the moderate player and cut 5x, so the middle half of
-    // those runs now finish between 32 and 45 minutes. See the pacing note in the README.
+    // Now at 0.0446 of the raw measurement. Two cuts got it here, for two different reasons.
+    //
+    // The first (0.72 -> 0.144) fixed a measurement error: the curve had been calibrated against
+    // a player whose finger is down ~90% of the time and who sweeps the whole screen constantly.
+    // That player reached the cap in about an hour, but someone tapping and swiping at a
+    // moderate pace took over three hours on the same curve.
+    //
+    // The second (0.144 -> 0.0446, a further 0.31x) pays for the 40% population cut. Measured at
+    // a fixed level, 0.6x the balls gave ~0.5x the events per second (an exponent of n^1.2 to
+    // n^1.3 — NOT the n^2 the cross-level correlation suggests, which over-predicts badly here).
+    // That alone is a 2x slowdown; the moderate median actually went 42 -> 126 minutes, because
+    // levelling slower also delays the upgrades that would have sped it back up. The curve had
+    // to come down with the population or the change would have silently rewritten the pacing.
     //
     // Every anchor is scaled by the same factor: the measured SHAPE still holds, only the
-    // height changed. The dial is well behaved — the 5x cut bought a 5.0x speedup, so time to
-    // the cap is proportional to this scale over at least that range. Individual runs are
-    // chaotic though: a few percent here reshuffles which upgrade lands before which
-    // milestone, and one seed can move 2-3x either way. Only the distribution is stable.
+    // height changed. The dial is well behaved — the earlier 5x cut bought a 5.0x speedup, so
+    // time to the cap is proportional to this scale. Individual runs are chaotic though: a few
+    // percent here reshuffles which upgrade lands before which milestone, and one seed can move
+    // 2-3x either way. Only the distribution is stable, which is why every number quoted for
+    // this curve comes from forty seeds.
     // Level 1 is set below the fitted value on purpose: with the population starting at 30
     // the opening is quieter, and the first ball type should still arrive inside ~15s.
     curve: [
-      [1, 1694], [2, 6553], [3, 17606], [5, 17889], [8, 18177], [12, 68816], [18, 412770],
-      [26, 2278900], [36, 6712900], [50, 14487000], [68, 27485000], [85, 63800000],
-      [99, 81408000],
+      [1, 525], [2, 2031], [3, 5458], [5, 5546], [8, 5635], [12, 21333], [18, 127960],
+      [26, 706460], [36, 2081000], [50, 4491000], [68, 8520400], [85, 19778000],
+      [99, 25236000],
     ],
     cap: 100,                 // Level cap. Play continues past it, but the level stops rising
                               // and a one-time grand celebration fires on arrival.
     capCelebrateTime: 7.0,    // s. Length of the level-100 arrival display.
     maxCelebrated: 100,       // Levels above this celebrate quietly.
     capNudgeStart: 8,         // Level at which each level-up starts nudging the ball soft cap upward.
-    capNudgePerLevel: 1.6,    // Soft-cap increase per level past capNudgeStart.
+    capNudgePerLevel: 0.82,   // Soft-cap increase per level past capNudgeStart. See the note on
+                              // population.softCapBase for why this is 0.82 and not 0.96.
     unlockCelebrateTime: 2.4, // s. Length of a type-unlock celebration.
     levelCelebrateTime: 1.1,  // s. Length of an ordinary level-up flourish.
   },
@@ -505,13 +526,13 @@ export const CONFIG = {
     { level: 9, id: 'palette.1', kind: 'palette', label: 'DEEP SEA', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
       // eleven times told you nothing about which sky you had just been given.
-    { level: 10, id: 'cap.10', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
+    { level: 10, id: 'cap.10', kind: 'stat', path: 'population.softCapBase', add: 4, label: 'MORE ORBS', note: 'Four more balls on screen.' },
       // Six more balls on screen.
     { level: 11, id: 'types.VOLATILE.blastRadius.11', kind: 'mod', path: 'types.VOLATILE.blastRadius', mul: 1.18, label: 'WIDER BLAST', note: 'Volatile detonations reach further.' },
       // Volatile detonations reach further.
     { level: 12, id: 'render.trailFade.12', kind: 'visual', path: 'render.trailFade', mul: 0.86, label: 'LONG TRAILS', note: 'Motion leaves longer streaks.' },
       // Motion leaves longer streaks.
-    { level: 13, id: 'cap.13', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
+    { level: 13, id: 'cap.13', kind: 'stat', path: 'population.softCapBase', add: 4, label: 'MORE ORBS', note: 'Four more balls on screen.' },
       // Six more balls on screen.
     { level: 14, id: 'types.VOLATILE.blastImpulse.14', kind: 'mod', path: 'types.VOLATILE.blastImpulse', mul: 1.2, label: 'HARDER BLAST', note: 'Detonations shove harder.' },
       // Detonations shove harder.
@@ -520,13 +541,13 @@ export const CONFIG = {
       // eleven times told you nothing about which sky you had just been given.
     { level: 16, id: 'tap.pulseRadius.16', kind: 'gesture', path: 'tap.pulseRadius', mul: 1.22, label: 'WIDE PULSE', note: 'Your tap pulse reaches further.' },
       // Your tap pulse reaches further.
-    { level: 17, id: 'cap.17', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
+    { level: 17, id: 'cap.17', kind: 'stat', path: 'population.softCapBase', add: 4, label: 'MORE ORBS', note: 'Four more balls on screen.' },
       // Six more balls on screen.
     { level: 18, id: 'render.bloomStrength.18', kind: 'visual', path: 'render.bloomStrength', mul: 1.15, label: 'BRIGHTER BLOOM', note: 'Everything glows harder.' },
       // Everything glows harder.
     { level: 19, id: 'types.VOLATILE.inertTime.19', kind: 'mod', path: 'types.VOLATILE.inertTime', mul: 0.78, label: 'FAST RECHARGE', note: 'Volatiles come back online sooner.' },
       // Volatiles come back online sooner.
-    { level: 20, id: 'cap.20', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
+    { level: 20, id: 'cap.20', kind: 'stat', path: 'population.softCapBase', add: 4, label: 'MORE ORBS', note: 'Four more balls on screen.' },
       // Six more balls on screen.
     { level: 21, id: 'palette.3', kind: 'palette', label: 'SYNTHWAVE', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
@@ -535,13 +556,13 @@ export const CONFIG = {
       // Everything scores more.
     { level: 23, id: 'types.VOLATILE.blastRadius.23', kind: 'mod', path: 'types.VOLATILE.blastRadius', mul: 1.15, label: 'WIDER BLAST II', note: 'Wider still.' },
       // Wider still.
-    { level: 24, id: 'cap.24', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
+    { level: 24, id: 'cap.24', kind: 'stat', path: 'population.softCapBase', add: 4, label: 'MORE ORBS', note: 'Four more balls on screen.' },
       // Six more balls on screen.
     { level: 25, id: 'balls.glowScale.25', kind: 'visual', path: 'balls.glowScale', mul: 1.1, label: 'BIGGER HALOS', note: 'Orbs carry a wider halo.' },
       // Orbs carry a wider halo.
     { level: 26, id: 'types.SPLITTER.splitSpeed.26', kind: 'mod', path: 'types.SPLITTER.splitSpeed', mul: 1.25, label: 'SHARP SPLIT', note: 'Children fly apart faster.' },
       // Children fly apart faster.
-    { level: 27, id: 'cap.27', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
+    { level: 27, id: 'cap.27', kind: 'stat', path: 'population.softCapBase', add: 4, label: 'MORE ORBS', note: 'Four more balls on screen.' },
       // Six more balls on screen.
     { level: 28, id: 'palette.4', kind: 'palette', label: 'MONOCHROME', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
@@ -550,7 +571,7 @@ export const CONFIG = {
       // Your tap pulse shoves harder.
     { level: 30, id: 'effects.impactSparks.30', kind: 'visual', path: 'effects.impactSparks', add: 4, label: 'MORE SPARKS', note: 'Impacts throw more sparks.' },
       // Impacts throw more sparks.
-    { level: 31, id: 'cap.31', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
+    { level: 31, id: 'cap.31', kind: 'stat', path: 'population.softCapBase', add: 4, label: 'MORE ORBS', note: 'Four more balls on screen.' },
       // Six more balls on screen.
     { level: 32, id: 'types.SPLITTER.cooldown.32', kind: 'mod', path: 'types.SPLITTER.cooldown', mul: 0.7, label: 'RAPID SPLIT', note: 'Children can split again sooner.' },
       // Children can split again sooner.
@@ -558,7 +579,7 @@ export const CONFIG = {
       // Everything scores more again.
     { level: 34, id: 'types.SPLITTER.childRadius.34', kind: 'mod', path: 'types.SPLITTER.childRadius', mul: 1.12, label: 'FAT CHILDREN', note: 'Split children keep more size.' },
       // Split children keep more size.
-    { level: 35, id: 'cap.35', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
+    { level: 35, id: 'cap.35', kind: 'stat', path: 'population.softCapBase', add: 4, label: 'MORE ORBS', note: 'Four more balls on screen.' },
       // Six more balls on screen.
     { level: 36, id: 'palette.5', kind: 'palette', label: 'SOLAR', note: 'A new colour world, unlocked forever.' },
       // A new colour world, unlocked forever. The label is the world's own name: "NEW SKY"
@@ -567,7 +588,7 @@ export const CONFIG = {
       // Quiet moments hold their streaks.
     { level: 38, id: 'types.SPLITTER.inheritSpeed.38', kind: 'mod', path: 'types.SPLITTER.inheritSpeed', mul: 1.12, label: 'MOMENTUM SPLIT', note: 'Children keep more of the parent speed.' },
       // Children keep more of the parent speed.
-    { level: 39, id: 'cap.39', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
+    { level: 39, id: 'cap.39', kind: 'stat', path: 'population.softCapBase', add: 4, label: 'MORE ORBS', note: 'Four more balls on screen.' },
       // Six more balls on screen.
     { level: 40, id: 'tap.vortexTime.40', kind: 'gesture', path: 'tap.vortexTime', mul: 1.3, label: 'LONG VORTEX', note: 'Vortices spin for longer.' },
       // Vortices spin for longer.
@@ -575,7 +596,7 @@ export const CONFIG = {
       // Your constellation burns brighter.
     { level: 42, id: 'types.MAGNET.pull.42', kind: 'mod', path: 'types.MAGNET.pull', mul: 1.35, label: 'STRONGER PULL', note: 'Magnets pull harder.' },
       // Magnets pull harder.
-    { level: 43, id: 'cap.43', kind: 'stat', path: 'population.softCapBase', add: 6, label: 'MORE ORBS', note: 'Six more balls on screen.' },
+    { level: 43, id: 'cap.43', kind: 'stat', path: 'population.softCapBase', add: 4, label: 'MORE ORBS', note: 'Four more balls on screen.' },
       // Six more balls on screen.
     { level: 44, id: 'score.comboMultScale.44', kind: 'score', path: 'score.comboMultScale', mul: 1.12, label: 'COMBO VALUE', note: 'Combos multiply harder.' },
       // Combos multiply harder.

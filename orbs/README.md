@@ -6,10 +6,10 @@ touch, a soft force field follows your finger and shoves them around. **Tap** fo
 gathers balls into orbit — let go and it slings the whole orbit into the crowd. Hard
 collisions score, and every ball type does something different when it gets hit hard.
 
-Levelling to the cap of 100 takes something like forty minutes of moderate play, and every level
+Levelling to the cap of 100 takes a little over forty minutes of moderate play, and every level
 hands you a named upgrade you can actually see land: it arrives in the colour of whatever it
 changed, and an upgrade that changes a distance draws that distance at true size where your
-finger was. How close to forty minutes depends a great deal on how you play — see the note on
+finger was. How close to that depends a great deal on how you play — see the note on
 pacing below.
 
 Hold a finger in the **bottom-right corner** for a moment and a help sheet opens, including one
@@ -121,7 +121,7 @@ thing without a CLI.
 The first line of real code in `sw.js` is:
 
 ```js
-const CACHE_VERSION = 'orbs-v9';
+const CACHE_VERSION = 'orbs-v12';
 ```
 
 **Bump it on every deploy.** The browser decides a service worker has changed by
@@ -257,8 +257,8 @@ palette picker — a toy with no accounts, no settings and no network has no bus
 the sections that exist to serve those things. The three type resonances stay undocumented; they
 are meant to be found.
 
-The upgrades page is the point of it. It is **one row per number, not one per upgrade** — twenty
-rows reading MORE ORBS is noise, one reading `orbs on screen 30 → 90` is information. Each of
+The upgrades page is the point of it. It is **one row per number, not one per upgrade** — ten
+rows reading MORE ORBS is noise, one reading `orbs on screen 18 → 58` is information. Each of
 the 55 rows carries a plain-English name, the value read live off the running config, a bar from
 its starting value to its ceiling, and one pip per upgrade that feeds it, lit for the ones you
 own. **Tap any row** and the sheet fades to a tenth while the change draws itself at true size
@@ -327,7 +327,7 @@ upgrade on the way), `ALL` applies everything, `RESET` is the same clean level 1
 
 `LV 99` stops one short of the cap on purpose. From there the next level-up is the real one, so
 the level-100 arrival — a seven-second display that fires **once, ever**, per save — can be
-triggered on demand instead of only by playing forty minutes to it. It greys out once you are
+triggered on demand instead of only by playing forty-odd minutes to it. It greys out once you are
 already at 99 or past it, rather than being a button that silently does nothing.
 
 Granting levels in bulk needed one fix to be honest. `step()` clears its event list at the top
@@ -341,18 +341,26 @@ now does both refreshes itself. Verified by removing them: the renderer sits on 
 
 ## Legibility: why a cascade is a sequence, not a flash
 
-Measured on the shipped build: **56 events per second at level 1, 725 at level 28, 1971 at level
-100** — about four impacts per *frame* at 28 and eight at 100. At that rate individual causality is
-unrecoverable, and no amount of rendering fixes it.
+Measured on the shipped build, one finger sweeping continuously: **39 events per second at level 1,
+322 at level 28, 1342 at level 100** — 1.5 impacts per *frame* at 28 and 4.4 at 100. At that rate
+individual causality is unrecoverable, and no amount of rendering fixes it. (Before the population
+cut the same harness read 74 / 692 / 2500, at 0.6 and 9.3 impacts per frame.)
 
 Two things were tried and rejected on measurement, which is worth recording because both sound right:
 
 - **Slowing the balls.** Median speed only rises 187 → 338 px/s across the entire game, a 1.8×
-  factor, while the event rate rises 35×. The rate tracks population as roughly n² (five times the
-  balls, twenty times the impacts). Slowing balls attacks the small term, and because score is
-  impact *energy*, halving speed quarters the economy.
-- **Drawing effects only for impacts traceable to your finger.** Tested: 725 → 685 events/s, a 5%
-  cut. With a finger on the screen, charge is everywhere, so it is not a discriminator.
+  factor, while the event rate rises 34×. Slowing balls attacks the small term, and because score
+  is impact *energy*, halving speed quarters the economy.
+- **Drawing effects only for impacts traceable to your finger.** Tested: a 5% cut in events. With a
+  finger on the screen, charge is everywhere, so it is not a discriminator.
+
+The event rate rises as roughly **n²** in population across the game — n^2.19 measured from level 1
+to level 100 before the population cut, n^2.20 after it, which is a reassuring thing for a
+supposedly-causal exponent to do. But it is a **correlation across levels, not a population law**.
+Cutting the population 40% at a *fixed* level and re-measuring gives an exponent of only n^1.2 to
+n^1.5. Most of the n² is crowding; a real part of it is the blast radii, chain depths and
+multipliers that arrive at the same time. Worth knowing before using n² to predict what a
+population change will do — it over-predicts by a wide margin.
 
 What shipped instead attacks **simultaneity**, not count. A CHAIN cascade used to resolve every one
 of its rings inside a single simulation step. It now resolves one ring per `cascade.hopDelay`
@@ -367,6 +375,11 @@ impact must answer on the frame it happened; only propagation waits.
 
 The total is unchanged — a level-100 chain still reaches 84 balls. They just arrive in three
 readable rings instead of one flash.
+
+That table was measured before the population cut and is left as it stands, because it records what
+the stagger bought rather than what the game currently looks like. On the cut population the same
+blast at level 60 now reaches **16** balls rather than 31 — the trims below and the smaller crowd
+compound, and a single event covers less ground than either change alone would suggest.
 
 Alongside it, fan-out was trimmed where a single event covered too much ground: blast radius
 108 → 90 (area −31%), chain range 175 → 140 (a hop was crossing half the world, which reads as
@@ -428,7 +441,7 @@ most of them are things you can see rather than a number moving somewhere.
 | Levels | What arrives |
 |---|---|
 | 2–8 | The seven ball types, one per level: VOLATILE, SPLITTER, MAGNET, PRISM, CHAIN, FROST, GOLD. |
-| Throughout | 11 more **colour worlds** (twelve in total), 20 **+6 ORBS** steps taking the population from 30 to the hard cap of 150, 28 **retunes of existing types** (wider blasts, deeper chains, longer freezes, more gold), 10 **gesture upgrades** (pulse reach, vortex duration, sling power), 18 **purely visual** ones (longer trails, brighter bloom, denser constellations), and 5 score multipliers. |
+| Throughout | 11 more **colour worlds** (twelve in total), 10 **+4 ORBS** steps taking the population from 18 to the hard cap of 90, 28 **retunes of existing types** (wider blasts, deeper chains, longer freezes, more gold), 10 **gesture upgrades** (pulse reach, vortex duration, sling power), 18 **purely visual** ones (longer trails, brighter bloom, denser constellations), and 5 score multipliers. |
 | 100 | The cap. A grand display fires once, and play continues — the level stops, the number does not. |
 
 The level curve lives in `config.js` as `levels.curve`: anchor points with power-law
@@ -443,8 +456,13 @@ ends made the first ten levels either trivial or a wall.
 
 The curve is scaled against a **moderate** player: finger down about half the time, flicks
 that cross half the screen rather than all of it, and real pauses between them. Forty
-simulated moderate players finished in a **median 38 minutes**, with the middle half of them
-between **32 and 45**.
+simulated moderate players finished in a **median 42 minutes**, with the middle half of them
+between **34 and 57**.
+
+That spread is wider than it was before the population cut (32–45 then), and the reason is
+worth stating: with fewer balls on screen, whether a given run happens to catch a big cascade
+matters more. Fewer, larger events is a higher-variance economy than many small ones. The
+median moved four minutes; the upper quartile moved twelve.
 
 That "moderate" is load-bearing, and getting it wrong is what the last re-pacing fixed. The
 curve used to be tuned against a player whose finger is down ninety percent of the time and
@@ -454,33 +472,48 @@ minutes**, and one run in eight never got there at all inside five and a half ho
 against the most intense way to play and reporting it as the pace is a measurement error, not
 a design choice. The whole curve was cut to **a fifth** of what it was.
 
+It was then cut by a further **0.31×** to pay for the 40% population cut. That is the part
+worth remembering when changing either number: population and pacing are the same knob wearing
+two hats. Cutting the balls 40% and leaving the curve alone moved the moderate median from 42
+to **126 minutes** — the population change would have silently rewritten the pacing, in a
+section of this file that would still have claimed forty.
+
 How you play matters more than anything else in the game. On the shipped curve, forty runs of
 each profile:
 
 | | finger down | median | middle half |
 |---|---|---|---|
-| **Relentless** — constant full-screen sweeps | 89% | 19m | 18–25m |
-| **Moderate** — half-screen flicks, real pauses | 49% | **38m** | 32–45m |
-| **Barely playing** — occasional taps, long gaps | 12% | 4h22m | 3h13m – never |
+| **Relentless** — constant full-screen sweeps | 89% | 25m | 19–33m |
+| **Moderate** — half-screen flicks, real pauses | 49% | **42m** | 34–57m |
+| **Barely playing** — occasional taps, long gaps | 12% | 5h11m | 3h38m – never |
 
 That last row is not a bug, it is the combo. `comboWindow` is 2.5s, and someone who rests
 longer than that between touches never keeps a multiplier alive; scoring is close to linear in
-collisions for them where it is closer to quadratic for everyone else. Twelve of those forty
-never reached the cap at all inside five and a half hours. The toy is not an idle game and
-does not pretend to be — the multiplier is the whole economy, and it is gated on staying in
-contact with the screen.
+collisions for them where it is closer to quadratic for everyone else. **Eighteen** of those
+forty never reached the cap at all inside five and a half hours — it was twelve before the
+population cut, which is the clearest illustration in this file of who a population change
+actually costs. The toy is not an idle game and does not pretend to be: the multiplier is the
+whole economy, and it is gated on staying in contact with the screen.
 
 The spread inside a single row is not measurement error either; it is the toy. Someone who
 parks a finger, gathers a fat orbit and slings it into a packed screen earns several times
 what someone drifting through a sparse one does, and a lucky FRENZY chain can pay for two
-levels at once. Thirty-eight minutes is the middle of the distribution, not a promise: the
-slowest of the forty moderate runs took 86.
+levels at once. Forty-two minutes is the middle of the distribution, not a promise: the
+slowest of the forty moderate runs took 72.
 
-Two things are worth knowing before touching the anchors. The response is **proportional**:
-cutting the curve 5× cut the moderate median from 191 to 38 minutes, an exponent of 1.00 over
-that range. That is not obvious — reaching a level sooner also brings that level's upgrade
-sooner, which raises the score rate, so the compounding could have made the speedup outrun
-the cut. It does not, measurably, so scaling the anchors is a well-behaved dial.
+Two things are worth knowing before touching the anchors. The response to the CURVE is
+**proportional**: cutting the curve 5× cut the moderate median from 191 to 38 minutes, an
+exponent of 1.00 over that range. That is not obvious — reaching a level sooner also brings
+that level's upgrade sooner, which raises the score rate, so the compounding could have made
+the speedup outrun the cut. It does not, measurably, so scaling the anchors is a well-behaved
+dial.
+
+The response to **population** is not proportional and not intuitive either. A 40% cut in balls
+tripled the time to the cap (42 → 126 minutes on an unchanged curve) — far more than the 0.6×
+in the input, and more even than the n^1.3 the event rate alone would predict, because slower
+levelling delays the upgrades that would have sped it back up. Population is the more dangerous
+of the two knobs: the curve moves pacing, but population moves pacing *and* the thing pacing is
+measured against.
 
 The second thing is that individual trajectories are **chaotic**. Nudging the curve by 8%
 reshuffles which upgrade lands before which milestone, and single seeds move by 2–3× in
@@ -580,8 +613,8 @@ Designed for a phone that never gets a debugger attached.
 - Wiping the save resets the *running* session too. Deleting the key alone is not enough —
   the next autosave writes the old state straight back and the wipe silently un-happens.
 
-Performance: physics costs about 0.2 ms per frame with ~90 balls and 0.42 ms at the full
-150. If sustained fps drops, the renderer sheds particles and bloom resolution — never
+Performance: physics costs about 0.31 ms per frame at the full 90 balls (it was 0.41 ms at the
+old cap of 150). If sustained fps drops, the renderer sheds particles and bloom resolution — never
 physics.
 
 ---
@@ -608,7 +641,7 @@ about them:
 - [ ] **Gather → sling feels good.** Hold still until the ring forms, then release, and
       again with a flick. This is the thing most worth tuning by hand; the knobs are
       `gather.*` in `config.js` and the coupling note above explains which ones interact.
-- [ ] **60fps.** Physics is 0.42 ms at 150 balls, but drawing was only ever measured under
+- [ ] **60fps.** Physics is 0.31 ms at the 90-ball cap, but drawing was only ever measured under
       software rendering here — the GPU path is untested. If it drops, the debug overlay
       (four-finger tap) shows the split between `phys` and `draw`.
 - [ ] **Install from HTTPS** via Safari → Share → Add to Home Screen.
