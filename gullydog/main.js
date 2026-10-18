@@ -170,8 +170,18 @@ function wireUi() {
   on('tMusic', music); on('pMusic', music);
   on('tQuality', quality); on('pQuality', quality);
   on('pInvert', () => { settings.invert = !settings.invert; saveSettings(settings); syncToggles(); });
+  // Two taps, confirmed in the page itself: confirm() is refused in embedded frames
+  // and looks foreign in an installed app.
+  let armedAt = -1e9;
   on('newGame', () => {
-    if (!confirm('Start over from day one? Your cred and friends will be forgotten.')) return;
+    const btn = document.getElementById('newGame');
+    if (performance.now() - armedAt > 4000) {
+      armedAt = performance.now();
+      btn.textContent = 'Tap again: your cred and friends will be forgotten';
+      setTimeout(() => { if (performance.now() - armedAt >= 3990) btn.textContent = 'Start over from day one'; }, 4000);
+      return;
+    }
+    wiping = true; // or the pagehide on the way out saves the old day straight back
     try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
     location.reload();
   });
@@ -210,8 +220,9 @@ function startGame() {
 function pauseGame() { if (state !== 'play') return; state = 'pause'; openScreen('pause'); }
 function resumeGame() { closeScreen('pause'); closeScreen('help'); state = 'play'; audio.resume(); last = performance.now(); }
 
+let wiping = false;
 function persist() {
-  if (!S) return;
+  if (!S || wiping) return;
   try { localStorage.setItem(SAVE_KEY, serializeSave(S)); } catch (e) { /* storage full or blocked: play on */ }
 }
 

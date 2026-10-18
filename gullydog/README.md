@@ -140,7 +140,7 @@ prefix (`orbs-cache-`, `gullydog-cache-`), and Gully Dog's only ever reads its o
 The first line of real code in `sw.js` is:
 
 ```js
-const CACHE_VERSION = 'gullydog-v1';
+const CACHE_VERSION = 'gullydog-v2';
 ```
 
 Bump it whenever anything here changes. Browsers notice a new service worker by
