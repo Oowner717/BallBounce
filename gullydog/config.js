@@ -80,6 +80,7 @@ export const CONFIG = {
     rummageFind: 0.55,     // chance a rummage turns something up
     rummageCooldown: 90,   // game minutes before the same pile has more
     itemLife: 5,           // game hours before dropped food is gone
+    carryWhenFull: 75,     // hunger at or above which E picks food up instead of eating it
   },
 
   /* -------------------------------------------------------------- traffic */

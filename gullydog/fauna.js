@@ -123,10 +123,12 @@ export function step(S, dt) {
 
 /* --------------------------------------------------------------------- cows */
 
-function pickTarget(S, a, r) {
+/** Somewhere to amble to near home. `offRoad`: graze anywhere but the carriageway. */
+function pickTarget(S, a, r, offRoad) {
   for (let k = 0; k < 8; k++) {
     const ang = S.rng() * Math.PI * 2, d = S.rng() * r;
     const tx = a.home.x + Math.cos(ang) * d, tz = a.home.z + Math.sin(ang) * d;
+    if (offRoad && surfAt(S.W, tx, tz) === SURF.ROAD) continue;
     if (openGround(S.W, tx, tz) && lineOpen(S.W, a.x, a.z, tx, tz)) return { x: tx, z: tz };
   }
   return null;
@@ -153,19 +155,17 @@ function cow(S, c, dt) {
   while (c.barks.length && S.t - c.barks[0] > 6) c.barks.shift();
   const onRoad = surfAt(S.W, c.x, c.z) === SURF.ROAD;
   if (c.barks.length >= A.cowIgnoreBarks || c.shooed) {
+    const byDog = !c.shooed; // or a vendor guarding his vegetables, or a driver held up
     const from = c.shooed || d;
     c.barks.length = 0;
     c.shooed = null;
     const ax = c.x - from.x, az = c.z - from.z, l = Math.hypot(ax, az) || 1;
-    let t = null;
-    for (let k = 0; k < 6 && !t; k++) {
-      const spread = (S.rng() - 0.5) * 1.6;
-      const tx = c.x + (ax / l) * 7 + (-az / l) * spread * 4, tz = c.z + (az / l) * 7 + (ax / l) * spread * 4;
-      if (openGround(S.W, tx, tz) && lineOpen(S.W, c.x, c.z, tx, tz)) t = { x: tx, z: tz };
-    }
+    // somewhere away from the nuisance: straight away if there is room, else
+    // nearer, or off at an angle (a cow in a road walks to the kerb, not into a wall)
+    const t = getaway(S, c, Math.atan2(ax / l, az / l), onRoad);
     if (t) {
       c.target = t; c.state = 'walk'; c.timer = 20; c.fast = true;
-      if (onRoad) emit(S, 'cowMoved', { id: c.id, fromRoad: true });
+      emit(S, 'cowMoved', { id: c.id, fromRoad: onRoad && surfAt(S.W, t.x, t.z) !== SURF.ROAD, byDog });
       if (S.rng() < 0.5) { emit(S, 'moo', { x: c.x, z: c.z }); }
     }
   }
@@ -197,13 +197,51 @@ function cow(S, c, dt) {
       if (c.timer <= 0) {
         const roll = S.rng();
         if (roll < (c.lazy ? 0.6 : 0.22)) { c.state = 'lie'; c.timer = rand(S.rng, 40, 140) * (c.lazy ? 2 : 1); }
-        else if (roll < 0.75) { c.target = pickTarget(S, c, c.r); c.state = c.target ? 'walk' : 'graze'; c.timer = 30; }
+        // only the lazy one lives in the road; the rest cross it but graze beside it
+        else if (roll < 0.75) { c.target = pickTarget(S, c, c.r, !c.lazy); c.state = c.target ? 'walk' : 'graze'; c.timer = 30; }
         else { c.state = c.state === 'graze' ? 'stand' : 'graze'; c.timer = rand(S.rng, 6, 20); }
       }
   }
   c.pose = c.state === 'lie' ? 'lie' : c.state === 'graze' ? 'graze' : 'stand';
   c.look *= Math.exp(-dt * 0.6);
   c.y = baseHeightAt(S.W, c.x, c.z) === 0.45 ? 0 : baseHeightAt(S.W, c.x, c.z);
+}
+
+/**
+ * Where a cow goes when it has had enough: away from the nuisance, a little off
+ * the line either way. One standing in the road makes for a kerb, the nearest one
+ * in any direction but back past whoever moved it, before it settles for merely
+ * shuffling along the road.
+ */
+function getaway(S, c, away, onRoad) {
+  const open = (tx, tz) => openGround(S.W, tx, tz) && lineOpen(S.W, c.x, c.z, tx, tz);
+  const offRoad = (tx, tz) => surfAt(S.W, tx, tz) !== SURF.ROAD;
+  for (const len of [7, 5, 3.5]) {
+    for (const off of [0, 0.35, -0.35, 0.7, -0.7]) {
+      const a = away + off + (S.rng() - 0.5) * 0.3;
+      const tx = c.x + Math.sin(a) * len, tz = c.z + Math.cos(a) * len;
+      if (open(tx, tz) && (!onRoad || offRoad(tx, tz))) return { x: tx, z: tz };
+    }
+  }
+  if (onRoad) {
+    let best = null, bestLen = Infinity;
+    for (let k = 0; k < 16; k++) {
+      const a = away + (k / 16) * Math.PI * 2;
+      if (Math.cos(a - away) < -0.3) continue;
+      for (const len of [3, 4.5, 6, 8]) {
+        if (len >= bestLen) break;
+        const tx = c.x + Math.sin(a) * len, tz = c.z + Math.cos(a) * len;
+        if (open(tx, tz) && offRoad(tx, tz)) { best = { x: tx, z: tz }; bestLen = len; break; }
+      }
+    }
+    if (best) return best;
+  }
+  for (let k = 0; k < 8; k++) {
+    const a = away + (S.rng() - 0.5) * 2.4, len = 2.5 + S.rng() * 2;
+    const tx = c.x + Math.sin(a) * len, tz = c.z + Math.cos(a) * len;
+    if (open(tx, tz)) return { x: tx, z: tz };
+  }
+  return null;
 }
 
 /** Do vehicles or people stand where a cow wants to step? Cows wait rather than walk through. */
@@ -370,16 +408,31 @@ function addFriendship(S, d, n) {
   }
 }
 
+const DOG_TURNS = [0, 0.5, -0.5, 1.0, -1.0, 1.57, -1.57];
+
+/** Trot toward (tx, tz): straight if the way is open, else the open heading that goes most toward it. */
 function moveDogTo(S, d, tx, tz, speed, dt) {
   const dx = tx - d.x, dz = tz - d.z, l = Math.hypot(dx, dz);
   if (l < 0.05) { d.speed = 0; return true; }
-  d.yaw = approachAngle(d.yaw, Math.atan2(dx, dz), 8 * dt);
   const step = Math.min(l, speed * dt);
-  const nx = d.x + (dx / l) * step, nz = d.z + (dz / l) * step;
-  if (openGround(S.W, nx, nz)) { d.x = nx; d.z = nz; d.speed = speed; }
-  else if (openGround(S.W, nx, d.z)) { d.x = nx; d.speed = speed * 0.6; }
-  else if (openGround(S.W, d.x, nz)) { d.z = nz; d.speed = speed * 0.6; }
-  else d.speed = 0;
+  const ux = dx / l, uz = dz / l;
+  // Go round an obstacle on one side. Picking the better side afresh every step
+  // flips as the dog draws level with its goal, and it dithers against the corner.
+  d.detourT = (d.detourT || 0) - dt;
+  const side = d.detourT > 0 ? d.detour : 1;
+  for (const turn of DOG_TURNS) {
+    const da = turn * side;
+    const c = Math.cos(da), s = Math.sin(da);
+    const hx = ux * c + uz * s, hz = uz * c - ux * s;
+    if (!openGround(S.W, d.x + hx * step, d.z + hz * step)) continue;
+    if (da !== 0) { d.detour = Math.sign(da); d.detourT = 1.0; }
+    d.x += hx * step; d.z += hz * step;
+    d.yaw = approachAngle(d.yaw, Math.atan2(hx, hz), 8 * dt);
+    d.speed = speed * (da === 0 ? 1 : 0.8);
+    return l < 0.4;
+  }
+  d.speed = 0;
+  d.yaw = approachAngle(d.yaw, Math.atan2(dx, dz), 8 * dt);
   return l < 0.4;
 }
 

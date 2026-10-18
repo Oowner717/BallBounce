@@ -92,6 +92,19 @@ export function spawnItem(S, kind, x, y, z, vx = 0, vy = 0, vz = 0, extra) {
   return it;
 }
 
+/**
+ * A gift tossed to the dog: lob `kind` from a hand at (x, y, z) so it lands just
+ * in front of the dog's nose, wherever the dog is sitting. Longer tosses take
+ * longer and arc higher, so a ladoo thrown down the temple steps clears them.
+ */
+export function tossToDog(S, kind, x, y, z, extra) {
+  const d = S.dog;
+  const tx = d.x + Math.sin(d.yaw) * 0.45, tz = d.z + Math.cos(d.yaw) * 0.45;
+  const T = 0.35 + Math.hypot(tx - x, tz - z) * 0.07;
+  const vy = (groundAt(S, tx, tz, d.y + 0.3) - y) / T + 0.5 * 19.6 * T;
+  return spawnItem(S, kind, x, y, z, (tx - x) / T, vy, (tz - z) / T, extra);
+}
+
 export function removeItem(S, it) {
   it.state = 'gone';
   it.gone = true;
@@ -117,8 +130,8 @@ export function updateItems(S, dt) {
     }
     if (it.state === 'held') continue;
     if (it.state === 'air') {
+      it.x += it.vx * dt; it.y += it.vy * dt - 9.8 * dt * dt; it.z += it.vz * dt; // exact arcs: tosses land where aimed
       it.vy -= 19.6 * dt;
-      it.x += it.vx * dt; it.y += it.vy * dt; it.z += it.vz * dt;
       const g = groundAt(S, it.x, it.z, it.y + 0.2);
       if (it.y <= g) {
         it.y = g;

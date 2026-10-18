@@ -221,7 +221,7 @@ const near = [];
  * meets something? Returns { gap, what, lead } where lead is the obstacle's
  * speed along our direction (0 for people and animals).
  */
-function senseAhead(S, v, d, look, ignore) {
+function senseAhead(S, v, d, look, ignore, noPeds) {
   const route = S.W.routes[v.route];
   const T = S.C.traffic;
   const front = v.len / 2;
@@ -233,7 +233,7 @@ function senseAhead(S, v, d, look, ignore) {
   const kStart = Math.max(0, Math.floor((front - 0.4) / step));
   const kEnd = Math.ceil((front + look) / step);
   for (const e of near) {
-    if (e.ref === v || e.ref === ignore) continue;
+    if (e.ref === v || e.ref === ignore || (noPeds && e.kind === 'ped')) continue;
     const ex = e.x, ez = e.z;
     // people and animals only matter once they are actually on the carriageway
     let margin = T.latMargin;
@@ -268,6 +268,12 @@ function senseAhead(S, v, d, look, ignore) {
   return out;
 }
 
+/** Is o's front bumper behind v's, measured along v's heading? (Ties go to the older vehicle.) */
+function noseBehind(v, o) {
+  const rel = (o.x - v.x) * v.dirx + (o.z - v.z) * v.dirz + (o.len - v.len) / 2;
+  return rel < -0.05 || (rel <= 0.05 && v.id < o.id);
+}
+
 /** Ring entry: is anyone on the ring coming round toward our merge point? */
 function mustYield(S, v, route) {
   const merge = route.ringAngle;
@@ -294,8 +300,17 @@ export function step(S, dt) {
     const limit = Math.min(v.vmax, POSE.speed * (v.vmax / v.T.vmax));
     const look = T.lookBase + v.v * T.lookPerSpeed;
     let sense = senseAhead(S, v, v.d, look);
+    // two noses side by side (a merge, a squeeze): whoever is further ahead goes
+    // first, so they cannot each wait for the other
+    if (sense.what === 'veh' && noseBehind(v, sense.ref)) sense = senseAhead(S, v, v.d, look, sense.ref);
     // two vehicles each waiting for the other: the older one goes first
     if (sense.what === 'veh' && sense.ref.blockRef === v && v.id < sense.ref.id) sense = senseAhead(S, v, v.d, look, sense.ref);
+    // People in front for ages (a stream over the zebra, someone pressed against a
+    // bus that stopped on it): nudge through at walking pace and let them part.
+    if (sense.what === 'ped' && v.v < 0.5) v.pedT = (v.pedT || 0) + dt;
+    else if (sense.what !== 'ped') v.pedT = Math.max(0, (v.pedT || 0) - dt);
+    const nudging = sense.what === 'ped' && v.pedT > 6;
+    if (nudging) sense = senseAhead(S, v, v.d, look, null, true);
     v.blockRef = sense.what === 'veh' ? sense.ref : null;
     v.dbg = sense;
     // ring entry yield
@@ -334,6 +349,7 @@ export function step(S, dt) {
     const free = Math.max(0, sense.gap - g0);
     const safe = Math.sqrt(sense.lead * sense.lead + 2 * v.T.decel * 0.7 * free);
     let target = Math.min(limit, curve, safe);
+    if (nudging) target = Math.min(target, 1.0);
     if (v.brakeT > 0) { v.brakeT -= dt; target = 0; }
 
     // creeping out of a deadlock: inch forward past another stuck vehicle
@@ -341,7 +357,9 @@ export function step(S, dt) {
 
     if (target < v.v) v.v = Math.max(target, v.v - v.T.decel * dt * (sense.gap < 2 ? 1.8 : 1));
     else v.v = Math.min(target, v.v + v.T.accel * dt);
-    if (sense.gap <= 0.05 && sense.what !== 'yield') v.v = Math.min(v.v, 0.2);
+    // Nose to tail with a vehicle or a person: stop dead, nobody gets run over. A dog
+    // that darts out in front gets only what the brakes can do, which is the danger.
+    if (sense.gap <= 0.05 && sense.what !== 'yield' && sense.what !== 'dog') v.v = Math.min(v.v, 0.2);
 
     // weaving: two-wheelers, autos and cars squeeze past slow obstacles
     const blocked = sense.gap < 7 && (sense.what !== 'veh' || sense.lead < v.vmax * 0.45) && sense.what !== 'yield' && sense.what !== 'stop';
@@ -364,8 +382,15 @@ export function step(S, dt) {
     }
     v.dTarget = clamp(v.dTarget, -room, room);
     const latStep = T.latSpeed * dt * clamp(v.v / 3, 0.25, 1);
-    v.d += clamp(v.dTarget - v.d, -latStep, latStep);
-    v.d = clamp(v.d, -room - 0.05, room + 0.05);
+    const dNext = clamp(v.d + clamp(v.dTarget - v.d, -latStep, latStep), -room - 0.05, room + 0.05);
+    if (dNext !== v.d && sideClear(S, v, route, dNext)) v.d = dNext;
+
+    // held up by a cow for a while: the driver leans out and shoos it along
+    if (sense.what === 'cow' && v.blockedT > 6 && S.t > (v.shooT || 0)) {
+      v.shooT = S.t + 8;
+      sense.ref.shooed = { x: v.x, z: v.z };
+      honk(S, v, false);
+    }
 
     // honking: at whatever is in the way, and just because
     v.honkCD -= dt;
@@ -390,12 +415,43 @@ export function step(S, dt) {
     v.steer = clamp(wrapAngle(v.yaw - prevYaw) / Math.max(dt, 1e-3) * 0.35, -0.5, 0.5);
     v.pitch = lerp(v.pitch, clamp((target - v.v) * 0.01, -0.03, 0.03), 1 - Math.exp(-6 * dt));
     if (v.v < 0.1) v.stopT += dt; else v.stopT = 0;
-    if (sense.what === 'yield' || (sense.what === 'veh' && v.v < 0.3)) v.waitT += dt; else v.waitT = 0;
+    // patience wears down and only slowly comes back: a slow rickshaw cannot use a
+    // momentary gap in the ring, so a gap must not make it polite all over again
+    if (sense.what === 'yield' || (sense.what === 'veh' && v.v < 0.3)) v.waitT += dt; else v.waitT = Math.max(0, v.waitT - dt * 2);
 
     // give up on hopeless jams that are out of the dog's sight
     if (v.stopT > T.despawnStuck && dist2(v.x, v.z, dog.x, dog.z) > 28 * 28) { S.vehicles.splice(vi, 1); v.gone = true; }
   }
   separate(S);
+}
+
+/**
+ * May v drift sideways to offset d? Weaving looks along the road ahead; this looks
+ * alongside, so a bus edging out cannot sweep its flank into the scooter beside it.
+ * A move that does not deepen any overlap is always allowed, so nothing gets pinned.
+ */
+const SIDE = { x: 0, z: 0, tx: 0, tz: 0, halfW: 0, speed: 0, tag: 0 };
+function overlapWith(v, x, z, dx, dz, o) {
+  let worst = 0;
+  for (const ca of v.circles) {
+    const ax = x + dx * ca.off, az = z + dz * ca.off;
+    for (const cb of o.circles) {
+      const pen = ca.r + cb.r - Math.hypot(ax - o.x - o.dirx * cb.off, az - o.z - o.dirz * cb.off);
+      if (pen > worst) worst = pen;
+    }
+  }
+  return worst;
+}
+function sideClear(S, v, route, d) {
+  routePose(route, v.s, d, SIDE);
+  for (const o of S.vehicles) {
+    if (o === v) continue;
+    const reach = (v.len + o.len) / 2 + 1;
+    if (Math.abs(o.x - v.x) > reach || Math.abs(o.z - v.z) > reach) continue;
+    const after = overlapWith(v, SIDE.x, SIDE.z, SIDE.tx, SIDE.tz, o);
+    if (after > 0.02 && after > overlapWith(v, v.x, v.z, v.dirx, v.dirz, o) + 1e-6) return false;
+  }
+  return true;
 }
 
 /** Last line of defence: if two bodies overlap anyway (a merge, a creep), back the later one off. */

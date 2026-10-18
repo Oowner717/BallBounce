@@ -163,7 +163,7 @@ export class Hud {
         case 'shooed': if (S.rng && Math.random() < 0.5) this.toast('Shooed away.', '', 1.6); break;
         case 'nothingLeft': this.toast('The tray is empty.', '', 1.8); break;
         case 'newDay': this.toast(`Day ${e.day} — ${WEATHER_LABEL[e.weather] || e.weather}`, 'gold', 3.5); break;
-        case 'cowMoved': if (e.fromRoad) this.toast('The cow ambles off the road. Traffic thanks you.', 'good'); break;
+        case 'cowMoved': if (e.fromRoad && e.byDog) this.toast('The cow ambles off the road. Traffic thanks you.', 'good'); break;
         case 'bikeChase': this.toast('Chased that scooter right off!', 'good', 2.4); break;
         case 'crossed': break;
         default:

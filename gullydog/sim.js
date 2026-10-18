@@ -16,7 +16,7 @@
 
 import { CONFIG } from './config.js';
 import { makeRng, clamp, lerp, dist2, approachAngle, angleDiff, smoothstep, wrapAngle } from './util.js';
-import { SURF, PLAY_HALF, collidersNear, surfAt, zoneAt, inShade, nearestPedNode, pedPath } from './world.js';
+import { SURF, PLAY_HALF, collidersNear, surfAt, zoneAt, inShade, nearestPedNode, pedPath, pedWalkable } from './world.js';
 import { SpatialHash } from './spatial.js';
 import { sunDirection } from './env.js';
 import { emit, drainEvents, say, updateBubbles, groundAt, spawnItem, removeItem, updateItems, isFood, nearest } from './simcore.js';
@@ -194,24 +194,23 @@ function updateDog(S, dt, input) {
     d.vx *= f; d.vz *= f;
   }
 
-  // move, then resolve against the city and everyone in it
+  // move...
   const px = d.x, pz = d.z;
   d.x += d.vx * dt;
   d.z += d.vz * dt;
-  collideStatic(S, d);
-  collideDynamic(S, d, dt);
-  d.x = clamp(d.x, -PLAY_HALF, PLAY_HALF);
-  d.z = clamp(d.z, -PLAY_HALF, PLAY_HALF);
 
-  // vertical: gravity, landing, kerbs and steps
+  // ...up and down: gravity, landing, kerbs and steps...
   const g = groundAt(S, d.x, d.z, d.y, C.stepUp);
   if (!d.onGround || d.y > g + 0.02) {
     d.onGround = false;
+    // exact for constant gravity, so a jump is the same height at any frame rate
+    d.y += d.vy * dt - 0.5 * C.gravity * dt * dt;
     d.vy -= C.gravity * dt;
-    d.y += d.vy * dt;
     if (d.y <= g) {
       d.y = g;
-      if (d.vy < -2.5) emit(S, 'land', { v: -d.vy });
+      // a thud for jumps and real drops; stepping down a kerb (0.18 m, 2.7 m/s)
+      // or a temple step (0.3 m, 3.4 m/s) is silent
+      if (d.vy < -3.6) emit(S, 'land', { v: -d.vy });
       d.vy = 0;
       d.onGround = true;
     }
@@ -219,6 +218,14 @@ function updateDog(S, dt, input) {
     d.y = g;
     d.vy = 0;
   }
+
+  // ...then out of anything solid at the height the dog ended up at, and out of
+  // everyone's way. A shove from a cow or a bumper must not end inside a wall.
+  collideStatic(S, d);
+  collideDynamic(S, d, dt);
+  collideStatic(S, d);
+  d.x = clamp(d.x, -PLAY_HALF, PLAY_HALF);
+  d.z = clamp(d.z, -PLAY_HALF, PLAY_HALF);
 
   const moved = Math.hypot(d.x - px, d.z - pz);
   d.speed = moved / Math.max(dt, 1e-6);
@@ -362,8 +369,9 @@ function collideDynamic(S, d, dt) {
     const pen = rr - l;
     if (e.kind === 'veh') {
       const v = e.ref;
-      // closing speed of the vehicle onto the dog
-      const closing = (v.dirx * -nx + v.dirz * -nz) * v.v;
+      // closing speed of the vehicle onto the dog (n points from the vehicle to the
+      // dog): driving at him is a hit, brushing past or pulling away is a shove
+      const closing = (v.dirx * nx + v.dirz * nz) * v.v;
       if (v.v > S.C.traffic.hitSpeed && closing > 0.5 && d.invuln <= 0 && d.y < 1.2) {
         hitByVehicle(S, v, nx, nz);
         return;
@@ -377,10 +385,17 @@ function collideDynamic(S, d, dt) {
       const vn = d.vx * nx + d.vz * nz;
       if (vn < 0) { d.vx -= vn * nx; d.vz -= vn * nz; }
     } else {
-      // people and dogs: soft — the dog is nudged, they make room
-      d.x += nx * pen * 0.5; d.z += nz * pen * 0.5;
-      if (e.kind === 'ped' && e.ref.role !== 'keeper') {
-        e.ref.x -= nx * pen * 0.5; e.ref.z -= nz * pen * 0.5;
+      // people and dogs: soft — the dog is nudged and passers-by make room. Anyone
+      // with a spot of their own (a shopkeeper, a vendor, Raju, the pujari, someone
+      // on a bench) holds it: nothing walks them back once they are shoved off it.
+      const p = e.kind === 'ped' ? e.ref : null;
+      const anchored = p && (p.role === 'keeper' || p.role === 'vendor' || (p.role === 'special' && !p.kid) || p.state === 'sit');
+      const k = anchored ? 1 : 0.5;
+      d.x += nx * pen * k; d.z += nz * pen * k;
+      if (p && !anchored) {
+        // ...but never off the pavement and into a wall or the traffic
+        const px = p.x - nx * pen * 0.5, pz = p.z - nz * pen * 0.5;
+        if (pedWalkable(S.W, px, pz) || !pedWalkable(S.W, p.x, p.z)) { p.x = px; p.z = pz; }
       }
     }
   }
@@ -560,9 +575,14 @@ export function contextAction(S) {
     }
     return { kind: 'drop', label: 'Drop the ' + d.carry.kind };
   }
-  // food on the ground
+  // food on the ground: eaten, unless the dog is full — then it is picked up, to
+  // share with a friend or the puppies
   const food = nearest(S.items, fx, fz, R, (it) => (it.state === 'ground' || it.state === 'roll') && isFood(it) && Math.abs(it.y - d.y) < 0.6);
-  if (food) return { kind: 'eat', label: 'Eat the ' + food.kind, target: food };
+  if (food) {
+    if (food.kind === 'milk') return { kind: 'eat', label: 'Lap up the milk', target: food };
+    if (d.needs.hunger >= S.C.food.carryWhenFull) return { kind: 'pickup', label: 'Pick up the ' + food.kind, target: food };
+    return { kind: 'eat', label: 'Eat the ' + food.kind, target: food };
+  }
   // water
   const water = nearestWater(S, fx, fz, 1.15);
   if (water && d.needs.thirst < 97) return { kind: 'drink', label: 'Drink', target: water };
@@ -655,8 +675,8 @@ function sniff(S) {
   const G = S.W.peds;
   const start = nearestPedNode(G, d.x, d.z);
   const trails = [];
-  const addTrail = (kind, x, z) => {
-    if (!Number.isFinite(x) || dist2(x, z, d.x, d.z) > C.sniffRange * C.sniffRange) return;
+  const addTrail = (kind, x, z, range = C.sniffRange) => {
+    if (!Number.isFinite(x) || dist2(x, z, d.x, d.z) > range * range) return;
     if (trails.some((t) => dist2(t.x, t.z, x, z) < 4)) return;
     const goal = nearestPedNode(G, x, z);
     const path = start >= 0 && goal >= 0 ? pedPath(G, start, goal) : null;
@@ -679,8 +699,9 @@ function sniff(S) {
     const w = nearest(S.W.pois.water, d.x, d.z, C.sniffRange);
     if (w) addTrail('water', w.x, w.z);
   }
+  // today's task is always worth following, however far away it is
   const t = Tasks.taskTarget(S);
-  if (t) addTrail('task', t.x, t.z);
+  if (t) addTrail('task', t.x, t.z, Infinity);
   // a friend's scent
   const friend = S.dogs.find((q) => !q.puppy && (S.friendship[q.key] || 0) >= S.C.animals.friendAt && dist2(q.x, q.z, d.x, d.z) > 36);
   if (friend) addTrail('friend', friend.x, friend.z);

@@ -243,10 +243,14 @@ function updateCamera(dt, inp) {
   cam.init = true;
   const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
   let dist = cam.dist;
-  // pull in when a wall is between the dog and the camera
+  // pull in when something is between the dog and the camera: snap in at once,
+  // ease back out, so the view does not pump as the dog trots past a stall
   const dx = Math.sin(cam.yaw) * cp, dy = sp, dz = Math.cos(cam.yaw) * cp;
   const hit = rayBuildings(cam.tx, cam.ty, cam.tz, dx, dy, dz, dist + 0.3);
   if (hit < dist + 0.3) dist = Math.max(0.7, hit - 0.3);
+  if (cam.cur === undefined || dist < cam.cur) cam.cur = dist;
+  else cam.cur += (dist - cam.cur) * (1 - Math.exp(-2.5 * dt));
+  dist = cam.cur;
   cam.x = cam.tx + dx * dist; cam.y = cam.ty + dy * dist; cam.z = cam.tz + dz * dist;
   const gy = groundAt(S, cam.x, cam.z, cam.y) + 0.22;
   if (cam.y < gy) cam.y = gy;
@@ -259,15 +263,35 @@ function updateCamera(dt, inp) {
 }
 
 const rayList = [];
+/**
+ * How far the camera can sit from the dog along a ray before something gets in
+ * the way: walls and anything solid (but not lamp posts, which would make the
+ * view jump), and the things with no collider that would fill the screen from
+ * close up: a stall under its tarp, a shop awning, a tree's canopy.
+ */
 function rayBuildings(ox, oy, oz, dx, dy, dz, max) {
   for (let t = 0.3; t < max; t += 0.2) {
     const x = ox + dx * t, y = oy + dy * t, z = oz + dz * t;
     collidersNear(W, x, z, 0.05, rayList);
     for (const idx of rayList) {
       const c = W.colliders[idx];
-      if (c.y1 < 1.2 || y > c.y1 || y < c.y0) continue;
-      if (c.kind === 'box') { if (x > c.x0 && x < c.x1 && z > c.z0 && z < c.z1) return t; }
-      else if (c.r > 0.5 && dist2(x, z, c.x, c.z) < c.r * c.r) return t;
+      if (y > c.y1 + 0.1 || y < c.y0) continue;
+      if (c.kind === 'box') { if (x > c.x0 - 0.1 && x < c.x1 + 0.1 && z > c.z0 - 0.1 && z < c.z1 + 0.1) return t; }
+      else if (c.r > 0.5 && dist2(x, z, c.x, c.z) < (c.r + 0.1) * (c.r + 0.1)) return t;
+    }
+    if (y < 2.6) {
+      for (const st of W.stalls) {
+        const rx = x - st.x, rz = z - st.z;
+        if (rx * rx + rz * rz > 9) continue;
+        const ca = Math.cos(st.yaw), sa = Math.sin(st.yaw);
+        const lx = rx * ca - rz * sa, lz = rx * sa + rz * ca;
+        if (Math.abs(lx) < st.w / 2 + 0.4 && Math.abs(lz) < st.d / 2 + 0.6) return t;
+      }
+    }
+    for (const sh of W.shades) {
+      if (sh.kind === 'box') {
+        if (x > sh.x0 && x < sh.x1 && z > sh.z0 && z < sh.z1 && y > sh.y0 - 0.3 && y < sh.y1 + 0.3) return t;
+      } else if ((x - sh.x) ** 2 + (y - sh.y) ** 2 + (z - sh.z) ** 2 < sh.r * sh.r) return t;
     }
   }
   return max;

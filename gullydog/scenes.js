@@ -13,7 +13,7 @@
  */
 
 import { pick, rand, clamp, dist2, approachAngle, angleDiff, lerp } from './util.js';
-import { emit, say, spawnItem, removeItem, groundAt } from './simcore.js';
+import { emit, say, spawnItem, tossToDog, removeItem, groundAt } from './simcore.js';
 import { makePerson, startReaction } from './crowd.js';
 import { SPEECH, DOG_NAME } from './data.js';
 
@@ -38,6 +38,7 @@ export function init(S) {
     p.name = 'Raju';
     p.disp = 'kind';
     p.onBeg = chaiBeg;
+    p.begReach = 2.8; // the counter keeps a dog about two metres off
     sc.chai = { p, cd: 0, call: rand(S.rng, 5, 15) };
   }
   // the halwai behind his counter
@@ -65,6 +66,7 @@ export function init(S) {
     p.y = 1.2;
     p.disp = 'kind';
     p.onBeg = priestBeg;
+    p.begReach = 5.2; // he sees a dog sitting at the foot of the steps from the top
     sc.priest = { p, bell: 0, given: -1, rang: false };
   }
   // the traffic cop on the island
@@ -128,8 +130,7 @@ function chaiBeg(S, p) {
     c.cd = now + S.C.scenes.chaiBiscuitCooldown;
     startReaction(S, p, 'feed', 2.2, 'feed');
     say(S, p, [['Le, ' + DOG_NAME + ', biscuit!', 'Here, a biscuit!'], ['Chai nahi, biscuit le', 'No tea for you — have a biscuit']]);
-    const d = S.dog;
-    spawnItem(S, 'biscuit', p.x, 1.2, p.z, (d.x - p.x) * 1.1, 1.4, (d.z - p.z) * 1.1, { gift: true });
+    tossToDog(S, 'biscuit', p.x, p.y + 1.0, p.z, { gift: true });
     emit(S, 'chaiBiscuit', {});
     emit(S, 'fed', { by: p.id });
   } else {
@@ -219,7 +220,7 @@ function halwaiBeg(S, p) {
   if (S.rng() < 0.35) {
     startReaction(S, p, 'feed', 2.0, 'feed');
     say(S, p, [['Le, tooti hui hai', "Here — it's a broken one"], ['Chal, ek tukda', 'Fine, one piece']]);
-    spawnItem(S, 'samosa', p.x, 1.2, p.z, (S.dog.x - p.x) * 1.0, 1.6, (S.dog.z - p.z) * 1.0, { gift: true });
+    tossToDog(S, 'samosa', p.x, p.y + 1.0, p.z, { gift: true });
     emit(S, 'fed', { by: p.id });
   } else {
     startReaction(S, p, 'shoo', 1.4, 'shoo');
@@ -321,7 +322,7 @@ function priestBeg(S, p) {
     P.given = S.clock.day;
     startReaction(S, p, 'feed', 2.4, 'feed');
     say(S, p, SPEECH.priest);
-    spawnItem(S, 'ladoo', p.x, 1.6, p.z, (S.dog.x - p.x) * 0.9, 1.5, (S.dog.z - p.z) * 0.9, { gift: true, prasad: true });
+    tossToDog(S, 'ladoo', p.x, p.y + 1.1, p.z, { gift: true, prasad: true });
     emit(S, 'fed', { by: p.id });
   } else {
     startReaction(S, p, 'pet', 2.0, 'pet');

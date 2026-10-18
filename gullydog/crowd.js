@@ -13,9 +13,9 @@
  * makes them drop it.
  */
 
-import { pedPath, nearestPedNode, pedWalkable, baseHeightAt, facadePoint } from './world.js';
+import { pedPath, nearestPedNode, pedWalkable, clearLine, baseHeightAt, facadePoint } from './world.js';
 import { pick, pickWeighted, rand, clamp, lerp, dist2, wrapAngle, approachAngle, hex, angleDiff } from './util.js';
-import { emit, say, spawnItem, groundAt } from './simcore.js';
+import { emit, say, spawnItem, tossToDog, groundAt } from './simcore.js';
 import { SPEECH, SKIN_TONES, HAIR_COLORS, CLOTHES, SHOP_TYPES } from './data.js';
 
 const nearList = [];
@@ -71,6 +71,7 @@ function population(S) {
 
 export function init(S) {
   S.peds = [];
+  S.destBusy = new Map();
   const G = S.W.peds;
   // vendors behind every stall and cart
   for (const st of S.W.stalls) {
@@ -125,18 +126,33 @@ function spawnWalker(S, anywhere) {
   }
   if (node < 0) node = pick(S.rng, G.portals);
   const nd = G.nodes[node];
-  const p = makePerson(S, { x: nd.x + rand(S.rng, -0.4, 0.4), z: nd.z + rand(S.rng, -0.4, 0.4) });
+  let x = nd.x + rand(S.rng, -0.4, 0.4), z = nd.z + rand(S.rng, -0.4, 0.4);
+  if (!pedWalkable(S.W, x, z)) { x = nd.x; z = nd.z; } // portals sit at the very end of the pavement
+  const p = makePerson(S, { x, z });
   p.node = node;
   p.y = baseHeightAt(S.W, p.x, p.z);
   if (p.disp === 'kind' && S.rng() < S.C.crowd.snackChance) p.snack = pick(S.rng, ['biscuit', 'roti', 'samosa', 'jalebi']);
   S.peds.push(p);
   planNext(S, p);
-  // spread the initial crowd along its first legs so it does not start in clumps
-  if (anywhere && p.path && p.path.length > 2) p.pi = Math.min(p.path.length - 1, 1 + Math.floor(S.rng() * (p.path.length - 1)));
+  // spread the initial crowd along its first legs so it does not start in clumps:
+  // start them AT a node partway along, not merely aiming at one far ahead
+  if (anywhere && p.path && p.path.length > 2) {
+    const k = Math.min(p.path.length - 1, 1 + Math.floor(S.rng() * (p.path.length - 1)));
+    const at = G.nodes[p.path[k - 1]];
+    p.x = at.x; p.z = at.z; p.node = p.path[k - 1]; p.pi = k;
+    p.y = baseHeightAt(S.W, p.x, p.z);
+    const kind = edgeKind(G, p.path[k - 1], p.path[k]);
+    if (kind === 'zebra' || kind === 'jay') { p.state = 'curb'; p.waitT = 0; p.crossKind = kind; }
+  }
   return p;
 }
 
 /* ------------------------------------------------------------------- plans */
+
+// How many people are using a seat, stall or shop door. Kept in the sim, not on the
+// world's own destination objects: the world is shared and must stay read-only.
+const busyAt = (S, D) => S.destBusy.get(D) || 0;
+function occupy(S, D, n) { S.destBusy.set(D, Math.max(0, busyAt(S, D) + n)); }
 
 function destWeights(S) {
   const h = S.clock.hours;
@@ -148,7 +164,7 @@ function planNext(S, p) {
   const G = S.W.peds;
   // get up off the bench first: seats are props, not pavement
   if (p.state === 'sit' && p.dest) { p.x = p.dest.x; p.z = p.dest.z; }
-  if (p.dest) { p.dest.busy = Math.max(0, p.dest.busy - 1); p.dest = null; }
+  if (p.dest) { occupy(S, p.dest, -1); p.dest = null; }
   let kind = pickWeighted(S.rng, destWeights(S));
   if (p.overflow) kind = 'leave';
   let goal = -1;
@@ -163,13 +179,13 @@ function planNext(S, p) {
     let best = null, bestScore = -Infinity;
     for (let k = 0; k < 10; k++) {
       const dd = pick(S.rng, G.dests);
-      if (dd.kind !== kind || dd.busy >= (dd.cap || 1)) continue;
+      if (dd.kind !== kind || busyAt(S, dd) >= (dd.cap || 1)) continue;
       const dist = Math.sqrt(dist2(dd.x, dd.z, p.x, p.z));
       const score = -dist + S.rng() * 40;
       if (score > bestScore) { bestScore = score; best = dd; }
     }
     if (!best) { goal = pick(S.rng, G.walkNodes); p.plan = 'wander'; }
-    else { goal = best.node; p.dest = best; best.busy++; p.plan = 'dest'; }
+    else { goal = best.node; p.dest = best; occupy(S, best, 1); p.plan = 'dest'; }
   }
   const from = p.node >= 0 ? p.node : nearestPedNode(G, p.x, p.z);
   const path = pedPath(G, from, goal);
@@ -194,7 +210,7 @@ function arrive(S, p) {
   switch (D.kind) {
     case 'seat': {
       const s = D.seat;
-      const slot = D.busy > 1 ? 0.45 : -0.45;
+      const slot = busyAt(S, D) > 1 ? 0.45 : -0.45;
       const ax = Math.cos(s.yaw), az = -Math.sin(s.yaw);
       p.x = s.x + ax * slot; p.z = s.z + az * slot;
       p.yaw = s.yaw;
@@ -237,7 +253,7 @@ export function step(S, dt) {
 
   for (let i = S.peds.length - 1; i >= 0; i--) {
     const p = S.peds[i];
-    if (p.gone) { if (p.dest) p.dest.busy = Math.max(0, p.dest.busy - 1); S.peds.splice(i, 1); continue; }
+    if (p.gone) { if (p.dest) occupy(S, p.dest, -1); S.peds.splice(i, 1); continue; }
     if (p.startleT > 0) p.startleT -= dt;
     if (p.react > 0) {
       p.react -= dt;
@@ -280,21 +296,21 @@ function walk(S, p, dt) {
   if (!p.path) { planNext(S, p); return; }
   const idx = p.path[p.pi];
   const nd = G.nodes[idx];
-  const prev = p.pi > 0 ? G.nodes[p.path[p.pi - 1]] : null;
-  // lateral lane offset across the segment we are walking
-  let lx = 0, lz = 0;
-  if (prev && nd.kind !== 'dest' && nd.kind !== 'portal') {
-    const sx = nd.x - prev.x, sz = nd.z - prev.z;
-    const l = Math.hypot(sx, sz) || 1;
-    const w = Math.min(nd.w, prev.w);
-    lx = (-sz / l) * p.lane * w; lz = (sx / l) * p.lane * w;
-  }
-  const tx = nd.x + lx, tz = nd.z + lz;
+  if (p.segPath !== p.path || p.segPi !== p.pi) laneTarget(S, p, p.pi > 0 ? p.path[p.pi - 1] : -1, idx);
+  // a detour back through the last node, when the way ahead is blocked from here
+  if (p.via && Math.hypot(p.via.x - p.x, p.via.z - p.z) < 0.3) { p.via = null; p.bestD = Infinity; }
+  const tx = p.via ? p.via.x : p.segX, tz = p.via ? p.via.z : p.segZ;
   const dx = tx - p.x, dz = tz - p.z;
   const dist = Math.hypot(dx, dz);
+  // Getting no closer for a few seconds (a wall in the way, a slide that goes
+  // nowhere, a knot of people): find the way again from where they actually are.
+  if (dist < p.bestD - 0.25) { p.bestD = dist; p.noProg = 0; }
+  else if ((p.noProg += dt) > 5) { p.noProg = 0; repath(S, p); return; }
+  if (p.via) { steer(S, p, dx / dist, dz / dist, p.walkSpeed, dt, false); return; }
   const crossingNow = p.crossing;
   if (dist < (crossingNow ? 0.5 : 0.85)) {
     p.node = idx;
+    p.stuckN = 0;
     p.crossing = false;
     if (p.pi >= p.path.length - 1) {
       // final approach: step onto the exact destination point
@@ -309,6 +325,37 @@ function walk(S, p, dt) {
   steer(S, p, dx / dist, dz / dist, p.walkSpeed * (crossingNow ? 1.3 : 1), dt, crossingNow);
 }
 
+/**
+ * Where along this stretch to aim: the node, shifted sideways by the walker's lane
+ * so a crowd spreads across the pavement. The lane is only a preference, and the
+ * pavement's nominal width knows nothing of the parked bikes and carts along its
+ * kerb, so the shifted line is checked once per stretch and pulled back toward the
+ * middle until it is clear.
+ */
+function laneTarget(S, p, from, to) {
+  const G = S.W.peds;
+  const nd = G.nodes[to], prev = from >= 0 ? G.nodes[from] : null;
+  p.segPath = p.path; p.segPi = p.pi;
+  p.segX = nd.x; p.segZ = nd.z;
+  p.bestD = Infinity; p.noProg = 0;
+  p.via = null;
+  if (!prev || edgeKind(G, from, to) !== 'walk') return; // crossings go straight across
+  if (nd.kind !== 'dest' && nd.kind !== 'portal') {
+    const sx = nd.x - prev.x, sz = nd.z - prev.z;
+    const l = Math.hypot(sx, sz) || 1;
+    const w = Math.min(nd.w, prev.w);
+    for (const k of [1, 0.5, 0.2]) {
+      const lx = (-sz / l) * p.lane * w * k, lz = (sx / l) * p.lane * w * k;
+      if (clearLine(S.W, prev.x + lx, prev.z + lz, nd.x + lx, nd.z + lz)) { p.segX = nd.x + lx; p.segZ = nd.z + lz; break; }
+    }
+  }
+  // arriving off to one side of the last node can leave a parked cart between the
+  // walker and the next stretch: back through the node itself in that case
+  if (pedWalkable(S.W, p.x, p.z) && !clearLine(S.W, p.x, p.z, p.segX, p.segZ)) p.via = { x: prev.x, z: prev.z };
+}
+
+const TURNS = [0.5, -0.5, 1.0, -1.0, 1.57, -1.57]; // never more than square: that would be backing off
+
 /** Desired heading plus separation from neighbours and room for the dog, then move. */
 function steer(S, p, dirx, dirz, speed, dt, onRoad) {
   const C = S.C.crowd;
@@ -318,7 +365,8 @@ function steer(S, p, dirx, dirz, speed, dt, onRoad) {
     if (e.ref === p) continue;
     const ex = p.x - e.x, ez = p.z - e.z;
     const d2 = ex * ex + ez * ez;
-    let room = e.kind === 'ped' ? 0.7 : e.kind === 'dog' ? C.personalSpace : e.kind === 'veh' ? e.r + 0.55 : e.kind === 'cow' ? e.r + 0.45 : e.r + 0.35;
+    // someone standing still can be squeezed past; someone walking gets more room
+    let room = e.kind === 'ped' ? (e.ref.speed < 0.2 ? 0.5 : 0.7) : e.kind === 'dog' ? C.personalSpace : e.kind === 'veh' ? e.r + 0.55 : e.kind === 'cow' ? e.r + 0.45 : e.r + 0.35;
     if (d2 > room * room || d2 < 1e-6) continue;
     const d = Math.sqrt(d2);
     const push = (room - d) / room;
@@ -336,17 +384,80 @@ function steer(S, p, dirx, dirz, speed, dt, onRoad) {
   p.vx += (vx - p.vx) * k;
   p.vz += (vz - p.vz) * k;
   let nx = p.x + p.vx * dt, nz = p.z + p.vz * dt;
-  if (!onRoad && !pedWalkable(S.W, nx, nz)) {
-    // slide along whatever is in the way
-    if (pedWalkable(S.W, nx, p.z)) nz = p.z;
-    else if (pedWalkable(S.W, p.x, nz)) nx = p.x;
-    else { nx = p.x; nz = p.z; p.stuckT += dt; }
+  // Someone already off the pavement (the last stride of a crossing, shoved by the
+  // dog, spawned past the end of a gali) walks straight back on: refusing every
+  // step that is not yet on pavement would freeze them where they stand.
+  if (!onRoad && !pedWalkable(S.W, nx, nz) && pedWalkable(S.W, p.x, p.z)) {
+    // slide along whatever is in the way; if the slide goes nowhere (a cart parked
+    // right up against the line they are walking), turn a little to get round it
+    const len = Math.hypot(nx - p.x, nz - p.z);
+    if (pedWalkable(S.W, nx, p.z) && Math.abs(nx - p.x) > len * 0.3) nz = p.z;
+    else if (pedWalkable(S.W, p.x, nz) && Math.abs(nz - p.z) > len * 0.3) nx = p.x;
+    else {
+      // of the ways round that are open, the one that heads most toward the goal
+      const a0 = Math.atan2(nx - p.x, nz - p.z);
+      let best = -Infinity, bx = p.x, bz = p.z;
+      for (const da of TURNS) {
+        const sx = Math.sin(a0 + da), sz = Math.cos(a0 + da);
+        const qx = p.x + sx * len, qz = p.z + sz * len;
+        const score = sx * dirx + sz * dirz;
+        if (score > best && pedWalkable(S.W, qx, qz)) { best = score; bx = qx; bz = qz; }
+      }
+      nx = bx; nz = bz;
+    }
   }
   p.x = nx; p.z = nz;
   p.speed = Math.hypot(p.vx, p.vz);
   if (p.speed > 0.15) p.yaw = approachAngle(p.yaw, Math.atan2(p.vx, p.vz), 7 * dt);
   p.mode = 'walk';
-  if (p.stuckT > 4) { p.stuckT = 0; p.node = nearestPedNode(S.W.peds, p.x, p.z); planNext(S, p); }
+  if (p.stuckT > 4) { p.stuckT = 0; repath(S, p); }
+}
+
+/**
+ * Re-route to the same goal from the nearest node in plain sight. Someone who
+ * keeps getting stuck gives up on the errand; out of the dog's sight they just
+ * go home (the crowd refills itself elsewhere).
+ */
+function repath(S, p) {
+  const G = S.W.peds;
+  p.stuckN = (p.stuckN || 0) + 1;
+  if (p.stuckN > 3) {
+    p.stuckN = 0;
+    if (dist2(p.x, p.z, S.dog.x, S.dog.z) > 30 * 30) { p.gone = true; return; }
+    p.node = inSight(S, p.x, p.z);
+    planNext(S, p);
+    return;
+  }
+  const goal = p.path ? p.path[p.path.length - 1] : -1;
+  const from = inSight(S, p.x, p.z);
+  const path = goal >= 0 && from >= 0 ? pedPath(G, from, goal) : null;
+  p.node = from;
+  if (!path) { planNext(S, p); return; }
+  p.path = path;
+  p.pi = 0;
+  p.crossing = false;
+}
+
+/** The nearest pedestrian node that can be walked to in a straight line from (x, z). */
+function inSight(S, x, z) {
+  const G = S.W.peds;
+  const cand = [];
+  for (let i = 0; i < G.nodes.length; i++) {
+    const nd = G.nodes[i];
+    if (!nd.ok) continue;
+    const q = dist2(nd.x, nd.z, x, z);
+    if (q < 15 * 15) cand.push([q, i]);
+  }
+  cand.sort((a, b) => a[0] - b[0]);
+  for (const [, i] of cand) {
+    const nd = G.nodes[i];
+    const l = Math.hypot(nd.x - x, nd.z - z);
+    let open = true;
+    // the first half metre is forgiven: they may be standing just off the pavement
+    for (let t = 0.5; t < l && open; t += 0.25) open = pedWalkable(S.W, x + ((nd.x - x) * t) / l, z + ((nd.z - z) * t) / l);
+    if (open) return i;
+  }
+  return nearestPedNode(G, x, z);
 }
 
 /** At the kerb: wait for a gap in the traffic, then go. */
@@ -466,8 +577,7 @@ function respond(S, p) {
       if (food) {
         startReaction(S, p, 'feed', 2.4, 'feed');
         say(S, p, SPEECH.feed);
-        const fx = d.x + Math.sin(d.yaw) * 0.45, fz = d.z + Math.cos(d.yaw) * 0.45;
-        spawnItem(S, food, p.x + (fx - p.x) * 0.5, 0.9 + p.y, p.z + (fz - p.z) * 0.5, (fx - p.x) * 0.9, 1.0, (fz - p.z) * 0.9, { owner: p.id, gift: true });
+        tossToDog(S, food, p.x, p.y + 0.95 * p.scale, p.z, { owner: p.id, gift: true });
         p.snack = null;
         emit(S, 'fed', { by: p.id });
       } else {
@@ -531,7 +641,7 @@ function dogInteractions(S, dt) {
     }
     // candidate for begging
     if (begging && S.t >= p.petCD && p.react <= 0 && p.state !== 'curb' && !p.crossing) {
-      const reach = p.role === 'keeper' ? 3.2 : 2.1;
+      const reach = p.begReach || (p.role === 'keeper' ? 3.2 : 2.1);
       if (dist > reach) continue;
       if (p.role === 'keeper' && dist2(d.x, d.z, p.door.x, p.door.z) > 1.8 * 1.8) continue;
       const toPed = Math.atan2(p.x - d.x, p.z - d.z);

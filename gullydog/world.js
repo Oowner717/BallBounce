@@ -820,7 +820,7 @@ function placeStreetProps(W, rng) {
     { id: 'lali', name: 'Lali', x: -61, z: 60, coat: 'red', puppies: 3 },
   ];
   W.spawns.cows = [
-    { x: 54, z: -3.2, lie: true, r: 4 },
+    { x: 54, z: -5.6, lie: true, r: 4 }, // lying in MG Road by the kerb: everything squeezes past on the median side
     { x: 44, z: 49.6, r: 9 },
     { x: -29, z: 24, r: 10 },
     { x: -31, z: -47, r: 6 },
@@ -1292,7 +1292,7 @@ function buildPedGraph(W) {
   const dests = [];
   const addDest = (x, z, yaw, kind, extra) => {
     const node = add(x, z, 0.3, 'dest');
-    if (node >= 0) dests.push(Object.assign({ node, x: nodes[node].x, z: nodes[node].z, yaw, kind, busy: 0 }, extra || {}));
+    if (node >= 0) dests.push(Object.assign({ node, x: nodes[node].x, z: nodes[node].z, yaw, kind }, extra || {}));
   };
   for (const b of W.buildings) {
     if (b.kind !== 'front' || !b.shop) continue;
@@ -1453,11 +1453,12 @@ export function nearestPedNode(G, x, z, filter) {
  * Is the point (x, y, z) shaded from a sun in direction (sx, sy, sz)? Marches the
  * ray across the collider index; buildings, awnings, canopies and roofs all count.
  */
+const SHADE_SCRATCH = [];
 export function inShade(W, x, y, z, sx, sy, sz) {
   if (sy <= 0.02) return true;
   const maxH = 22;
   const len = Math.min(60, (maxH - y) / sy);
-  const scratch = W._shadeScratch || (W._shadeScratch = []);
+  const scratch = SHADE_SCRATCH;
   for (let t = 0.4; t < len; t += 0.8) {
     const px = x + sx * t, py = y + sy * t, pz = z + sz * t;
     collidersNear(W, px, pz, 0.01, scratch);
