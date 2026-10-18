@@ -17,9 +17,10 @@ import { environment } from './env.js';
 import { createSim, step, drainEvents, contextAction, newDay, serializeSave, loadSave, SAVE_KEY } from './sim.js';
 import { groundAt } from './simcore.js';
 import { Input } from './input.js';
+import { CONTROLS, steerRate, aimStick, easeRate } from './controls.js';
 import { AudioEngine } from './audio.js';
 import { Hud } from './hud.js';
-import { m4, m4Mul, m4Perspective, m4LookAt, clamp, lerp, dist2, hex, approachAngle, angleDiff, makeRng, TAU } from './util.js';
+import { m4, m4Mul, m4Perspective, m4LookAt, clamp, lerp, dist2, hex, makeRng, TAU } from './util.js';
 
 const Q = new URLSearchParams(location.search);
 const DEBUG = Q.has('debug');
@@ -228,24 +229,30 @@ function persist() {
 
 /* ---------------------------------------------------------------- camera */
 
-const cam = { yaw: 0, pitch: 0.24, dist: 3.9, tx: 0, ty: 0.6, tz: 0, x: 0, y: 2, z: 5, idle: 9, fov: 62, shake: 0, init: false };
+const IDLE_INPUT = { move: { x: 0, y: 0 }, look: { dx: 0, dy: 0 }, lookStick: { x: 0, y: 0 }, zoom: 0 };
+
+const cam = { yaw: 0, pitch: 0.24, dist: 3.9, tx: 0, ty: 0.6, tz: 0, x: 0, y: 2, z: 5, fov: 62, shake: 0, init: false, steer: 0, lookVx: 0, lookVy: 0 };
 const view = m4(), proj = m4(), vp = m4();
 
 function updateCamera(dt, inp) {
   const d = S.dog;
   const lookSpeed = 0.0052;
+  const inv = settings.invert ? -1 : 1;
+  // dragged with a finger or the mouse: the view follows the drag exactly
   if (inp.look.dx || inp.look.dy) {
     cam.yaw -= inp.look.dx * lookSpeed;
-    cam.pitch = clamp(cam.pitch + inp.look.dy * 0.0042 * (settings.invert ? -1 : 1), -0.12, 1.25);
-    cam.idle = 0;
-  } else cam.idle += dt;
-  if (inp.zoom) cam.dist = clamp(cam.dist * Math.pow(1.12, inp.zoom), 1.8, 14);
-  // drift behind the dog when it is on the move and the player is not steering the view
-  if (cam.idle > 1.3 && d.speed > 0.8 && !inp.looking) {
-    const behind = d.yaw + Math.PI;
-    const rate = clamp(d.speed / 3, 0.25, 1.6) * (Math.abs(angleDiff(cam.yaw, behind)) > 2.6 ? 0.15 : 1);
-    cam.yaw = approachAngle(cam.yaw, behind, rate * dt);
+    cam.pitch = clamp(cam.pitch + inp.look.dy * 0.0042 * inv, -0.12, 1.25);
   }
+  // Steering: the movement stick's left-right swings the view round at a rate set
+  // by how far it is pushed, eased in and out (controls.js). The dog runs relative
+  // to the view, so he turns with it, in an arc as wide as the push is gentle.
+  // The right stick and the look keys turn it the same way.
+  cam.steer = easeRate(cam.steer, steerRate(inp.move.x, inp.move.y), dt);
+  cam.lookVx = easeRate(cam.lookVx, inp.lookStick.x * CONTROLS.maxLookX, dt);
+  cam.lookVy = easeRate(cam.lookVy, inp.lookStick.y * CONTROLS.maxLookY, dt);
+  cam.yaw -= (cam.steer + cam.lookVx) * dt;
+  cam.pitch = clamp(cam.pitch + cam.lookVy * inv * dt, -0.12, 1.25);
+  if (inp.zoom) cam.dist = clamp(cam.dist * Math.pow(1.12, inp.zoom), 1.8, 14);
   if (d.sleeping) cam.yaw += dt * 0.05;
   // follow the dog, smoothed (but not through kerbs)
   const ty = (d.ry !== undefined ? d.ry : d.y) + 0.62;
@@ -336,11 +343,13 @@ function loop(now) {
   else if (state === 'start' && (inp.act || inp.jump)) startGame();
 
   if (state === 'play') {
-    // stick (x right, y forward) to world, relative to where the camera faces
+    // stick (x right, y forward) to world, relative to where the camera faces, with
+    // its sideways part softened so a part-push bends the path gently
     const fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw);
     const rx = Math.cos(cam.yaw), rz = -Math.sin(cam.yaw);
+    const [ax, ay] = aimStick(inp.move.x, inp.move.y);
     const simIn = {
-      mx: rx * inp.move.x + fx * inp.move.y, mz: rz * inp.move.x + fz * inp.move.y,
+      mx: rx * ax + fx * ay, mz: rz * ax + fz * ay,
       run: inp.run, jump: inp.jump, bark: inp.bark, sniff: inp.sniff, act: inp.act, lie: inp.lie,
     };
     // a long frame is split so the sim never integrates a huge step
@@ -360,7 +369,7 @@ function loop(now) {
   }
   const d = S.dog;
   d.ry = d.ry === undefined || !d.onGround ? d.y : d.ry + (d.y - d.ry) * (1 - Math.exp(-18 * rawDt));
-  updateCamera(rawDt, state === 'play' ? inp : { look: { dx: 0, dy: 0 }, zoom: 0, looking: false });
+  updateCamera(rawDt, state === 'play' ? inp : IDLE_INPUT);
   try {
     const t1 = performance.now();
     drawScene(Q.has('fixedstep') ? 1 / 30 : rawDt, now / 1000);

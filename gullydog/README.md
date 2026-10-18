@@ -57,6 +57,11 @@ browser only. **Start over from day one** in the pause menu begins again.
 | Look around | drag; wheel to zoom | drag the right half; pinch | right stick |
 | Tasks · map · pause | T · M · Esc | tap the panels; **II** pauses | Back opens the map, Start pauses |
 
+Steering is by how far you push. Hold the stick a little to one side and the view
+swings round gently, and Bhura runs a wide curve; push it to the rim for a tight turn.
+Turns ease in and out rather than starting and stopping dead. The right stick and the
+`,` `.` keys look around the same way: the further, the faster.
+
 The action button does whatever the prompt at the bottom says: eat, drink, grab,
 rummage, mark a post, greet a dog, sit and beg, drop or share what you are carrying.
 On a full belly it picks food up instead of eating it, so you can carry it to
@@ -140,7 +145,7 @@ prefix (`orbs-cache-`, `gullydog-cache-`), and Gully Dog's only ever reads its o
 The first line of real code in `sw.js` is:
 
 ```js
-const CACHE_VERSION = 'gullydog-v2';
+const CACHE_VERSION = 'gullydog-v3';
 ```
 
 Bump it whenever anything here changes. Browsers notice a new service worker by
@@ -211,6 +216,7 @@ textures.js    the texture atlas (signs, ads, rangoli, number plates) and noise
 audio.js       procedural sound: plucked strings and a tanpura drone, horns, bells, barks
 hud.js         HUD, minimap, toasts, speech bubbles, the day's summary
 input.js       keyboard, touch and gamepad, merged
+controls.js    how the sticks feel: dead zones, response curves, eased turning
 sw.js          the service worker
 tools/make-icons.mjs   draws the app icons (no image library) and encodes the PNGs
 ```

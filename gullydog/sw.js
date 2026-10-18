@@ -36,7 +36,7 @@
  */
 
 // BUMP THIS ON EVERY DEPLOY — the browser byte-diffs this file to detect updates.
-const CACHE_VERSION = 'gullydog-v2';
+const CACHE_VERSION = 'gullydog-v3';
 
 // How long a navigation may wait for the network before the cached shell is painted
 // instead. Only ever armed when a cached shell actually exists.
@@ -72,6 +72,7 @@ const PRECACHE = [
   './textures.js',
   './gfx.js',
   './input.js',
+  './controls.js',
   './audio.js',
   './hud.js',
   './manifest.webmanifest',

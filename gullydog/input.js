@@ -4,7 +4,9 @@
  * poll() returns:
  *   move   {x, y}  stick: x to the right, y forward (camera-relative), 0..1
  *   run           held
- *   look   {dx, dy} camera orbit in pixels-ish since the last poll
+ *   look   {dx, dy} camera orbit dragged, in pixels-ish, since the last poll
+ *   lookStick {x, y} right stick / look keys, -1..1, already through the
+ *                 dead zone and response curve (see controls.js)
  *   zoom          wheel / pinch steps since the last poll
  *   jump, bark, sniff, act, lie, pause, map, tasks   edge-triggered
  *
@@ -13,6 +15,8 @@
  * iOS fires pointercancel on system gestures, so every pointer that ends any
  * way at all releases whatever it was holding.
  */
+
+import { CONTROLS, shapeAxis, rampTo } from './controls.js';
 
 const EDGES = ['jump', 'bark', 'sniff', 'act', 'lie', 'pause', 'map', 'tasks', 'help'];
 
@@ -39,6 +43,8 @@ export class Input {
     this.pads = [];
     this.lastPadButtons = [];
     this.usedTouch = false;
+    this.keyX = 0;              // A/D, eased in and out
+    this.keyLookX = 0;          // , and . (look), eased in and out
     this.enabled = true;
     this.bind();
   }
@@ -166,13 +172,16 @@ export class Input {
     const out = { mx: 0, my: 0, lx: 0, ly: 0, run: false };
     let pads = [];
     try { pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : []; } catch (e) { pads = []; }
-    const dz = (v) => (Math.abs(v) < 0.16 ? 0 : (v - Math.sign(v) * 0.16) / 0.84);
     pads.forEach((p, i) => {
       const prev = this.lastPadButtons[i] || [];
       const pressed = p.buttons.map((b) => b.pressed || b.value > 0.5);
       const edge = (k) => pressed[k] && !prev[k];
-      out.mx += dz(p.axes[0] || 0); out.my += -dz(p.axes[1] || 0);
-      out.lx += dz(p.axes[2] || 0); out.ly += dz(p.axes[3] || 0);
+      // raw axes: the dead zones and curves live in controls.js, applied once.
+      // A worn stick at rest still reads a little, so the left one has a small
+      // round dead zone of its own; the sim ignores tiny pushes anyway.
+      const ax = p.axes[0] || 0, ay = p.axes[1] || 0;
+      if (Math.hypot(ax, ay) > 0.1) { out.mx += ax; out.my += -ay; }
+      out.lx += p.axes[2] || 0; out.ly += p.axes[3] || 0;
       if (pressed[5] || pressed[7] || pressed[10]) out.run = true;
       if (edge(0)) this.edges.jump = true;
       if (edge(1)) this.edges.bark = true;
@@ -192,12 +201,15 @@ export class Input {
     let mx = 0, my = 0;
     if (k.has('KeyW') || k.has('ArrowUp')) my += 1;
     if (k.has('KeyS') || k.has('ArrowDown')) my -= 1;
-    if (k.has('KeyD') || k.has('ArrowRight')) mx += 1;
-    if (k.has('KeyA') || k.has('ArrowLeft')) mx -= 1;
+    // Keys are all or nothing. Easing left-right in (a quarter of a second to the
+    // full turn) and out makes A and D steer like a stick pushed smoothly.
+    const kx = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+    this.keyX = rampTo(this.keyX, kx, (kx ? 4 : 8) * dt);
+    mx += this.keyX;
     let run = k.has('ShiftLeft') || k.has('ShiftRight') || this.runHeld;
     // keyboard look: Q/E would collide with act; use the comma and period keys
-    if (k.has('Comma')) this.look.dx -= 220 * dt;
-    if (k.has('Period')) this.look.dx += 220 * dt;
+    const kl = (k.has('Period') ? 1 : 0) - (k.has('Comma') ? 1 : 0);
+    this.keyLookX = rampTo(this.keyLookX, kl, (kl ? 4 : 8) * dt);
     if (this.stick) {
       const R = 56;
       const sx = (this.stick.x - this.stick.ox) / R, sy = -(this.stick.y - this.stick.oy) / R;
@@ -213,14 +225,15 @@ export class Input {
     const pad = this.pollPads();
     mx += pad.mx; my += pad.my;
     if (pad.run) run = true;
-    this.look.dx += pad.lx * 600 * dt;
-    this.look.dy += pad.ly * 380 * dt;
     const l = Math.hypot(mx, my);
     if (l > 1) { mx /= l; my /= l; }
+    // the right stick and the look keys turn the view at a rate set by how far they are pushed
+    const C = CONTROLS;
+    const lookX = Math.max(-1, Math.min(1, shapeAxis(pad.lx, C.lookDeadzone, C.lookCurve) + this.keyLookX));
+    const lookY = shapeAxis(pad.ly, C.lookDeadzone, C.lookCurve);
     const snap = {
       move: { x: mx, y: my }, run,
-      look: { dx: this.look.dx, dy: this.look.dy }, zoom: this.zoom,
-      looking: !!(this.mouseDrag || this.lookPtr) || Math.abs(pad.lx) + Math.abs(pad.ly) > 0.1 || k.has('Comma') || k.has('Period'),
+      look: { dx: this.look.dx, dy: this.look.dy }, lookStick: { x: lookX, y: lookY }, zoom: this.zoom,
     };
     for (const e of EDGES) { snap[e] = !!this.edges[e]; this.edges[e] = false; }
     this.look.dx = 0; this.look.dy = 0; this.zoom = 0;

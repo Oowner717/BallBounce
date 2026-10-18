@@ -34,7 +34,8 @@ import { atlasLayout, paintAtlas, paintNoise } from './textures.js';
 import { buildCity } from './cityMesh.js';
 import { buildAllModels, PEOPLE_KINDS } from './models.js';
 import { Rig, newAnim, animateDog, poseDog, animateHuman, poseHuman, animateQuad, poseQuad, poseBird, poseVehicle } from './rig.js';
-import { clamp } from './util.js';
+import { clamp, angleDiff } from './util.js';
+import { CONTROLS, shapeAxis, steerRate, aimStick, easeRate, rampTo } from './controls.js';
 
 /* -------------------------------------------------------------------------- */
 /* Tiny runner                                                                */
@@ -548,6 +549,97 @@ test('sniffing lays scent trails to food, water and the next task', () => {
   }
   run(S, CONFIG.dog.sniffDuration + 0.1);
   assert.equal(S.sniff, null, 'the scent fades');
+});
+
+/* ========================================================================== */
+/* How the sticks feel                                                        */
+/* ========================================================================== */
+
+group('how the sticks feel');
+
+test('a stick axis: dead in the middle, full at the rim, gentle in between', () => {
+  const C = CONTROLS;
+  assert.equal(shapeAxis(0, C.deadzone, C.turnCurve), 0);
+  assert.equal(shapeAxis(C.deadzone * 0.9, C.deadzone, C.turnCurve), 0, 'a thumb a little off centre should not steer');
+  assert.equal(shapeAxis(1, C.deadzone, C.turnCurve), 1);
+  assert.equal(shapeAxis(-1, C.deadzone, C.turnCurve), -1);
+  let prev = 0;
+  for (let v = 0; v <= 1.0001; v += 0.01) {
+    const y = shapeAxis(v, C.deadzone, C.turnCurve);
+    assert.ok(y >= prev - 1e-12, 'the response must only grow as the stick goes out');
+    assert.ok(Math.abs(y - prev) < 0.04, 'no jump anywhere along the travel, at ' + v.toFixed(2));
+    assert.ok(near(shapeAxis(-v, C.deadzone, C.turnCurve), -y, 1e-12), 'left mirrors right');
+    prev = y;
+  }
+  // less sensitive than a straight line: half way out is well under half
+  assert.ok(shapeAxis(0.5, C.deadzone, C.turnCurve) < 0.3);
+});
+
+test('turning speed follows how far the stick is pushed, not one speed for all', () => {
+  const r = (x) => steerRate(x, 1);
+  assert.equal(r(0.05), 0);
+  assert.ok(r(0.3) > 0 && r(0.3) < r(0.5) && r(0.5) < r(0.75) && r(0.75) < r(1), 'turn rate must rise with the push');
+  assert.ok(r(0.3) < 0.15 * CONTROLS.maxTurn, 'a small push turns gently: ' + r(0.3).toFixed(2));
+  assert.equal(r(1), CONTROLS.maxTurn);
+  assert.equal(steerRate(-0.6, 1), -r(0.6));
+  assert.ok(Math.abs(steerRate(0.8, -1)) < Math.abs(steerRate(0.8, 1)), 'walking back toward the camera steers less');
+});
+
+test('a part-push to one side bends the path less, at the same speed', () => {
+  for (const [x, y] of [[0.5, 0.86], [0.3, 0.5], [-0.7, 0.7], [0.2, -0.9]]) {
+    const [ax, ay] = aimStick(x, y);
+    assert.ok(near(Math.hypot(ax, ay), Math.min(1, Math.hypot(x, y)), 1e-9), 'speed changed');
+    // the bend: how far off straight ahead, or straight back, the path is
+    assert.ok(Math.atan2(Math.abs(ax), Math.abs(ay)) <= Math.atan2(Math.abs(x), Math.abs(y)) + 1e-9, 'the bend should shrink');
+    assert.equal(Math.sign(ax), Math.sign(x));
+  }
+  assert.deepEqual(aimStick(0, 1), [0, 1]);
+  const [sx, sy] = aimStick(1, 0);
+  assert.ok(near(sx, 1, 1e-12) && near(sy, 0, 1e-12), 'straight sideways stays straight sideways');
+  assert.deepEqual(aimStick(0, 0), [0, 0]);
+});
+
+test('turns ease in and out, the same at any frame rate', () => {
+  let a = 0, b = 0;
+  for (let i = 0; i < 10; i++) a = easeRate(a, 2, 0.1);
+  for (let i = 0; i < 100; i++) b = easeRate(b, 2, 0.01);
+  assert.ok(near(a, b, 1e-9), `one second at 10 fps (${a}) and at 100 fps (${b}) must agree`);
+  assert.ok(a > 1.99, 'it gets there within a second');
+  assert.ok(easeRate(0, 2, 1 / 60) < 0.3, 'but not in one frame');
+  let k = 0;
+  for (let i = 0; i < 20; i++) k = rampTo(k, 1, 4 / 60);
+  assert.ok(near(k, 1, 1e-12), 'a held key reaches full in a quarter of a second');
+  assert.equal(rampTo(0.95, 1, 0.2), 1, 'and never overshoots');
+});
+
+/**
+ * Hold the movement stick at (x, 1) and steer the way main.js does: the view
+ * eases toward steerRate, and the stick is applied relative to the view.
+ * Returns how fast the dog's heading turns once the turn has settled, in rad/s.
+ */
+function turnRateFor(x) {
+  const S = sim({ quiet: true });
+  place(S, 40, 0, Math.PI / 2);
+  let yaw = -Math.PI / 2, steer = 0, h0 = 0;
+  const dt = 1 / 60;
+  for (let i = 0; i < 150; i++) {
+    steer = easeRate(steer, steerRate(x, 1), dt);
+    yaw -= steer * dt;
+    const [ax, ay] = aimStick(x, 1);
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    step(S, dt, { mx: rx * ax + fx * ay, mz: rz * ax + fz * ay });
+    drainEvents(S);
+    if (i === 89) h0 = S.dog.yaw;
+  }
+  return angleDiff(S.dog.yaw, h0) / (60 * dt); // a right turn lowers the dog's yaw, so right is positive here
+}
+
+test('in play: a gentle push makes a wide curve, a full push a tight turn', () => {
+  const rates = [0.3, 0.6, 1.0].map(turnRateFor);
+  assert.ok(Math.abs(rates[0]) < 0.25, 'a small push should barely turn: ' + rates[0].toFixed(2));
+  assert.ok(rates[0] < rates[1] && rates[1] < rates[2], 'turning must speed up with the push: ' + rates.map((r) => r.toFixed(2)).join(' < '));
+  assert.ok(near(rates[2], CONTROLS.maxTurn, 0.15), 'full push turns at the full rate: ' + rates[2].toFixed(2));
+  assert.ok(turnRateFor(0.08) === 0 || Math.abs(turnRateFor(0.08)) < 0.02, 'inside the dead zone the dog runs straight');
 });
 
 /* ========================================================================== */
