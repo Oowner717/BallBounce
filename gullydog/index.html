@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Gully Dog</title>
+<meta name="description" content="A 3D street-dog simulator: wander the busy, crowded streets of an Indian neighbourhood as Bhura the street dog.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gully Dog">
+<meta name="theme-color" content="#1a1410">
+<meta name="color-scheme" content="dark">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="icon" href="./icons/icon-192.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap">
+<style>
+:root {
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --ink: #fff8ec;
+  --ink-dim: #e9dcc6;
+  --panel: rgba(28, 20, 14, 0.72);
+  --panel-solid: #241a12;
+  --edge: rgba(255, 220, 160, 0.16);
+  --saffron: #ff9933;
+  --marigold: #ffc23d;
+  --leaf: #46c37b;
+  --rose: #ff5e7e;
+  --sky: #4cc3ff;
+  --bad: #ff5a4f;
+  --display: 'Baloo 2', 'Trebuchet MS', system-ui, sans-serif;
+  --ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+:root[data-theme="light"] { color-scheme: dark; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --panel: rgba(28, 20, 14, 0.72); } }
+:root[data-theme="dark"] { --panel: rgba(28, 20, 14, 0.72); }
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1a1410; color: var(--ink); font-family: var(--ui); }
+body { position: fixed; inset: 0; touch-action: none; overscroll-behavior: none; }
+canvas#stage { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; touch-action: none; outline: none; }
+
+/* ------------------------------------------------------------- HUD */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
+#hud.hidden, .hidden { display: none !important; }
+.panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+
+#needs { position: absolute; left: calc(12px + var(--safe-l)); top: calc(12px + var(--safe-t)); padding: 8px 10px; display: grid; gap: 5px; min-width: 152px; }
+.need { display: grid; grid-template-columns: 18px 1fr; align-items: center; gap: 7px; }
+.need svg { width: 18px; height: 18px; }
+.need .bar { height: 8px; border-radius: 5px; background: rgba(255,255,255,0.12); overflow: hidden; }
+.need .bar i { display: block; height: 100%; width: 50%; border-radius: 5px; background: var(--c, #8fd16a); transition: width 0.25s; }
+.need.mid .bar i { background: var(--marigold); }
+.need.low .bar i { background: var(--bad); animation: blink 0.9s infinite; }
+@keyframes blink { 50% { opacity: 0.45; } }
+
+#top { position: absolute; left: 50%; top: calc(10px + var(--safe-t)); transform: translateX(-50%); text-align: center; }
+#clockBox { padding: 5px 14px 4px; display: inline-flex; gap: 10px; align-items: baseline; font-family: var(--display); }
+#time { font-size: 22px; font-weight: 800; letter-spacing: 0.3px; }
+#day, #weather { font-size: 13px; color: var(--ink-dim); font-weight: 600; }
+#zone { margin-top: 6px; font-family: var(--display); font-size: 19px; font-weight: 700; color: var(--marigold); text-shadow: 0 2px 6px rgba(0,0,0,0.7); opacity: 0; }
+#zone.show { animation: zone 3.6s ease-out forwards; }
+@keyframes zone { 0% { opacity: 0; transform: translateY(-6px); } 12% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0.0; } }
+#credBox { margin-top: 4px; font-size: 12px; color: var(--ink-dim); text-shadow: 0 1px 3px #000; }
+#credBox b { color: var(--marigold); }
+
+#right { position: absolute; right: calc(12px + var(--safe-r)); top: calc(12px + var(--safe-t)); display: grid; gap: 8px; justify-items: end; }
+#minimapWrap { width: 156px; height: 156px; border-radius: 50%; padding: 3px; background: var(--panel); border: 2px solid rgba(255, 194, 61, 0.55); }
+#minimap { width: 150px; height: 150px; display: block; border-radius: 50%; }
+#tasks { padding: 9px 11px 8px; width: 238px; pointer-events: auto; }
+#tasks h3 { margin: 0 0 5px; font: 800 15px var(--display); color: var(--marigold); display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+#tasks h3 span { font: 600 11px var(--ui); color: var(--ink-dim); }
+#taskList { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+#taskList li { display: grid; grid-template-columns: 16px 1fr; column-gap: 6px; font-size: 12.5px; line-height: 1.25; }
+#taskList .tick { grid-row: span 2; color: var(--marigold); font-weight: 700; }
+#taskList .tt { font-weight: 700; }
+#taskList .td { color: var(--ink-dim); font-size: 11.5px; }
+#taskList .td b { color: var(--sky); font-weight: 700; }
+#taskList li.done { opacity: 0.55; }
+#taskList li.done .tick { color: var(--leaf); }
+#tasks.collapsed #taskList { display: none; }
+
+#prompt { position: absolute; left: 50%; bottom: calc(26px + var(--safe-b)); transform: translateX(-50%); padding: 7px 14px; font-size: 15px; font-weight: 600; display: flex; gap: 9px; align-items: center; white-space: nowrap; }
+#prompt kbd { font: 700 12px var(--ui); background: var(--ink); color: #2a1d12; border-radius: 6px; padding: 2px 7px; box-shadow: 0 2px 0 rgba(0,0,0,0.4); }
+#keys { position: absolute; left: calc(12px + var(--safe-l)); bottom: calc(12px + var(--safe-b)); font-size: 11.5px; color: var(--ink-dim); padding: 6px 10px; line-height: 1.6; }
+#keys kbd { font: 700 10.5px var(--ui); background: rgba(255,255,255,0.14); border-radius: 4px; padding: 0 5px; color: var(--ink); }
+
+#toasts { position: absolute; left: 50%; top: calc(108px + var(--safe-t)); transform: translateX(-50%); display: grid; gap: 6px; justify-items: center; width: min(92vw, 520px); }
+.toast { padding: 7px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--edge); font-size: 14px; font-weight: 600; opacity: 0; transform: translateY(-8px); transition: opacity 0.3s, transform 0.3s; text-align: center; }
+.toast.in { opacity: 1; transform: none; }
+.toast.out { opacity: 0; transform: translateY(-6px); }
+.toast.good { border-color: rgba(70, 195, 123, 0.6); }
+.toast.gold { border-color: rgba(255, 194, 61, 0.8); color: #fff3c4; }
+.toast.bad { border-color: rgba(255, 90, 79, 0.7); }
+
+#bubbles { position: absolute; inset: 0; overflow: hidden; }
+.bubble { position: absolute; left: 0; top: 0; padding: 5px 10px 6px; background: #fffaf0; color: #2b1d10; border-radius: 12px; font-size: 14px; font-weight: 700; white-space: nowrap; box-shadow: 0 3px 10px rgba(0,0,0,0.35); transform-origin: 50% 100%; will-change: transform; }
+.bubble::after { content: ''; position: absolute; left: 50%; bottom: -6px; margin-left: -6px; border: 6px solid transparent; border-bottom: 0; border-top-color: #fffaf0; }
+.bubble .meant { display: block; font-size: 10.5px; font-weight: 500; font-style: italic; color: #7a5b3c; margin-top: 1px; }
+
+#arrow { position: absolute; left: 0; top: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; display: none; }
+#arrow::before { content: ''; position: absolute; inset: 0; background: var(--marigold); clip-path: polygon(100% 50%, 15% 8%, 32% 50%, 15% 92%); filter: drop-shadow(0 0 4px rgba(0,0,0,0.6)); }
+#vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(200,20,10,0.75) 100%); }
+#sleep { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); font: 800 40px var(--display); color: #dfe8ff; text-shadow: 0 2px 10px #000; opacity: 0; transition: opacity 0.6s; }
+#sleep.on { opacity: 1; animation: zz 2.4s infinite; }
+@keyframes zz { 50% { transform: translate(-50%, -62%); } }
+#debug { position: absolute; left: calc(12px + var(--safe-l)); top: 170px; font: 11px ui-monospace, monospace; white-space: pre; padding: 6px 8px; display: none; }
+
+/* ------------------------------------------------------- touch controls */
+#touch { position: fixed; inset: 0; pointer-events: none; z-index: 3; display: none; }
+body.touch #touch { display: block; }
+body.touch #keys, body.touch #prompt { display: none !important; }
+#stickBase { position: absolute; left: 0; top: 0; width: 128px; height: 128px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.18); display: none; }
+#stickBase.sprint { border-color: var(--saffron); box-shadow: 0 0 18px rgba(255,153,51,0.7); }
+#stickKnob { position: absolute; left: 36px; top: 36px; width: 56px; height: 56px; border-radius: 50%; background: rgba(255,248,236,0.85); }
+#btns { position: absolute; right: calc(14px + var(--safe-r)); bottom: calc(16px + var(--safe-b)); width: 214px; height: 214px; pointer-events: none; }
+.tbtn { position: absolute; pointer-events: auto; width: 62px; height: 62px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.4); background: rgba(28,20,14,0.6); color: var(--ink); font: 800 12px var(--display); display: grid; place-items: center; text-align: center; line-height: 1; touch-action: none; }
+.tbtn.pressed { background: rgba(255,153,51,0.6); transform: scale(0.94); }
+.tbtn svg { width: 24px; height: 24px; display: block; margin: 0 auto 1px; }
+#bAct { right: 0; bottom: 0; width: 86px; height: 86px; background: rgba(255,153,51,0.55); border-color: rgba(255,214,150,0.8); font-size: 15px; }
+#bJump { right: 96px; bottom: 6px; }
+#bBark { right: 8px; bottom: 96px; }
+#bSniff { right: 96px; bottom: 86px; }
+#bLie { right: 160px; bottom: 32px; width: 50px; height: 50px; font-size: 10px; }
+#bPause { position: absolute; pointer-events: auto; right: calc(176px + var(--safe-r)); top: calc(14px + var(--safe-t)); width: 40px; height: 40px; }
+body:not(.touch) #bPause { display: none; }
+@media (max-width: 720px), (max-height: 480px) {
+  #tasks { width: 196px; padding: 7px 9px; }
+  #taskList .td { display: none; }
+  #minimapWrap { width: 116px; height: 116px; }
+  #minimap { width: 110px; height: 110px; }
+  #bPause { right: calc(136px + var(--safe-r)); }
+  #needs { min-width: 120px; padding: 6px 8px; gap: 4px; }
+  #time { font-size: 18px; }
+  #toasts { top: calc(84px + var(--safe-t)); }
+}
+@media (max-height: 480px) { #tasks.auto-collapse #taskList { display: none; } }
+
+/* ------------------------------------------------------------- screens */
+.screen { position: fixed; inset: 0; z-index: 5; display: none; place-items: center; background: radial-gradient(ellipse at 50% 30%, rgba(40,26,14,0.55), rgba(10,7,4,0.9)); padding: 16px; overflow-y: auto; touch-action: pan-y; }
+.screen.open { display: grid; }
+.card { width: min(560px, 100%); padding: 24px 24px 20px; background: var(--panel-solid); border: 1px solid rgba(255, 194, 61, 0.35); border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+.card h1 { margin: 0; font: 800 54px/1 var(--display); color: var(--marigold); letter-spacing: 0.5px; text-shadow: 0 3px 0 #8a3b12; }
+.card h1 small { display: block; font: 700 17px var(--display); color: var(--ink-dim); letter-spacing: 0.4px; text-shadow: none; margin-top: 8px; }
+.card h2 { margin: 0 0 10px; font: 800 26px var(--display); color: var(--marigold); }
+.card p { color: var(--ink-dim); line-height: 1.5; font-size: 14.5px; margin: 12px 0; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.btn { appearance: none; border: 0; cursor: pointer; font: 800 18px var(--display); padding: 10px 22px 8px; border-radius: 14px; color: #2b1606; background: linear-gradient(#ffc23d, #ff9933); box-shadow: 0 4px 0 #a2470f; touch-action: manipulation; }
+.btn.alt { background: rgba(255,255,255,0.1); color: var(--ink); box-shadow: 0 4px 0 rgba(0,0,0,0.4); }
+.btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #a2470f; }
+.ctrls { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 13.5px; color: var(--ink-dim); margin: 10px 0 4px; }
+.ctrls kbd { font: 700 12px var(--ui); background: rgba(255,255,255,0.12); color: var(--ink); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+.toggles { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.toggles button { font: 600 13px var(--ui); color: var(--ink); background: rgba(255,255,255,0.08); border: 1px solid var(--edge); border-radius: 10px; padding: 7px 11px; cursor: pointer; }
+.toggles button[aria-pressed="true"] { border-color: var(--marigold); color: #fff3c4; }
+.sumtasks { list-style: none; padding: 0; margin: 8px 0 12px; display: grid; gap: 4px; font-size: 14px; }
+.sumtasks li.done { color: var(--leaf); }
+.sumgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.sumgrid div { background: rgba(255,255,255,0.06); border-radius: 12px; padding: 8px; text-align: center; }
+.sumgrid b { display: block; font: 800 22px var(--display); color: var(--ink); }
+.sumgrid span { font-size: 12px; color: var(--ink-dim); }
+.sumrank { text-align: center; color: var(--marigold) !important; font-weight: 700; }
+#loading { position: fixed; inset: 0; z-index: 6; display: grid; place-items: center; background: #1a1410; font: 700 20px var(--display); color: var(--ink-dim); }
+#loading .paw { font-size: 40px; animation: bob 0.8s infinite alternate; }
+@keyframes bob { to { transform: translateY(-8px); } }
+#err { color: #ffb0a0; font: 14px var(--ui); max-width: 90vw; text-align: center; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="needs" class="panel">
+    <div class="need" data-k="hunger" title="Food" style="--c:#ffb347"><svg viewBox="0 0 24 24"><path fill="#ffb347" d="M7.5 3.5a2.5 2.5 0 0 0-1.9 4.1L12.4 14a2.5 2.5 0 1 0 3.8 3.3l.3.3a2.5 2.5 0 1 0 3.3-3.8 2.5 2.5 0 1 0-3.3-3.4l-6.7-6.6A2.5 2.5 0 0 0 7.5 3.5z"/></svg><div class="bar"><i></i></div></div>
+    <div class="need" data-k="thirst" title="Water" style="--c:#4cc3ff"><svg viewBox="0 0 24 24"><path fill="#4cc3ff" d="M12 2.5S5.5 10 5.5 14.5a6.5 6.5 0 0 0 13 0C18.5 10 12 2.5 12 2.5z"/></svg><div class="bar"><i></i></div></div>
+    <div class="need" data-k="energy" title="Energy" style="--c:#ffe14d"><svg viewBox="0 0 24 24"><path fill="#ffe14d" d="M13.5 2 4.5 13.5h6L9.5 22l9-11.5h-6z"/></svg><div class="bar"><i></i></div></div>
+    <div class="need" data-k="mood" title="Mood" style="--c:#ff7eb3"><svg viewBox="0 0 24 24"><path fill="#ff7eb3" d="M12 21s-7.5-4.6-9.4-9.3C1.3 8.4 3.4 4.5 7 4.5c2 0 3.6 1.1 5 2.9 1.4-1.8 3-2.9 5-2.9 3.6 0 5.7 3.9 4.4 7.2C19.5 16.4 12 21 12 21z"/></svg><div class="bar"><i></i></div></div>
+    <div class="need" data-k="health" title="Health" style="--c:#6be38f"><svg viewBox="0 0 24 24"><path fill="#6be38f" d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/></svg><div class="bar"><i></i></div></div>
+  </div>
+  <div id="top">
+    <div id="clockBox" class="panel"><span id="time">6:30 AM</span><span id="day">Day 1</span><span id="weather"></span></div>
+    <div id="zone"></div>
+    <div id="credBox"><span id="rank"></span> · <b id="credn">0</b> cred</div>
+  </div>
+  <div id="right">
+    <div id="minimapWrap"><canvas id="minimap" width="300" height="300"></canvas></div>
+    <div id="tasks" class="panel"><h3 id="tasksHead">Today <span>T to hide</span></h3><ul id="taskList"></ul></div>
+  </div>
+  <div id="prompt" class="panel hidden"><kbd id="promptKey">E</kbd><span id="promptText"></span></div>
+  <div id="keys" class="panel"><kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · <kbd>E</kbd> action · <kbd>B</kbd> bark · <kbd>F</kbd> sniff · <kbd>Z</kbd> lie / sleep · drag to look · <kbd>Esc</kbd> pause</div>
+  <div id="toasts"></div>
+  <div id="bubbles"></div>
+  <div id="arrow"></div>
+  <div id="vignette"></div>
+  <div id="sleep">Zzz</div>
+  <div id="debug" class="panel"></div>
+</div>
+
+<div id="touch">
+  <div id="stickBase"><div id="stickKnob"></div></div>
+  <div id="btns">
+    <div class="tbtn" id="bAct" data-act="act"><span id="actLabel">Sit</span></div>
+    <div class="tbtn" id="bJump" data-act="jump"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 4l7 8h-4v7H9v-7H5z"/></svg>Jump</div>
+    <div class="tbtn" id="bBark" data-act="bark"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 9h4l5-4v14l-5-4H4zM16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.6" fill-rule="evenodd"/></svg>Bark</div>
+    <div class="tbtn" id="bSniff" data-act="sniff"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 3c-3 0-5 2.5-5 6 0 2 .7 3.2 1.4 4.2.6.9.6 2 .6 3.3 0 1.9 1.3 3.5 3 3.5s3-1.6 3-3.5c0-1.3 0-2.4.6-3.3C16.3 12.2 17 11 17 9c0-3.5-2-6-5-6zm-1.6 13a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm3.2 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg>Sniff</div>
+    <div class="tbtn" id="bLie" data-act="lie">Lie<br>Sleep</div>
+  </div>
+  <div class="tbtn" id="bPause" data-act="pause"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></div>
+</div>
+
+<div id="start" class="screen">
+  <div class="card">
+    <h1>Gully Dog<small>a day in the life of a street dog in India</small></h1>
+    <p>You are <b>Bhura</b>, the brown Indie dog everyone in the mohalla knows. Autos honk, cows sit in the middle of the road, the chai wallah has biscuits and the halwai has samosas he really should not leave on the counter.</p>
+    <p>Keep your belly full and your water up, nap in the shade when the sun gets fierce, make friends (dog and human), and stay out from under the buses.</p>
+    <div class="btnrow"><button class="btn" id="playBtn">Play</button><button class="btn alt" id="helpBtn">How to play</button></div>
+    <div class="toggles"><button id="tSound" aria-pressed="true">Sound</button><button id="tMusic" aria-pressed="true">Tanpura drone</button><button id="tQuality">Quality: auto</button></div>
+  </div>
+</div>
+
+<div id="help" class="screen">
+  <div class="card">
+    <h2>How to play</h2>
+    <div class="ctrls">
+      <kbd>WASD / arrows</kbd><span>Walk (push the stick all the way to trot)</span>
+      <kbd>Shift</kbd><span>Run — costs energy. On a phone, push the stick to the rim and hold.</span>
+      <kbd>Space</kbd><span>Jump onto benches, charpais, the clock-tower island</span>
+      <kbd>E</kbd><span>Do the thing on the prompt: eat, drink, grab, rummage, mark, greet, sit and beg, drop</span>
+      <kbd>B</kbd><span>Bark — scatters pigeons, startles people, moves cows (eventually)</span>
+      <kbd>F</kbd><span>Sniff — scent trails lead to food, water and today's task</span>
+      <kbd>Z</kbd><span>Lie down; press again to sleep (time speeds up). Sleep after 9:30 pm to end the day.</span>
+      <kbd>Drag / right stick</kbd><span>Look around · wheel or pinch to zoom</span>
+      <kbd>T · M · Esc</kbd><span>Tasks · minimap · pause</span>
+    </div>
+    <p>Sit in front of someone kind and they may pet you or share a snack. Grumpy people shoo. The other street dogs guard their patches — greet them calmly, keep them company, share food, and they become friends who follow you around. Aunty in Pump Wala Chowk feeds the dogs at 7:30 am and 6:30 pm.</p>
+    <div class="btnrow"><button class="btn" id="helpClose">Got it</button></div>
+  </div>
+</div>
+
+<div id="pause" class="screen">
+  <div class="card">
+    <h2>Paused</h2>
+    <div class="btnrow"><button class="btn" id="resumeBtn">Resume</button><button class="btn alt" id="pHelp">How to play</button></div>
+    <div class="toggles"><button id="pSound" aria-pressed="true">Sound</button><button id="pMusic" aria-pressed="true">Tanpura drone</button><button id="pQuality">Quality: auto</button><button id="pInvert" aria-pressed="false">Invert look</button></div>
+    <p style="margin-top:18px">Your progress saves itself every few seconds.</p>
+    <div class="btnrow"><button class="btn alt" id="newGame">Start over from day one</button></div>
+  </div>
+</div>
+
+<div id="summary" class="screen">
+  <div class="card">
+    <h2 id="sumTitle">Good night</h2>
+    <div id="sumBody"></div>
+    <div class="btnrow"><button class="btn" id="sumNext">Wake up to a new day</button></div>
+  </div>
+</div>
+
+<div id="loading"><div style="text-align:center"><div class="paw">🐾</div><div id="loadMsg">Waking up the mohalla…</div><div id="err"></div></div></div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
