@@ -181,6 +181,17 @@ function radial(g, r, inner, outer) {
   g.fillRect(x, y, w, h);
 }
 
+/** Does this 2D context really apply filters? (Assigning one on old Safari just sets a JS property.) */
+function canFilter(g) {
+  try {
+    if (!('filter' in Object.getPrototypeOf(g))) return false;
+    g.filter = 'blur(1px)';
+    const ok = g.filter === 'blur(1px)';
+    g.filter = 'none';
+    return ok;
+  } catch (e) { return false; }
+}
+
 export function paintAtlas(layout, doc) {
   const canvas = doc.createElement('canvas');
   canvas.width = canvas.height = layout.size;
@@ -209,19 +220,32 @@ export function paintAtlas(layout, doc) {
   {
     const [x, y, w] = P['decal:puddle'];
     g.save();
-    g.translate(x + w / 2, y + w / 2);
     g.fillStyle = 'rgba(255,255,255,1)';
-    g.beginPath();
-    for (let k = 0; k <= 24; k++) {
-      const a = (k / 24) * Math.PI * 2;
-      const rr = (w / 2 - 6) * (0.78 + 0.22 * Math.sin(a * 3 + 1) * Math.cos(a * 2));
-      if (k === 0) g.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
-      else g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    const blob = (ox) => {
+      g.beginPath();
+      for (let k = 0; k <= 24; k++) {
+        const a = (k / 24) * Math.PI * 2;
+        const rr = (w / 2 - 6) * (0.78 + 0.22 * Math.sin(a * 3 + 1) * Math.cos(a * 2));
+        const px = x + w / 2 + ox + Math.cos(a) * rr, py = y + w / 2 + Math.sin(a) * rr;
+        if (k === 0) g.moveTo(px, py); else g.lineTo(px, py);
+      }
+      g.closePath();
+    };
+    if (canFilter(g)) {
+      blob(0);
+      g.filter = 'blur(2px)';
+      g.fill();
+      g.filter = 'none';
+    } else {
+      // Safari before 18 has no canvas filters, but it does blur shadows: draw the
+      // puddle far off the canvas and let only its shadow land here, softened
+      const OFF = 4 * layout.size;
+      blob(-OFF);
+      g.shadowColor = 'rgba(255,255,255,1)';
+      g.shadowBlur = 4;
+      g.shadowOffsetX = OFF;
+      g.fill();
     }
-    g.closePath();
-    g.filter = 'blur(2px)';
-    g.fill();
-    g.filter = 'none';
     g.restore();
   }
   {

@@ -50,6 +50,9 @@ canvas#stage { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; he
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
 #hud.hidden, .hidden { display: none !important; }
 .panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+/* phones: re-blurring the moving 3D view under every panel each frame costs frames
+   on iPhones; a little more opacity does the same job for free */
+body.touch .panel { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(28, 20, 14, 0.84); }
 
 #needs { position: absolute; left: calc(12px + var(--safe-l)); top: calc(12px + var(--safe-t)); padding: 8px 10px; display: grid; gap: 5px; min-width: 152px; }
 .need { display: grid; grid-template-columns: 18px 1fr; align-items: center; gap: 7px; }
@@ -81,7 +84,7 @@ canvas#stage { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; he
 #taskList .tick { grid-row: span 2; color: var(--marigold); font-weight: 700; }
 #taskList .tt { font-weight: 700; }
 #taskList .td { color: var(--ink-dim); font-size: 11.5px; }
-#taskList .td b { color: var(--sky); font-weight: 700; }
+#taskList .tt b { color: var(--sky); font-weight: 700; font-size: 11.5px; }
 #taskList li.done { opacity: 0.55; }
 #taskList li.done .tick { color: var(--leaf); }
 #tasks.collapsed #taskList { display: none; }
@@ -130,17 +133,60 @@ body.touch #keys, body.touch #prompt { display: none !important; }
 #bLie { right: 160px; bottom: 32px; width: 50px; height: 50px; font-size: 10px; }
 #bPause { position: absolute; pointer-events: auto; right: calc(176px + var(--safe-r)); top: calc(14px + var(--safe-t)); width: 40px; height: 40px; }
 body:not(.touch) #bPause { display: none; }
-@media (max-width: 720px), (max-height: 480px) {
-  #tasks { width: 196px; padding: 7px 9px; }
+body:not(.touch) .touch-only, body.touch .keys-only { display: none; }
+
+/* ---------------------------------------------------------------- phones
+   A phone held upright is 320-430 px wide: the needs, the clock and the minimap
+   have to share the top row, the pause button moves under the needs, and the task
+   list keeps its titles and counts but drops the descriptions. */
+@media (max-width: 600px) {
+  #needs { min-width: 112px; padding: 6px 8px; gap: 4px; }
+  .need { grid-template-columns: 14px 1fr; gap: 5px; }
+  .need svg { width: 14px; height: 14px; }
+  .need .bar { height: 6px; }
+  #clockBox { display: inline-grid; grid-template-columns: auto auto; column-gap: 6px; row-gap: 0; padding: 4px 10px 4px; justify-items: center; }
+  #time { grid-column: 1 / -1; font-size: 17px; line-height: 1.1; }
+  #day, #weather { font-size: 11px; }
+  #zone { font-size: 15px; }
+  #minimapWrap { width: 100px; height: 100px; }
+  #minimap { width: 94px; height: 94px; }
+  #tasks { width: 168px; padding: 7px 9px 6px; }
+  #tasks h3 { font-size: 14px; }
   #taskList .td { display: none; }
-  #minimapWrap { width: 116px; height: 116px; }
-  #minimap { width: 110px; height: 110px; }
-  #bPause { right: calc(136px + var(--safe-r)); }
-  #needs { min-width: 120px; padding: 6px 8px; gap: 4px; }
-  #time { font-size: 18px; }
-  #toasts { top: calc(84px + var(--safe-t)); }
+  #bPause { right: auto; left: calc(12px + var(--safe-l)); top: calc(118px + var(--safe-t)); width: 38px; height: 38px; }
 }
-@media (max-height: 480px) { #tasks.auto-collapse #taskList { display: none; } }
+@media (max-width: 360px) {
+  #needs { min-width: 92px; }
+  #minimapWrap { width: 84px; height: 84px; }
+  #minimap { width: 78px; height: 78px; }
+  #tasks { width: 150px; }
+  #rankWrap { display: none; } /* the rank still arrives in a toast, and in the day's summary */
+  #zone { font-size: 13px; }
+}
+/* A phone on its side is under 500 px tall: the task list moves left, under the
+   needs, out of the way of the buttons; the minimap shrinks and the pause button
+   sits beside it. */
+@media (max-height: 500px) {
+  #needs { min-width: 112px; padding: 6px 8px; gap: 4px; }
+  .need { grid-template-columns: 14px 1fr; gap: 5px; }
+  .need svg { width: 14px; height: 14px; }
+  .need .bar { height: 6px; }
+  #minimapWrap { width: 100px; height: 100px; }
+  #minimap { width: 94px; height: 94px; }
+  #tasks { position: fixed; left: calc(12px + var(--safe-l)); top: calc(118px + var(--safe-t)); width: 176px; padding: 7px 9px 6px; }
+  #tasks h3 { font-size: 14px; }
+  #taskList .td { display: none; }
+  #bPause { left: auto; right: calc(122px + var(--safe-r)); top: calc(14px + var(--safe-t)); width: 38px; height: 38px; }
+  #clockBox { display: inline-flex; padding: 5px 14px 4px; }
+  #time { font-size: 20px; }
+  #day, #weather { font-size: 12px; }
+  #toasts { top: calc(76px + var(--safe-t)); }
+}
+/* the shortest phones on their side (an SE is 320 px tall): the buttons shrink a
+   little so they clear the minimap */
+@media (max-height: 360px) {
+  #btns { transform: scale(0.8); transform-origin: 100% 100%; }
+}
 
 /* ------------------------------------------------------------- screens */
 .screen { position: fixed; inset: 0; z-index: 5; display: none; place-items: center; background: radial-gradient(ellipse at 50% 30%, rgba(40,26,14,0.55), rgba(10,7,4,0.9)); padding: 16px; overflow-y: auto; touch-action: pan-y; }
@@ -155,7 +201,8 @@ body:not(.touch) #bPause { display: none; }
 .btn.alt { background: rgba(255,255,255,0.1); color: var(--ink); box-shadow: 0 4px 0 rgba(0,0,0,0.4); }
 .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #a2470f; }
 .ctrls { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 13.5px; color: var(--ink-dim); margin: 10px 0 4px; }
-.ctrls kbd { font: 700 12px var(--ui); background: rgba(255,255,255,0.12); color: var(--ink); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+.ctrls kbd { font: 700 12px var(--ui); background: rgba(255,255,255,0.12); color: var(--ink); border-radius: 5px; padding: 1px 6px; white-space: nowrap; align-self: start; justify-self: start; }
+@media (max-width: 480px) { .ctrls { grid-template-columns: 1fr; row-gap: 2px; } .ctrls kbd { margin-top: 8px; } }
 .toggles { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .toggles button { font: 600 13px var(--ui); color: var(--ink); background: rgba(255,255,255,0.08); border: 1px solid var(--edge); border-radius: 10px; padding: 7px 11px; cursor: pointer; }
 .toggles button[aria-pressed="true"] { border-color: var(--marigold); color: #fff3c4; }
@@ -186,11 +233,11 @@ body:not(.touch) #bPause { display: none; }
   <div id="top">
     <div id="clockBox" class="panel"><span id="time">6:30 AM</span><span id="day">Day 1</span><span id="weather"></span></div>
     <div id="zone"></div>
-    <div id="credBox"><span id="rank"></span> · <b id="credn">0</b> cred</div>
+    <div id="credBox"><span id="rankWrap"><span id="rank"></span> · </span><b id="credn">0</b> cred</div>
   </div>
   <div id="right">
     <div id="minimapWrap"><canvas id="minimap" width="300" height="300"></canvas></div>
-    <div id="tasks" class="panel"><h3 id="tasksHead">Today <span>T to hide</span></h3><ul id="taskList"></ul></div>
+    <div id="tasks" class="panel"><h3 id="tasksHead">Today <span class="keys-only">T to hide</span><span class="touch-only">tap to fold</span></h3><ul id="taskList"></ul></div>
   </div>
   <div id="prompt" class="panel hidden"><kbd id="promptKey">E</kbd><span id="promptText"></span></div>
   <div id="keys" class="panel"><kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · <kbd>E</kbd> action · <kbd>B</kbd> bark · <kbd>F</kbd> sniff · <kbd>Z</kbd> lie / sleep · drag to look · <kbd>Esc</kbd> pause</div>
@@ -227,7 +274,17 @@ body:not(.touch) #bPause { display: none; }
 <div id="help" class="screen">
   <div class="card">
     <h2>How to play</h2>
-    <div class="ctrls">
+    <div class="ctrls touch-only">
+      <kbd>Left thumb</kbd><span>Touch anywhere on the left and drag: that is the stick. Push a little to walk, further to trot; to one side to turn, gently or sharply. Hold it at the rim to run (costs energy).</span>
+      <kbd>Right thumb</kbd><span>Drag on the right to look around; pinch with two fingers to zoom.</span>
+      <kbd>Big button</kbd><span>Does what it says: eat, drink, grab, rummage, mark, greet, sit and beg, drop, share</span>
+      <kbd>Jump</kbd><span>Onto benches, charpais, the clock-tower island</span>
+      <kbd>Bark</kbd><span>Scatters pigeons, startles people, moves cows (eventually)</span>
+      <kbd>Sniff</kbd><span>Scent trails to food, water and today's task</span>
+      <kbd>Lie / Sleep</kbd><span>Lie down; tap again to sleep (time speeds up). Sleep after 9:30 pm to end the day.</span>
+      <kbd>Today</kbd><span>Tap the task list to fold it away · <b>II</b> pauses</span>
+    </div>
+    <div class="ctrls keys-only">
       <kbd>WASD / arrows</kbd><span>Walk (push the stick all the way to trot)</span>
       <kbd>Shift</kbd><span>Run — costs energy. On a phone, push the stick to the rim and hold.</span>
       <kbd>Space</kbd><span>Jump onto benches, charpais, the clock-tower island</span>
@@ -238,7 +295,7 @@ body:not(.touch) #bPause { display: none; }
       <kbd>Drag / right stick</kbd><span>Look around · wheel or pinch to zoom</span>
       <kbd>T · M · Esc</kbd><span>Tasks · minimap · pause</span>
     </div>
-    <p>Sit in front of someone kind and they may pet you or share a snack. Grumpy people shoo. The other street dogs guard their patches — greet them calmly, keep them company, share food, and they become friends who follow you around. On a full belly, <kbd>E</kbd> picks food up instead of eating it, so you can carry it to someone. Aunty in Pump Wala Chowk feeds the dogs at 7:30 am and 6:30 pm.</p>
+    <p>Sit in front of someone kind and they may pet you or share a snack. Grumpy people shoo. The other street dogs guard their patches — greet them calmly, keep them company, share food, and they become friends who follow you around. On a full belly, the action button picks food up instead of eating it, so you can carry it to someone. Aunty in Pump Wala Chowk feeds the dogs at 7:30 am and 6:30 pm.</p>
     <div class="btnrow"><button class="btn" id="helpClose">Got it</button></div>
   </div>
 </div>

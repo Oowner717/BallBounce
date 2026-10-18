@@ -67,6 +67,13 @@ export class Input {
     for (const t of ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture']) c.addEventListener(t, (e) => this.up(e));
     c.addEventListener('wheel', (e) => { e.preventDefault(); this.zoom += Math.sign(e.deltaY); }, { passive: false });
     c.addEventListener('contextmenu', (e) => e.preventDefault());
+    // iOS Safari zooms the whole page on a pinch whatever the viewport tag says,
+    // and pulls to refresh on a drag down. Both belong to the game here; the menus
+    // (the .screen overlays) may still scroll.
+    for (const t of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+    document.addEventListener('touchmove', (e) => {
+      if (!(e.target && e.target.closest && e.target.closest('.screen'))) e.preventDefault();
+    }, { passive: false });
 
     // touch buttons: anything with data-act fires that edge; data-hold holds it
     if (this.ui && this.ui.buttons) {

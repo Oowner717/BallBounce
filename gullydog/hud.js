@@ -213,8 +213,9 @@ export class Hud {
       for (const t of S.tasks) {
         const li = document.createElement('li');
         li.className = t.done ? 'done' : '';
+        // progress rides on the title line, so it stays when a phone hides the descriptions
         const cnt = t.def.count > 1 && !t.done ? ` <b>${t.def.unit === 'min' ? Math.round(t.progress) + '/' + t.def.count + ' min' : t.progress + '/' + t.def.count}</b>` : '';
-        li.innerHTML = `<span class="tick">${t.done ? '✓' : '○'}</span><span class="tt">${esc(t.def.title)}</span><span class="td">${esc(t.def.desc)}${cnt}</span>`;
+        li.innerHTML = `<span class="tick">${t.done ? '✓' : '○'}</span><span class="tt">${esc(t.def.title)}${cnt}</span><span class="td">${esc(t.def.desc)}</span>`;
         li.title = t.def.hint;
         li.dataset.hint = t.def.hint;
         this.el.taskList.appendChild(li);

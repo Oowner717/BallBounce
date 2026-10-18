@@ -36,9 +36,11 @@ without it.
 
 **https://oowner717.github.io/BallBounce/gullydog/**
 
-It runs on phones, tablets and desktops in any browser with WebGL2. On a phone, open
-that address in Safari or Chrome and **Add to Home Screen**: it installs as an app
-and plays offline from then on.
+It runs on phones, tablets and desktops in any browser with WebGL2, which on an
+iPhone or iPad means Safari on iOS 15 or later. On a phone, open that address in
+Safari and **Share → Add to Home Screen**: it installs as an app, full screen, and
+plays offline from then on. Phones get their own layout in both orientations, from
+a 320 px iPhone SE up.
 
 The game saves itself every ten seconds and at the end of each day, in this
 browser only. **Start over from day one** in the pause menu begins again.
@@ -145,7 +147,7 @@ prefix (`orbs-cache-`, `gullydog-cache-`), and Gully Dog's only ever reads its o
 The first line of real code in `sw.js` is:
 
 ```js
-const CACHE_VERSION = 'gullydog-v3';
+const CACHE_VERSION = 'gullydog-v4';
 ```
 
 Bump it whenever anything here changes. Browsers notice a new service worker by

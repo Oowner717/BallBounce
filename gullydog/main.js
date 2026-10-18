@@ -69,13 +69,16 @@ const rigs = {};
 const anims = new WeakMap();
 const animOf = (o) => { let a = anims.get(o); if (!a) { a = newAnim(); a.t = Math.random() * 10; anims.set(o, a); } return a; };
 let state = 'loading'; // loading | start | play | pause | summary
+let glLost = false;
 let lastSave = 0;
 
 function setLoading(msg) { const el = document.getElementById('loadMsg'); if (el) el.textContent = msg; }
 function fail(err) {
   console.error(err);
   const el = document.getElementById('err');
-  if (el) el.textContent = 'Something went wrong: ' + (err && err.message ? err.message : String(err)) + (String(err).includes('WebGL') ? ' — this game needs WebGL 2 (any recent browser).' : '');
+  if (el) el.textContent = String(err).includes('WebGL')
+    ? 'Gully Dog needs WebGL 2: Safari on iOS 15 or later, or any recent Chrome, Firefox or Edge.'
+    : 'Something went wrong: ' + (err && err.message ? err.message : String(err));
   document.title = 'error';
 }
 window.addEventListener('error', (e) => { if (state === 'loading') fail(e.error || e.message); });
@@ -95,6 +98,11 @@ async function boot() {
   city = buildCity(W, layout);
   models = buildAllModels();
   R = new Renderer(canvas, { shadowSize: profile.shadowSize, antialias: profile.antialias });
+  // iOS takes the GPU back from a tab left in the background. Ask for it to be
+  // restored, and when it is, reload into the day as saved: rebuilding every buffer
+  // in place is not worth the code for something that happens this rarely.
+  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); glLost = true; persist(); });
+  canvas.addEventListener('webglcontextrestored', () => { persist(); location.reload(); });
   R.setTextures(painted.canvas, noise);
   R.setCity(city);
   for (const [k, m] of Object.entries(models)) { R.addModel(k, m); rigs[k] = new Rig(m); }
@@ -201,6 +209,8 @@ function wireUi() {
     }
   });
   window.addEventListener('pagehide', persist);
+  // sound stopped by iOS (a call, Siri, the screen locking) comes back on the next tap in play
+  document.addEventListener('pointerup', () => { if (state === 'play' && audio) audio.resume(); }, { passive: true });
   // the first touch anywhere switches to touch controls
   window.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'touch' && !document.body.classList.contains('touch')) { document.body.classList.add('touch'); hud.touch = true; }
@@ -372,7 +382,7 @@ function loop(now) {
   updateCamera(rawDt, state === 'play' ? inp : IDLE_INPUT);
   try {
     const t1 = performance.now();
-    drawScene(Q.has('fixedstep') ? 1 / 30 : rawDt, now / 1000);
+    if (!glLost) drawScene(Q.has('fixedstep') ? 1 / 30 : rawDt, now / 1000);
     timing.draw = lerp(timing.draw, performance.now() - t1, 0.1);
   } catch (e) {
     console.error(e);

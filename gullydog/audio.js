@@ -26,10 +26,19 @@ export class AudioEngine {
 
   /** Must be called from a user gesture (iOS will not start audio otherwise). */
   start() {
-    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    if (this.ctx) { this.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     const ctx = this.ctx = new AC({ latencyHint: 'interactive' });
+    // iOS: a context only runs once something has been played inside the tap that
+    // made it, and older versions need that to be a real buffer, even a silent one
+    try {
+      if (ctx.state !== 'running') ctx.resume();
+      const kick = ctx.createBufferSource();
+      kick.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+      kick.connect(ctx.destination);
+      kick.start(0);
+    } catch (e) { /* play on without sound */ }
     this.master = ctx.createGain();
     this.master.gain.value = this.muted ? 0 : 0.85;
     const comp = ctx.createDynamicsCompressor();
@@ -57,7 +66,8 @@ export class AudioEngine {
   setMuted(m) { this.muted = m; if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.85, this.ctx.currentTime, 0.05); }
   setMusic(on) { this.music = on; if (this.mus) this.mus.gain.setTargetAtTime(on ? 0.32 : 0, this.ctx.currentTime, 0.2); }
   suspend() { if (this.ctx && this.ctx.state === 'running') this.ctx.suspend(); }
-  resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); }
+  // iOS parks the context as 'interrupted' after a call or Siri, not 'suspended'
+  resume() { if (this.ctx && this.ctx.state !== 'running' && this.ctx.state !== 'closed') this.ctx.resume(); }
 
   makeNoise(sec, kind) {
     const ctx = this.ctx;

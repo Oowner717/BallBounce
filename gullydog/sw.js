@@ -36,7 +36,7 @@
  */
 
 // BUMP THIS ON EVERY DEPLOY — the browser byte-diffs this file to detect updates.
-const CACHE_VERSION = 'gullydog-v3';
+const CACHE_VERSION = 'gullydog-v4';
 
 // How long a navigation may wait for the network before the cached shell is painted
 // instead. Only ever armed when a cached shell actually exists.
