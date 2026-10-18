@@ -156,9 +156,18 @@ function revalidate(request) {
     .catch(function () {});
 }
 
+/**
+ * Look in OUR cache only. caches.match() searches every cache on the origin, and Orbs
+ * shares this origin: an entry it once stored for one of our URLs must never answer here.
+ */
+async function ownMatch(request) {
+  const cache = await caches.open(CACHE_NAME);
+  return (await cache.match(request)) || null;
+}
+
 async function cachedShell() {
   try {
-    return (await caches.match('./index.html')) || (await caches.match('./')) || null;
+    return (await ownMatch('./index.html')) || (await ownMatch('./')) || null;
   } catch (err) {
     return null;
   }
@@ -213,7 +222,7 @@ async function handleNavigate(request, event) {
 async function handleAsset(request, event) {
   let cached = null;
   try {
-    cached = await caches.match(request);
+    cached = await ownMatch(request);
   } catch (err) {}
 
   if (cached) {

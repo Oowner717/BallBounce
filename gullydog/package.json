@@ -1,0 +1,13 @@
+{
+  "name": "gullydog",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Gully Dog - a dependency-free 3D street-dog simulator (vanilla JS + WebGL2) shipped as an installable offline PWA.",
+  "scripts": {
+    "test": "node test.js",
+    "serve": "python3 -m http.server 8080",
+    "icons": "node tools/make-icons.mjs"
+  },
+  "license": "MIT"
+}

@@ -31,7 +31,7 @@
  */
 
 // BUMP THIS ON EVERY DEPLOY — the browser byte-diffs this file to detect updates.
-const CACHE_VERSION = 'orbs-v12';
+const CACHE_VERSION = 'orbs-v13';
 
 // How long a navigation may wait for the network before the cached shell is painted
 // instead. Only ever armed when a cached shell actually exists.
@@ -207,6 +207,8 @@ async function handleAsset(request, event) {
   return OFFLINE_RESPONSE();
 }
 
+const GULLYDOG_PATH = new URL('./gullydog/', self.location.href).pathname;
+
 self.addEventListener('fetch', function (event) {
   const request = event.request;
 
@@ -221,6 +223,11 @@ self.addEventListener('fetch', function (event) {
     return;
   }
   if (url.origin !== self.location.origin) return;
+
+  // ./gullydog/ is a second app on this origin with a worker of its own, but this scope
+  // contains it, so its first visit arrives here. Pass it through: answering a slow
+  // navigation with the Orbs shell would open Orbs at Gully Dog's address.
+  if (url.pathname.startsWith(GULLYDOG_PATH)) return;
 
   // Never serve the worker's own script from the cache. The browser byte-diffs this file to
   // decide whether a new version exists, and the page reads CACHE_VERSION out of it to tell

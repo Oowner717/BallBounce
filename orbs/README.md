@@ -121,7 +121,7 @@ thing without a CLI.
 The first line of real code in `sw.js` is:
 
 ```js
-const CACHE_VERSION = 'orbs-v12';
+const CACHE_VERSION = 'orbs-v13';
 ```
 
 **Bump it on every deploy.** The browser decides a service worker has changed by

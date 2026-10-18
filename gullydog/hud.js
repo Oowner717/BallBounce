@@ -195,7 +195,8 @@ export class Hud {
     if (this.el.time.textContent !== tStr) this.el.time.textContent = tStr;
     const dStr = 'Day ' + S.clock.day;
     if (this.el.day.textContent !== dStr) this.el.day.textContent = dStr;
-    const wStr = WEATHER_LABEL[S.weather] || '';
+    // a clear sky is only "sunny" while the sun is up
+    const wStr = S.weather === 'clear' && (S.clock.hours < 6.4 || S.clock.hours > 18.6) ? 'Clear night' : WEATHER_LABEL[S.weather] || '';
     if (this.el.weather.textContent !== wStr) this.el.weather.textContent = wStr;
     // zone name: fades in when it changes
     if (d.zone !== this.zoneShown) { this.zoneShown = d.zone; this.el.zone.textContent = d.zone; this.el.zone.classList.remove('show'); void this.el.zone.offsetWidth; this.el.zone.classList.add('show'); }

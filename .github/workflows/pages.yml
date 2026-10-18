@@ -1,10 +1,12 @@
-name: Deploy Orbs to GitHub Pages
+name: Deploy Orbs and Gully Dog to GitHub Pages
 
-# Publishes ./orbs as the site ROOT, so the app lives at
-#   https://<owner>.github.io/<repo>/
-# rather than at /orbs/. index.html, sw.js and manifest.webmanifest all use
-# relative paths ('./'), so the app works at either location — but serving it at
-# the root keeps the Home Screen URL short.
+# Publishes ./orbs as the site ROOT and ./gullydog beneath it, so the apps live at
+#   https://<owner>.github.io/<repo>/            Orbs
+#   https://<owner>.github.io/<repo>/gullydog/   Gully Dog
+# Both use relative paths ('./') throughout, so either works at any location;
+# serving Orbs at the root keeps its Home Screen URL short. The two share an
+# origin, so each service worker namespaces its caches, Gully Dog's reads only its
+# own, and Orbs' passes ./gullydog/ through to Gully Dog's worker.
 
 on:
   push:
@@ -37,8 +39,11 @@ jobs:
         with:
           node-version: '22'
       # No install step and no build step: plain node + node:assert.
-      - name: node test.js
+      - name: Orbs — node test.js
         working-directory: orbs
+        run: node test.js
+      - name: Gully Dog — node test.js
+        working-directory: gullydog
         run: node test.js
 
   deploy:
@@ -64,9 +69,19 @@ jobs:
         with:
           enablement: true
 
+      # One site, two apps. Copy rather than link so the artifact is plain files;
+      # nothing else in the repo (tests, tools, docs) needs to be published, but
+      # leaving them in costs nothing and keeps this step trivial.
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp -R orbs/. _site/
+          rm -rf _site/gullydog
+          cp -R gullydog _site/gullydog
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: orbs
+          path: _site
 
       - id: deployment
         uses: actions/deploy-pages@v4
