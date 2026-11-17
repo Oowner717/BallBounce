@@ -17,6 +17,7 @@ import { pedPath, nearestPedNode, pedWalkable, clearLine, baseHeightAt, facadePo
 import { pick, pickWeighted, rand, clamp, lerp, dist2, wrapAngle, approachAngle, hex, angleDiff } from './util.js';
 import { emit, say, spawnItem, tossToDog, groundAt } from './simcore.js';
 import { SPEECH, SKIN_TONES, HAIR_COLORS, CLOTHES, SHOP_TYPES } from './data.js';
+import { pedMustWait, pedHurry } from './rail.js';
 
 const nearList = [];
 
@@ -277,6 +278,7 @@ export function step(S, dt) {
         if (p.timer <= 0) { p.waitBus = false; planNext(S, p); }
         break;
       case 'flee': flee(S, p, dt); break;
+      case 'gate': atGate(S, p, dt); break;
       default: break;
     }
     if (p.role === 'special') p.y = groundAt(S, p.x, p.z, p.y + 0.3);
@@ -308,6 +310,8 @@ function walk(S, p, dt) {
   else if ((p.noProg += dt) > 5) { p.noProg = 0; repath(S, p); return; }
   if (p.via) { steer(S, p, dx / dist, dz / dist, p.walkSpeed, dt, false); return; }
   const crossingNow = p.crossing;
+  // the railway crossing: stop at the boom while it is down
+  if (!crossingNow && pedMustWait(S, p, tx, tz)) { p.state = 'gate'; p.waitT = 0; p.speed = 0; return; }
   // Close is close enough when someone else is already standing on the spot (a
   // busy shop door): after two seconds of hovering without getting nearer, arrive.
   if (dist < (crossingNow ? 0.5 : p.noProg > 2 ? 1.4 : 0.85)) {
@@ -324,7 +328,19 @@ function walk(S, p, dt) {
     if (kind === 'zebra' || kind === 'jay') { p.state = 'curb'; p.waitT = 0; p.crossKind = kind; }
     return;
   }
-  steer(S, p, dx / dist, dz / dist, p.walkSpeed * (crossingNow ? 1.3 : 1), dt, crossingNow);
+  steer(S, p, dx / dist, dz / dist, p.walkSpeed * (crossingNow ? 1.3 : pedHurry(S, p) ? 1.8 : 1), dt, crossingNow);
+}
+
+/** At the railway gate: stand at the boom, grumble, go when it lifts (or when they give up). */
+function atGate(S, p, dt) {
+  p.speed = 0; p.vx *= 0.8; p.vz *= 0.8;
+  p.mode = 'stand';
+  p.waitT += dt;
+  const tx = p.segX, tz = p.segZ;
+  faceToward(p, tx, tz, dt, 4);
+  if (!pedMustWait(S, p, tx, tz)) { p.state = 'walk'; p.noProg = 0; p.bestD = Infinity; return; }
+  if (p.waitT > 120) { p.state = 'walk'; p.noProg = 0; planNext(S, p); return; }
+  if (p.bubbleCD <= 0 && near2(S, p, 18)) { p.bubbleCD = rand(S.rng, 9, 18); if (S.rng() < 0.35) say(S, p, SPEECH.waiting); }
 }
 
 /**

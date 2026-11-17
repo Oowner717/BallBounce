@@ -73,6 +73,7 @@ const PRECACHE = [
   './gfx.js',
   './input.js',
   './controls.js',
+  './rail.js',
   './audio.js',
   './hud.js',
   './manifest.webmanifest',

@@ -509,6 +509,11 @@ function drawScene(dt, time) {
     const o = b.alloc();
     b.colors(o, p.colors[0], p.colors[1], p.colors[2], p.colors[3]);
     rig.write(b.data, o + 16, p.x, p.y || 0, p.z, p.yaw, p.scale);
+    if (p.mode === 'flag') {
+      // the gateman's green flag, in his raised hand
+      rig.pointOn(6, -0.205, 0.66, 0.05, flagPt);
+      itemInstance('flag', flagPt[0], flagPt[1] - 0.12, flagPt[2], p.yaw + Math.PI / 2);
+    }
     if (!shadowsOn && near(p.x, p.z, 35)) R.decal(p.x, (p.y || 0) + 0.02, p.z, 0.32 * p.scale, 0, layout.uv['decal:soft'], 0, 0, 0, 0.35, 0);
   }
 
@@ -539,6 +544,7 @@ function drawScene(dt, time) {
       animateHuman(ra, { speed: 0, mode: rd.pose, pedal: rd.pose === 'pedal' ? v.v : 0 }, dt);
       const hr = rigs[rd.kind] || rigs.man;
       poseHuman(hr, ra, 0, rd.pose);
+      if (v.ducking) { hr.add(1, 0, 0.75, 0); hr.add(2, 0, 0.35, 0); } // heads down under the boom
       const hb = R.batch(PEOPLE_KINDS.includes(rd.kind) ? rd.kind : 'man');
       const ho = hb.alloc();
       hb.colors(ho, rd.colors[0], rd.colors[1], rd.colors[2], rd.colors[3]);
@@ -566,6 +572,9 @@ function drawScene(dt, time) {
     b.colors(o, c0, name === 'auto' ? AUTO_TOP : [1, 1, 1], [0.15, 0.15, 0.15], [1, 1, 1]);
     rig.write(b.data, o + 16, p.x, groundY(p.x, p.z), p.z, p.yaw, 1);
   }
+
+  /* the railway: trains and everyone riding them, the booms, the warning lamps */
+  drawRail(dt, time, env, headlights);
 
   /* cows and goats */
   for (const c of S.cows) {
@@ -659,9 +668,12 @@ function drawScene(dt, time) {
   headlights.sort((a, b) => dist2(a.x, a.z, d.x, d.z) - dist2(b.x, b.z, d.x, d.z));
   for (let i = 0; i < Math.min(2, headlights.length); i++) {
     const v = headlights[i];
+    if (v.train) { L.push({ x: v.x + v.dirx * 9, y: 2.5, z: v.z, r: 22, color: [1, 0.96, 0.85], i: 3.2 * night }); continue; }
     L.push({ x: v.x + v.dirx * (v.len / 2 + 3), y: 1.0, z: v.z + v.dirz * (v.len / 2 + 3), r: 9, color: [1, 0.95, 0.8], i: 2.2 * night });
   }
+  if (railLamp) L.push(railLamp);
   for (const v of headlights) {
+    if (v.train) continue;
     const hx = v.x + v.dirx * (v.len / 2 + 0.05), hz = v.z + v.dirz * (v.len / 2 + 0.05);
     R.particle(hx, 0.85, hz, 0.9, 0.6 * night, 0.58 * night, 0.45 * night, 1, true);
   }
@@ -690,6 +702,105 @@ const PARKED = {
 const AUTO_TOP = hex('#f5c518');
 
 function groundY(x, z) { return groundAt(S, x, z, 0.5); }
+
+/* ---------------------------------------------------------------- railway */
+
+// coach and engine paint: [body, bands, roof]
+const COACH_PAINT = [
+  ['#7d2a22', '#e8b43a', '#5b5550'], // maroon with a yellow band
+  ['#2d4f8e', '#ece4c8', '#686868'], // blue with cream bands
+  ['#a3332a', '#a3a8ad', '#77797b'], // red and grey
+].map((c) => c.map(hex));
+const LOCO_PAINT = [
+  ['#c8742a', '#efe0b0', '#3a3a3a'],
+  ['#2b4d8c', '#f2f2f2', '#3a3a3a'],
+  ['#8c2b23', '#ead9a8', '#3a3a3a'],
+].map((c) => c.map(hex));
+const BOOM_C = [1, 1, 1];
+let railLamp = null;
+const flagPt = [0, 0, 0];
+
+function drawRail(dt, time, env, headlights) {
+  const X = W.special.crossing;
+  railLamp = null;
+  if (!X) return;
+  const Rl = S.rail, d = S.dog;
+  const near = (x, z, r) => dist2(x, z, cam.x, cam.z) < r * r;
+  const vis = (x, y, z, r) => R.visible(x, y, z, r);
+  // the booms: about 80 degrees up when open, level when shut
+  const lift = (1 - Rl.gate.k) * 1.4;
+  const brig = rigs.boom;
+  brig.reset();
+  for (const bm of X.booms) {
+    if (!near(bm.x, bm.z, 120)) continue;
+    const b = R.batch('boom');
+    const o = b.alloc();
+    b.colors(o, BOOM_C, BOOM_C, BOOM_C, BOOM_C);
+    brig.write(b.data, o + 16, bm.x, groundY(bm.x, bm.z) + 1.21, bm.z, bm.dir * Math.PI / 2, 1, -lift, 0);
+  }
+  // the lamps flash, left and right in turn, from the first bell to the booms being up
+  if (Rl.gate.state !== 'open') {
+    const ph = Math.floor(time * 2.6) % 2;
+    X.booms.forEach((bm, i) => {
+      if ((i + ph) % 2 || !near(bm.x, bm.z, 130)) return;
+      R.particle(bm.x, groundY(bm.x, bm.z) + 2.1, bm.z, 0.9, 1.0, 0.08, 0.04, 1, true);
+    });
+    if (env.night > 0.2 && near(X.hut.x, X.hut.z, 60)) railLamp = { x: 0, y: 2.4, z: (X.gateZ[0] + X.gateZ[1]) / 2, r: 14, color: [1, 0.15, 0.08], i: (ph ? 1.2 : 0.4) * env.night };
+  }
+  // the trains, car by car
+  const riderDist = profile.peopleDist + 45;
+  for (const t of Rl.trains) {
+    const yaw = t.dir * Math.PI / 2;
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const cheer = t.cheerT > 0;
+    for (let ci = 0; ci < t.cars.length; ci++) {
+      const car = t.cars[ci];
+      const cx = t.x - t.dir * (car.off + car.len / 2);
+      if (!near(cx, t.z, 290) || !vis(cx, 2.4, t.z, car.len / 2 + 1.5)) continue;
+      const rig = rigs[car.kind];
+      rig.reset();
+      const b = R.batch(car.kind);
+      const o = b.alloc();
+      const pal = (car.kind === 'loco' ? LOCO_PAINT : COACH_PAINT)[car.livery % 3];
+      b.colors(o, pal[0], pal[1], pal[2], pal[0]);
+      const sway = Math.sin(time * 1.7 + ci * 0.9) * 0.006 * Math.min(1, t.v / 8);
+      rig.write(b.data, o + 16, cx, 0, t.z, yaw, 1, 0, sway);
+      if (car.kind === 'loco') {
+        if (env.night > 0.3) headlights.push({ train: true, x: t.x, z: t.z, dirx: t.dir });
+        // diesel smoke from the stack, more of it pulling away
+        if (near(cx, t.z, 90) && Math.random() < dt * 9) {
+          const sx = cx - t.dir * 1.2;
+          spawnP(sx, 4.3, t.z, -t.dir * t.v * 0.25 + (Math.random() - 0.5) * 0.4, 1.2, (Math.random() - 0.5) * 0.4, 2.2, 0.45, [0.3, 0.3, 0.32], 0.4, false, -0.2);
+        }
+        if (env.night > 0.3 && near(t.x, t.z, 220)) R.particle(t.x + t.dir * 0.1, 2.75, t.z, 2.2, 0.9 * env.night, 0.85 * env.night, 0.7 * env.night, 1, true);
+        continue;
+      }
+      if (!car.riders.length || !near(cx, t.z, riderDist)) continue;
+      // a waving crowd when the dog is close, or racing them
+      const dogNear = Math.abs(d.z - t.z) < 16 && Math.abs(d.x - cx) < car.len / 2 + 10;
+      for (const rd of car.riders) {
+        const wx = cx + cy * rd.lz + sy * rd.lx, wz = t.z - sy * rd.lz + cy * rd.lx;
+        if (!vis(wx, 4.4, wz, 1)) continue;
+        const a = animOf(rd);
+        animateHuman(a, { speed: 0, mode: rd.pose, look: 0 }, dt);
+        const hr = rigs[rd.kind] || rigs.man;
+        poseHuman(hr, a, 0, rd.pose);
+        if (rd.waver && (dogNear || cheer)) {
+          const w = Math.sin(a.t * 9 + rd.ph);
+          hr.add(3, 0, -2.6 + 0.35 * w, 0.35);
+          hr.add(4, 0, -0.4 - 0.3 * w, 0);
+          if (cheer && rd.slot === 'roof') { hr.add(5, 0, -2.6 - 0.35 * w, -0.35); hr.add(6, 0, -0.4, 0); }
+        }
+        const y = rd.pose === 'sit' ? rd.y + 0.04 - 0.53 * rd.scale : rd.y;
+        const hb = R.batch(PEOPLE_KINDS.includes(rd.kind) ? rd.kind : 'man');
+        const ho = hb.alloc();
+        hb.colors(ho, rd.colors[0], rd.colors[1], rd.colors[2], rd.colors[3]);
+        hr.write(hb.data, ho + 16, wx, y, wz, yaw + rd.yaw, rd.scale);
+      }
+      for (const bg of car.bags) itemInstance(bg.kind, cx + cy * bg.lz + sy * bg.lx, bg.y, t.z - sy * bg.lz + cy * bg.lx, yaw + bg.yaw);
+    }
+  }
+}
 
 function itemModel(kind) {
   if (kind === 'milk') return 'bowl';

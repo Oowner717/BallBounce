@@ -466,6 +466,46 @@ function humanPose(rig, a, speed, mode) {
       rig.add(3, 0, -0.5, 0.25); rig.add(5, 0, -0.5, -0.25);
       rig.add(2, look, -0.35, 0);
       break;
+    case 'knees': {
+      // sitting on a train roof, knees up, arms round them, swaying with the coach
+      const s = Math.sin(t * 1.9);
+      rig.oy -= 0.72;
+      rig.add(7, 0.12, -2.2, 0.12); rig.add(9, -0.12, -2.2, -0.12);
+      rig.add(8, 0, 2.45, 0); rig.add(10, 0, 2.45, 0);
+      rig.add(1, 0, 0.22 + 0.03 * s, 0.03 * s);
+      rig.add(3, 0, -0.95, 0.15); rig.add(5, 0, -0.95, -0.15);
+      rig.add(4, 0, -0.75, 0); rig.add(6, 0, -0.75, 0);
+      rig.add(2, look, -0.05, 0);
+      break;
+    }
+    case 'hang': {
+      // out of a train door: one hand on the grab rail, leaning into the wind
+      const s = Math.sin(t * 1.3);
+      rig.add(0, 0, 0.16 + 0.03 * s, 0);
+      rig.add(5, 0, -2.55, -0.3); rig.add(6, 0, -0.35, 0);
+      rig.add(3, 0, -0.55 + 0.15 * s, 0.55); rig.add(4, 0, -0.25, 0);
+      rig.add(7, 0, -0.18, 0.05); rig.add(9, 0, 0.12, -0.05);
+      rig.add(8, 0, 0.2, 0);
+      rig.add(2, look, -0.12, 0);
+      break;
+    }
+    case 'crank': {
+      // the gateman winding the booms up or down
+      const c = t * 4.5;
+      rig.add(1, 0, 0.25, 0);
+      rig.add(3, 0, -1.25 + 0.4 * Math.sin(c), 0.12); rig.add(4, 0, -0.55 + 0.35 * Math.cos(c), 0);
+      rig.add(5, 0, -1.25 - 0.4 * Math.sin(c), -0.12); rig.add(6, 0, -0.55 - 0.35 * Math.cos(c), 0);
+      rig.add(7, 0, -0.15, 0.06); rig.add(9, 0, 0.1, -0.06);
+      rig.add(2, 0, 0.25, 0);
+      break;
+    }
+    case 'flag':
+      // the green flag held up for the driver
+      rig.add(5, 0, -1.9, -0.35); rig.add(6, 0, -0.6, 0);
+      rig.add(3, 0, 0.05, 0.1); rig.add(4, 0, -0.2, 0);
+      rig.add(1, 0, -0.05 + breathe, 0);
+      rig.add(2, look, 0, 0);
+      break;
     case 'stand':
       rig.add(3, 0, 0.05, 0.1); rig.add(5, 0, 0.05, -0.1);
       rig.add(4, 0, -0.25, 0); rig.add(6, 0, -0.25, 0);

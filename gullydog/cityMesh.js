@@ -19,7 +19,7 @@ import {
   GRID, SURF, SURF_HEIGHT, LAYOUT, PLAY_HALF, cellCenter, facadeWidth, zebraRects, cellOf,
 } from './world.js';
 import { hex, makeRng, rand, pick, chance, TAU, clamp, mixRgb, scaleRgb, jitterRgb } from './util.js';
-import { SHOP_TYPES } from './data.js';
+import { SHOP_TYPES, WALL_ADS } from './data.js';
 
 const CH = 25;
 const NCH = Math.ceil((2 * GRID.half) / CH);
@@ -54,12 +54,13 @@ const C = {
     flower: ['#ff8f00', '#ffb300', '#ff6f00', '#fff176', '#e53935'],
   },
 };
+C.ballast = hex('#77706a');
 const SURF_COLOR = {
   [SURF.ROAD]: C.asphalt, [SURF.CROSS]: C.asphalt, [SURF.WALK]: C.walk, [SURF.GALI]: C.gali,
-  [SURF.PLAZA]: C.plaza, [SURF.DIRT]: C.dirt, [SURF.MARKET]: C.market,
+  [SURF.PLAZA]: C.plaza, [SURF.DIRT]: C.dirt, [SURF.MARKET]: C.market, [SURF.RAIL]: C.ballast,
 };
 const SURF_DETAIL = {
-  [SURF.ROAD]: 1, [SURF.CROSS]: 1, [SURF.WALK]: 0.8, [SURF.GALI]: 0.9, [SURF.PLAZA]: 0.7, [SURF.DIRT]: 1, [SURF.MARKET]: 1,
+  [SURF.ROAD]: 1, [SURF.CROSS]: 1, [SURF.WALK]: 0.8, [SURF.GALI]: 0.9, [SURF.PLAZA]: 0.7, [SURF.DIRT]: 1, [SURF.MARKET]: 1, [SURF.RAIL]: 1,
 };
 
 /* ------------------------------------------------------------------ chunks */
@@ -169,6 +170,14 @@ function buildGround(ctx) {
   for (const sgn of [-1, 1]) {
     far.quad([sgn > 0 ? 100 : -420, 0, LAYOUT.mgHalf], [sgn > 0 ? 420 : -100, 0, LAYOUT.mgHalf], [sgn > 0 ? 420 : -100, 0, -LAYOUT.mgHalf], [sgn > 0 ? 100 : -420, 0, -LAYOUT.mgHalf]);
     far.quad([-LAYOUT.bzHalf, 0, sgn > 0 ? 420 : -100], [LAYOUT.bzHalf, 0, sgn > 0 ? 420 : -100], [LAYOUT.bzHalf, 0, sgn > 0 ? 100 : -420], [-LAYOUT.bzHalf, 0, sgn > 0 ? 100 : -420]);
+  }
+  // ...and so does the railway, ballast and rails (the sleepers stop where the haze starts)
+  const R = LAYOUT.rail;
+  for (const sgn of [-1, 1]) {
+    const xa = sgn > 0 ? 100 : -480, xb = sgn > 0 ? 480 : -100;
+    far.color(C.ballast).detail(1).box(xa, -0.03, R.z0, xb, SURF_HEIGHT[SURF.RAIL], R.z1, { skip: 'b' });
+    const ra = sgn > 0 ? 170 : -480, rb = sgn > 0 ? 480 : -170;
+    for (const T of R.tracks) for (const s of [-1, 1]) railBar(far, ra, rb, T.z + s * R.gauge / 2, SLEEPER_TOP);
   }
   far.color(C.walk).detail(0.8);
   for (const sgn of [-1, 1]) {
@@ -785,8 +794,122 @@ function buildProp(ctx, p) {
     case 'bricks': return bricks(B, p, y0, rng);
     case 'planter': return planter(B, p, y0);
     case 'counter': return counter(B, p, y0, rng);
+    case 'track': return trackPiece(ctx, p);
+    case 'railwall': return railWall(B, p, uv, rng);
+    case 'gumti': return gumti(B, p, y0, uv);
+    case 'gatepost': return gatePost(B, p, y0);
+    case 'whistle': return whistleBoard(B, p, y0, uv);
     default: return null; // parked vehicles and puddles are drawn elsewhere
   }
+}
+
+/* ----------------------------------------------------------------- railway */
+
+const RAIL_TOP = 0.46, SLEEPER_TOP = 0.34;
+
+/** What lies under the line at (x, z): a surface, or -1 beyond the edge of the map. */
+function surfUnder(W, x, z) {
+  if (Math.abs(x) >= HALF || Math.abs(z) >= HALF) return -1;
+  return W.surf[cellOf(z) * N + cellOf(x)];
+}
+
+/** One rail from x a to b: a dark web and a polished head. */
+function railBar(B, a, b, rz, base) {
+  B.color(hex('#4d4640')).detail(0.3).box(a, base, rz - 0.06, b, RAIL_TOP - 0.03, rz + 0.06, { skip: 'bew' });
+  B.color(hex('#c9c6c0')).detail(0).box(a, RAIL_TOP - 0.03, rz - 0.04, b, RAIL_TOP, rz + 0.04, { skip: 'bew' });
+}
+
+/**
+ * One 10 m stretch of both tracks: concrete sleepers and rails on the ballast,
+ * or, where a road crosses, rails set flush in a concrete deck.
+ */
+function trackPiece(ctx, p) {
+  const { W } = ctx;
+  const R = LAYOUT.rail, g = R.gauge / 2;
+  for (const T of R.tracks) {
+    let a = p.x0;
+    while (a < p.x1 - 1e-6) {
+      const s0 = surfUnder(W, a + 0.01, T.z);
+      let b = a + 0.5;
+      while (b < p.x1 - 1e-6 && surfUnder(W, b + 0.01, T.z) === s0) b += 0.5;
+      b = Math.min(b, p.x1);
+      const B = ctx.ch.at((a + b) / 2, T.z);
+      B.uv(ctx.uv.white).bone(0).slot(0).emissive(0).sway(0);
+      if (s0 === SURF.RAIL || s0 < 0) {
+        B.color(hex('#8f8b84')).detail(0.6);
+        for (let x = Math.ceil(a / 0.65) * 0.65; x < b; x += 0.65) B.box(x - 0.12, 0.2, T.z - 1.3, x + 0.12, SLEEPER_TOP, T.z + 1.3, { skip: 'b' });
+        for (const s of [-1, 1]) railBar(B, a, b, T.z + s * g, SLEEPER_TOP);
+      } else {
+        const y = SURF_HEIGHT[s0];
+        B.color(hex('#86817a')).detail(0.9).box(a, y, T.z - g - 0.6, b, y + 0.02, T.z + g + 0.6, { skip: 'b' });
+        for (const s of [-1, 1]) {
+          const rz = T.z + s * g;
+          B.color(hex('#2e2a26')).detail(0.2).box(a, y + 0.02, rz - 0.08, b, y + 0.024, rz + 0.08, { skip: 'bew' });
+          B.color(hex('#c9c6c0')).detail(0).box(a, y + 0.02, rz - 0.035, b, y + 0.04, rz + 0.035, { skip: 'bew' });
+        }
+      }
+      a = b;
+    }
+  }
+}
+
+/** The railway's boundary wall: plastered brick, pillars every few metres, painted adverts on the town side. */
+function railWall(B, p, uv, rng) {
+  const z = p.z, h = 1.05;
+  B.color(hex('#cdbfa6')).detail(1).box(p.x0, 0, z - 0.12, p.x1, h, z + 0.12, { skip: 'b' });
+  B.color(hex('#948a7c')).detail(0.6).box(p.x0, h, z - 0.15, p.x1, h + 0.07, z + 0.15, { skip: 'b' });
+  for (let x = p.x0 + 0.1; x < p.x1 - 0.3; x += 3) B.box(x, 0, z - 0.17, x + 0.3, h + 0.14, z + 0.17, { skip: 'b' });
+  if (z > (LAYOUT.rail.z0 + LAYOUT.rail.z1) / 2 && p.x1 - p.x0 > 5 && rng() < 0.6) {
+    const k = Math.floor(rng() * WALL_ADS.length);
+    const ax = p.x0 + 0.5 + rng() * (p.x1 - p.x0 - 3.6);
+    B.color([1, 1, 1]).detail(0.5).box(ax, 0.1, z + 0.12, ax + 2.6, 0.98, z + 0.13, { uvFace: { s: uv['ad:' + k] }, skip: 'bnew' });
+  }
+}
+
+/** The gateman's hut by the crossing, with its board, its bell and the winch that works the booms. */
+function gumti(B, p, y0, uv) {
+  const x0 = p.x - 1.4, x1 = p.x + 1.4, z0 = p.z - 1.2, z1 = p.z + 1.2, h = 2.6;
+  B.color(hex('#efe3c2')).detail(0.9).box(x0, y0, z0, x1, y0 + h, z1, { skip: 'b' });
+  B.color(hex('#7a2a22')).detail(0.6).box(x0 - 0.01, y0, z0 - 0.01, x1 + 0.01, y0 + 0.75, z1 + 0.01, { skip: 'bt' });
+  B.color(hex('#241f1b')).detail(0.3).box(p.x - 0.45, y0, z1, p.x + 0.45, y0 + 2.0, z1 + 0.02, { skip: 'bn' }); // the door, open
+  B.color(hex('#33404a')).box(x0 - 0.02, y0 + 1.1, p.z - 0.5, x0, y0 + 1.9, p.z + 0.5, { skip: 'be' });     // window on the road
+  B.box(p.x - 0.6, y0 + 1.1, z0 - 0.02, p.x + 0.6, y0 + 1.9, z0, { skip: 'bs' });                          // window on the line
+  B.color(hex('#2b2b2b')).detail(0.1);
+  for (let k = -0.4; k <= 0.41; k += 0.2) B.box(x0 - 0.05, y0 + 1.1, p.z + k - 0.015, x0 - 0.02, y0 + 1.9, p.z + k + 0.015, { skip: 'b' });
+  for (let k = -0.5; k <= 0.51; k += 0.2) B.box(p.x + k - 0.015, y0 + 1.1, z0 - 0.05, p.x + k + 0.015, y0 + 1.9, z0 - 0.02, { skip: 'b' });
+  B.color(hex('#b9b3a6')).detail(0.8).box(x0 - 0.35, y0 + h, z0 - 0.35, x1 + 0.35, y0 + h + 0.15, z1 + 0.35);
+  B.color(hex('#6d675e')).box(x0 - 0.35, y0 + h + 0.15, z0 - 0.35, x1 + 0.35, y0 + h + 0.4, z0 - 0.25, { skip: 'b' });
+  // the board over the door
+  B.color([1, 1, 1]).detail(0.2).box(p.x - 1.25, y0 + h + 0.2, z1 + 0.3, p.x + 1.25, y0 + h + 0.82, z1 + 0.34, { uvFace: { s: uv.phatak } });
+  B.color(hex('#2b2b2b')).box(p.x - 1.0, y0 + h + 0.15, z1 + 0.27, p.x - 0.94, y0 + h + 0.2, z1 + 0.33).box(p.x + 0.94, y0 + h + 0.15, z1 + 0.27, p.x + 1.0, y0 + h + 0.2, z1 + 0.33);
+  // the bell, under the eave on the road side
+  B.color(hex('#3a3a3a')).box(x0 - 0.22, y0 + 2.3, p.z + 0.78, x0, y0 + 2.36, p.z + 0.92);
+  B.color(hex('#c9a227')).detail(0.1).cyl(x0 - 0.2, y0 + 2.02, p.z + 0.85, 0.14, y0 + 2.3, 0.07, 10, { smooth: true });
+  // the winch the gateman turns, on its stand facing him
+  const wx = p.winch.x, wz = p.winch.z;
+  B.color(hex('#3a3a3a')).detail(0.3).box(wx - 0.08, y0, wz - 0.08, wx + 0.08, y0 + 0.95, wz + 0.08, { skip: 'b' });
+  B.color(hex('#8a2b1f')).detail(0.3).wheel(wx - 0.12, y0 + 0.95, wz, 0.42, 0.06, 14);
+  B.color(hex('#2b2b2b')).box(wx - 0.18, y0 + 0.93, wz - 0.4, wx - 0.14, y0 + 0.97, wz + 0.4).box(wx - 0.18, y0 + 0.55, wz - 0.02, wx - 0.14, y0 + 1.35, wz + 0.02);
+  B.color(hex('#d8d2c4')).rod([wx - 0.14, y0 + 0.95, wz + 0.36], [wx - 0.32, y0 + 0.95, wz + 0.36], 0.025, 5);
+}
+
+/** A boom's post, in black and yellow bands; the boom itself moves, so main.js draws it. */
+function gatePost(B, p, y0) {
+  const { x, z } = p;
+  B.detail(0.4);
+  for (let k = 0; k < 5; k++) B.color(hex(k % 2 ? '#1d1d1d' : '#f2c230')).box(x - 0.15, y0 + k * 0.23, z - 0.15, x + 0.15, y0 + (k + 1) * 0.23, z + 0.15, { skip: 'b' });
+  B.color(hex('#3a3a3a')).box(x - 0.2, y0 + 1.15, z - 0.22, x + 0.2, y0 + 1.27, z + 0.22);
+  // the warning lamp on its bracket (main.js flashes it)
+  B.color(hex('#2a2a2a')).box(x - 0.03, y0 + 1.27, z - 0.03, x + 0.03, y0 + 2.05, z + 0.03);
+  B.box(x - 0.13, y0 + 1.95, z - 0.13, x + 0.13, y0 + 2.25, z + 0.13);
+  B.color(hex('#6e1010')).emissive(15).box(x - 0.1, y0 + 2.0, z - 0.135, x + 0.1, y0 + 2.2, z + 0.135).emissive(0);
+}
+
+/** "Whistle!" for the driver: a yellow board on a post between the tracks, facing the oncoming train. */
+function whistleBoard(B, p, y0, uv) {
+  const { x, z } = p;
+  B.color(hex('#d9d4c8')).detail(0.4).box(x - 0.04, y0, z - 0.04, x + 0.04, y0 + 1.75, z + 0.04, { skip: 'b' });
+  B.color([1, 1, 1]).detail(0.2).box(x - 0.02, y0 + 1.15, z - 0.3, x + 0.02, y0 + 1.75, z + 0.3, { uvFace: p.face > 0 ? { e: uv.whistle } : { w: uv.whistle } });
 }
 
 function pole(B, p, y0, rng) {
@@ -1347,8 +1470,9 @@ function buildSkyline(ctx) {
     const a = rng() * TAU;
     const r = 112 + rng() * 130;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
-    // leave the four roads open so they run on into the haze
+    // leave the four roads and the railway open so they run on into the haze
     if (Math.abs(z) < 14 && Math.abs(x) > 95) continue;
+    if (Math.abs(z - (LAYOUT.rail.z0 + LAYOUT.rail.z1) / 2) < 18 && Math.abs(x) > 95) continue;
     if (Math.abs(x) < 11 && Math.abs(z) > 95) continue;
     const w = 6 + rng() * 14, d = 6 + rng() * 14, h = 6 + rng() * (r > 170 ? 34 : 18);
     B.color(pick(rng, hazy)).detail(0.5);

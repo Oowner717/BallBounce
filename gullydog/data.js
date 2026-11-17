@@ -250,4 +250,12 @@ export const SPEECH = {
   priest: [['Prasad le lo', 'Take the offering'], ['Jai ho!', 'Glory!']],
   cop: [['Chalo, aage badho!', 'Move along!'], ['Rukk!', 'Stop!']],
   dogGrowl: [['Grrrr...', ''], ['Wuff! Grr!', '']],
+  // the gateman at the level crossing
+  gateman: [['Phatak band!', 'Gate closed!'], ['Gaadi aa rahi hai!', "Train's coming!"], ['Peeche hato!', 'Stand back!'], ['Ruko, ruko!', 'Wait, wait!']],
+  gatemanDog: [['Arre, patri se hatt!', 'Hey, off the tracks!'], ['Mar jayega, pagal!', "You'll get killed, you fool!"], ['Idhar aa, idhar!', 'Over here, here!']],
+  // whoever is riding on the roof
+  train: [['Bhaag Bhura, bhaag!', 'Run, Bhura, run!'], ['Dekho, kutta race kar raha hai!', "Look, the dog's racing us!"], ['Shabash, sher!', 'Well done, lion!'], ['Aur tez!', 'Faster!'], ['Ta-ta, Bhura!', 'Bye, Bhura!']],
+  trainWave: [['Oye! Hello!', ''], ['Jai ho!', 'Hooray!'], ['Ram Ram!', 'Hello!'], ['Ghar jaa rahe hain!', "We're going home!"]],
+  trainSnack: [['Le, pakad!', 'Here, catch!'], ['Biscuit le ja!', 'Have a biscuit!']],
+  waiting: [['Kitni der lagegi?', 'How long will this take?'], ['Roz ka yahi haal hai', 'Same story every day'], ['Gaadi kab niklegi?', "When's the train going to pass?"], ['Late ho gaye!', "We're late!"]],
 };

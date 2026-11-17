@@ -31,10 +31,11 @@ import {
   AWNING_COLORS, DOOR_COLORS,
 } from './data.js';
 
-export const SURF = { MASS: 0, ROAD: 1, WALK: 2, GALI: 3, PLAZA: 4, DIRT: 5, ISLAND: 6, BUILDING: 7, MARKET: 8, CROSS: 9 };
+export const SURF = { MASS: 0, ROAD: 1, WALK: 2, GALI: 3, PLAZA: 4, DIRT: 5, ISLAND: 6, BUILDING: 7, MARKET: 8, CROSS: 9, RAIL: 10 };
 /** Ground height by surface. Sidewalks and plazas stand on a kerb; galis are near flush. */
-export const SURF_HEIGHT = [0, 0, 0.18, 0.06, 0.18, 0.03, 0.45, 0, 0.06, 0];
-export const WALKABLE = [false, false, true, true, true, true, false, false, true, false];
+export const SURF_HEIGHT = [0, 0, 0.18, 0.06, 0.18, 0.03, 0.45, 0, 0.06, 0, 0.22];
+// RAIL (the ballast) is no place for people: they cross at the phatak. The dog goes where he likes.
+export const WALKABLE = [false, false, true, true, true, true, false, false, true, false, false];
 
 export const GRID = { half: 100, res: 0.5, n: 400 };
 /** The dog stays inside this square. Roads run on to +-100 so traffic arrives out of the haze. */
@@ -47,10 +48,15 @@ export const LAYOUT = {
   ringIn: 5, ringMid: 8.5, ringOut: 12, chowkSq: 16,
   mgLane: 3.65, mgLaneHalf: 3.35, // one carriageway per direction, centre and half-width
   bzLane: 2.25, bzLaneHalf: 2.25,
+  // The railway along the north edge: ballast z0..z1, two tracks (the north one
+  // eastbound, the south one westbound: trains keep left too), a level crossing
+  // on Bazaar Road |x| < crossHalf with its gates at gateZ, a dirt verge south of
+  // it where the houses back onto the line.
+  rail: { z0: -87, z1: -78, tracks: [{ z: -85.0, dir: 1 }, { z: -80.5, dir: -1 }], gauge: 1.676, crossHalf: 7.5, gateZ: [-76.6, -88.4], verge: -72 },
 };
 
 const N = GRID.n, RES = GRID.res, HALF = GRID.half;
-const { MASS, ROAD, WALK, GALI, PLAZA, DIRT, ISLAND, BUILDING, MARKET, CROSS } = SURF;
+const { MASS, ROAD, WALK, GALI, PLAZA, DIRT, ISLAND, BUILDING, MARKET, CROSS, RAIL } = SURF;
 
 export const cellOf = (v) => Math.floor((v + HALF) / RES);
 export const cellCenter = (i) => -HALF + (i + 0.5) * RES;
@@ -131,6 +137,16 @@ const AREAS = [
   { s: GALI, r: [52, 54, 56, 68], front: 'gali' },
   { s: GALI, r: [74, 10, 78, 68], front: 'gali' },
   { s: MARKET, r: [20, 22, 62, 54], front: 'market' },
+
+  // N — the railway: a dirt verge where the houses back onto the line, the
+  // ballast, and room beyond the crossing for its gates. Bazaar Road runs straight
+  // over it, so the road and its pavements are left unpainted at the crossing.
+  { s: DIRT, r: [-100, -78, -7, -72] },
+  { s: DIRT, r: [7, -78, 100, -72] },
+  { s: RAIL, r: [-100, -87, -7, -78] },
+  { s: RAIL, r: [7, -87, 100, -78] },
+  { s: DIRT, r: [-14, -90, -7, -87] },
+  { s: DIRT, r: [7, -90, 14, -87] },
 ];
 
 /** Lot shape and use by frontage class. */
@@ -147,6 +163,8 @@ const FRONT_ORDER = ['main', 'bazaar', 'plaza', 'court', 'market', 'dirt', 'gali
 
 /** HUD place names. First match wins, so the specific ones come first. */
 const ZONES = [
+  { name: 'Railway Phatak', r: [-15, -92, 15, -70] },
+  { name: 'Railway Line', r: [-100, -92, 100, -72] },
   { name: 'Ghanta Ghar Chowk', c: [0, 0, 19] },
   { name: 'Auto Stand', r: [-31, -14, -15, -7] },
   { name: 'Mandir Square', r: [-50, -50, -22, -24] },
@@ -191,6 +209,7 @@ export function generateWorld(seed = 7) {
     laundry: [],
     lights: [],                     // night lights: {x,y,z,r,color,kind}
     pois: { water: [], food: [], posts: [], sleep: [], garbage: [], landmarks: [] },
+    keepClear: [],                  // rects street furniture must leave empty (the level crossing)
     zones: ZONES,
     spawns: {},
     special: {},
@@ -203,6 +222,7 @@ export function generateWorld(seed = 7) {
   paintAreas(W);
   placeLots(W, rng);
   backfill(W, rng);
+  placeRailway(W);
   placeLandmarks(W, rng);
   placeStreetProps(W, rng);
   placeWires(W, rng);
@@ -425,6 +445,7 @@ function markBlock(W, x0, z0, x1, z1) {
 
 /** Is this rectangle open, walkable and not already taken by another prop? */
 function propFree(W, x0, z0, x1, z1) {
+  for (const k of W.keepClear) if (x1 > k[0] && x0 < k[2] && z1 > k[1] && z0 < k[3]) return false;
   const [i0, j0, i1, j1] = rectCells(x0, z0, x1, z1);
   if (i1 < i0 || j1 < j0) return false;
   for (let j = j0; j <= j1; j++) {
@@ -468,6 +489,63 @@ export function collidersNear(W, x, z, r, out) {
     }
   }
   return out;
+}
+
+/* ----------------------------------------------------------------- railway */
+
+/**
+ * The line along the north: track in 10 m pieces (each lands in its own chunk;
+ * past the map they join the far mesh, so trains come out of the haze on rails),
+ * a boundary wall on each side with the crossing left open and two broken bits a
+ * dog can squeeze through, the gatekeeper's hut, four gate posts. The booms and
+ * the trains move, so they are drawn as models, not built here.
+ */
+function placeRailway(W) {
+  const R = LAYOUT.rail, h = R.crossHalf;
+  W.keepClear.push([-h - 1.5, R.z0 - 4, h + 1.5, R.z1 + 3]);
+  for (let x = -170; x < 170; x += 10) prop(W, 'track', x + 5, (R.z0 + R.z1) / 2, { x0: x, x1: x + 10 });
+  const wall = (z, gaps) => {
+    let x = -100;
+    for (const [g0, g1] of [...gaps].sort((q, r) => q[0] - r[0]).concat([[100, 100]])) {
+      if (g0 - x > 0.5) {
+        for (let a = x; a < g0 - 1e-6; a += 12) {
+          const b = Math.min(g0, a + 12);
+          prop(W, 'railwall', (a + b) / 2, z, { x0: a, x1: b });
+          addBox(W, a, z - 0.12, b, z + 0.12, 1.05, { tag: 'railwall', block: false });
+        }
+      }
+      x = g1;
+    }
+  };
+  wall(R.z1, [[-h - 0.5, h + 0.5], [-47, -45.4], [44, 45.6]]);
+  wall(R.z0 - 0.15, [[-h - 0.5, h + 0.5]]);
+  // the gatekeeper's hut (gumti) on the south-east corner, door facing the road,
+  // and the winch he turns to bring the booms down
+  prop(W, 'gumti', 10.8, -75.2, { winch: { x: 8.45, z: -73.4 } });
+  addBox(W, 9.4, -76.4, 12.2, -74.0, 2.6, { tag: 'gumti' });
+  addCircle(W, 8.4, -73.4, 0.3, 1.4, { tag: 'winch', block: false });
+  // whistle boards, one for each direction, between the tracks
+  for (const [x, face] of [[-62, -1], [62, 1]]) {
+    prop(W, 'whistle', x, (R.tracks[0].z + R.tracks[1].z) / 2, { face });
+    addCircle(W, x, (R.tracks[0].z + R.tracks[1].z) / 2, 0.06, 1.75, { tag: 'post', block: false });
+    W.pois.posts.push({ x, z: (R.tracks[0].z + R.tracks[1].z) / 2, tag: 'whistle' });
+  }
+  const posts = [[8.0, R.gateZ[0], -1], [-8.0, R.gateZ[0], 1], [8.0, R.gateZ[1], -1], [-8.0, R.gateZ[1], 1]];
+  for (const [x, z] of posts) {
+    prop(W, 'gatepost', x, z, {});
+    addCircle(W, x, z, 0.22, 1.5, { tag: 'gatepost', block: false });
+  }
+  lampPost(W, 13.0, -73.0, 4.4);
+  lampPost(W, -12.0, -73.0, 4.4);
+  W.special.crossing = {
+    x0: -h, x1: h, z0: R.z0, z1: R.z1, tracks: R.tracks, gateZ: R.gateZ,
+    // each half-boom: its post, and which way it swings shut (toward the road's middle)
+    booms: posts.map(([x, z, dir]) => ({ x, z, dir })),
+    hut: { x: 10.8, z: -75.2, door: { x: 10.8, z: -73.6 } },
+    keeper: { x: 9.0, z: -73.4, yaw: -Math.PI / 2 },
+    kids: { x: 14.5, z: -73.6 },
+  };
+  W.pois.landmarks.push({ id: 'phatak', x: 9, z: -73.5, name: 'Railway Phatak' });
 }
 
 /* ---------------------------------------------------------------- landmarks */
@@ -832,7 +910,7 @@ function placeStreetProps(W, rng) {
   garbage(W, -72, -8.4, 1.3);
   garbage(W, -45, 41, 1.2);
   garbage(W, 76, 60, 1.2);
-  garbage(W, 5.9, -78, 1.0);
+  garbage(W, 31, -74.6, 1.0); // by the railway line, where garbage always ends up
   for (const [x, z] of [[-61.2, 64], [62, 3.2], [-2.6, 38], [-55, -64], [45, -9.4]]) puddle(W, x, z, rand(rng, 0.7, 1.2), false);
 
   // Fruit and vegetable carts along the bazaar kerbs.
@@ -1246,7 +1324,7 @@ function buildPedGraph(W) {
   };
 
   for (const a of AREAS) {
-    if (a.s === ROAD) continue;
+    if (a.s === ROAD || a.s === RAIL) continue;
     let [x0, z0, x1, z1] = a.r;
     x0 = Math.max(x0, -PLAY_HALF - 3); z0 = Math.max(z0, -PLAY_HALF - 3);
     x1 = Math.min(x1, PLAY_HALF + 3); z1 = Math.min(z1, PLAY_HALF + 3);

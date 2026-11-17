@@ -393,6 +393,52 @@ export class AudioEngine {
     o.start(); lfo.start();
     this.crickets = { g: cg, gate };
     this.crowdMod = 0;
+    // the railway: a passing train's rumble and wheel roar, its engine, the gate bell
+    this.trainLow = loop(this.brown, 'lowpass', 110, 0.8);
+    this.trainHiss = loop(this.noise, 'bandpass', 820, 0.7);
+    const eng = ctx.createOscillator(); eng.type = 'sawtooth'; eng.frequency.value = 41;
+    const engF = ctx.createBiquadFilter(); engF.type = 'lowpass'; engF.frequency.value = 150;
+    const engG = ctx.createGain(); engG.gain.value = 0;
+    eng.connect(engF); engF.connect(engG); engG.connect(this.amb); eng.start();
+    this.engine = { g: engG };
+    const bellG = ctx.createGain(); bellG.gain.value = 0;
+    const strike = ctx.createGain(); strike.gain.value = 0.5;
+    const hammer = ctx.createOscillator(); hammer.type = 'square'; hammer.frequency.value = 17;
+    const hg = ctx.createGain(); hg.gain.value = 0.5;
+    hammer.connect(hg); hg.connect(strike.gain);
+    for (const f of [1250, 3010, 4420]) { const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f; o.connect(strike); o.start(); }
+    strike.connect(bellG); bellG.connect(this.sfx);
+    hammer.start();
+    this.gateBell = { g: bellG };
+    this.clackS = 0;
+  }
+
+  /** A diesel engine's two-tone horn, held: long when it means it. */
+  trainHorn(x, z, long) {
+    const out = this.voice(this.sfx, x, z, { gain: 0.85, ref: 45, max: 700 });
+    if (!out) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const dur = long ? 2.1 : 1.0;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; lp.connect(out);
+    for (const [f, a] of [[311, 0.15], [370, 0.13], [622, 0.05], [740, 0.04], [933, 0.02]]) {
+      const o = ctx.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f * 0.96, t);
+      o.frequency.exponentialRampToValueAtTime(f, t + 0.18);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(a, t + 0.08);
+      g.gain.setValueAtTime(a, t + dur - 0.2);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(lp);
+      o.start(t); o.stop(t + dur + 0.05);
+    }
+  }
+
+  /** Wheels over a rail joint: a metallic click with a thump under it. */
+  clack(gain) {
+    const t = this.ctx.currentTime;
+    this.noiseBurst(t, 0.05, this.amb, 'bandpass', 1900, 1.6, 0.3 * gain, 0.002);
+    this.osc('sine', 85, t, 0.09, this.amb, 0.45 * gain, 0.003);
   }
 
   /**
@@ -420,6 +466,33 @@ export class AudioEngine {
     this.rain.g.gain.setTargetAtTime(env.rain ? 0.22 : 0, t, 1.0);
     this.crickets.g.gain.setTargetAtTime(night > 0.5 && !env.rain ? 0.012 * night : 0, t, 1.5);
     this.crickets.gate.gain.value = Math.sin(t * 7) > 0.2 ? 0.5 : 0;
+    // trains: loudest from the nearest coach, the engine from the engine; the
+    // clatter keeps time with the axles over the joints (ta-dum ... ta-dum)
+    let tNear = Infinity, tV = 0, tLoco = Infinity;
+    for (const tr of S.rail.trains) {
+      const lo = Math.min(tr.x, tr.x - tr.dir * tr.len), hi = Math.max(tr.x, tr.x - tr.dir * tr.len);
+      const ex = d.x < lo ? lo - d.x : d.x > hi ? d.x - hi : 0;
+      const dd = Math.hypot(ex, d.z - tr.z);
+      if (dd < tNear) { tNear = dd; tV = tr.v; }
+      tLoco = Math.min(tLoco, Math.hypot(tr.x - d.x, tr.z - d.z));
+    }
+    const prox = tNear < Infinity ? 1 / (1 + (tNear / 16) * (tNear / 16)) : 0;
+    const tsp = clamp(tV / 12, 0, 1);
+    this.trainLow.g.gain.setTargetAtTime(prox * 0.95 * (0.35 + 0.65 * tsp), t, 0.25);
+    this.trainHiss.g.gain.setTargetAtTime(prox * 0.22 * tsp, t, 0.25);
+    this.engine.g.gain.setTargetAtTime(tLoco < Infinity ? 0.45 / (1 + (tLoco / 22) * (tLoco / 22)) : 0, t, 0.3);
+    if (prox > 0.02 && tV > 0.4) {
+      const prev = this.clackS;
+      this.clackS = (this.clackS + tV * dt) % 22.3;
+      for (const a of [1.9, 4.5, 17.1, 19.7]) {
+        const hit = prev <= this.clackS ? prev < a && a <= this.clackS : a > prev || a <= this.clackS;
+        if (hit) this.clack(prox * (0.5 + 0.5 * tsp));
+      }
+    }
+    const G = S.rail.gate, X = S.W.special.crossing;
+    const ring = X && (G.state === 'closing' || (G.state === 'closed' && G.t < 3));
+    const bd = X ? Math.hypot(X.hut.x - d.x, X.hut.z - d.z) : 999;
+    this.gateBell.g.gain.setTargetAtTime(ring ? 0.06 / (1 + (bd / 14) * (bd / 14)) : 0, t, 0.04);
     // panting, in rhythm
     const pant = d.panting && !d.sleeping ? (Math.sin(t * 22) > 0 ? 0.07 : 0.012) : 0;
     this.pant.g.gain.setTargetAtTime(pant, t, 0.03);
@@ -458,6 +531,8 @@ export class AudioEngine {
         case 'npcBark': this.bark(e.x, e.z, e.puppy ? 1.7 : e.key === 'sheru' ? 0.78 : e.key === 'kalu' ? 0.88 : 1.12, 0.7); break;
         case 'growl': this.growl(e.x, e.z); break;
         case 'honk': this.horn(e.horn, e.x, e.z, e.atDog); break;
+        case 'trainHorn': this.trainHorn(e.x, e.z, e.long); break;
+        case 'trainHit': this.thud(0.8); break;
         case 'hit': this.yelp(); this.thud(0.5); break;
         case 'nipped': this.yelp(); break;
         case 'bell': this.templeBell(e.x, e.z, e.single); break;

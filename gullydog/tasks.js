@@ -39,18 +39,20 @@ export const TASKS = {
   biscuit: { title: 'Chai and biscuit', desc: 'Get a biscuit from Raju', ev: 'chaiBiscuit', count: 1, reward: 15, hint: 'Sit (E) in front of the chai stall at the chowk.', where: (S) => S.W.special.chai && S.W.special.chai.front },
   drinks3: { title: 'Water hopper', desc: 'Drink from 3 different places', ev: 'drank', unique: (e) => e.src, count: 3, reward: 20, hint: 'Puddles, the pump, the temple trough, Aunty\'s bowl...' },
   bark10: { title: 'Loudmouth', desc: 'Bark 15 times', ev: 'bark', count: 15, reward: 10, hint: 'Press B. Everyone will love it. Mostly.' },
+  train: { title: 'Race the train', desc: 'Run alongside a passing train', ev: 'trainRace', count: 1, reward: 30, hint: 'Trains pass the phatak at the top of Bazaar Road every couple of minutes. Sprint (Shift) beside one, never on the tracks!', where: (S) => S.W.special.crossing && { x: 20, z: -76.5 } },
+  trainSnack: { title: 'Snack express', desc: 'Get a snack from a passing train', ev: 'trainSnack', count: 1, reward: 20, hint: 'Sit (E) by the line as a train goes by, or race it. Somebody up there always has a biscuit.', where: (S) => S.W.special.crossing && { x: -20, z: -76.5 } },
 };
 
 const DAY1 = ['eat', 'drink', 'pets3', 'pigeons', 'nap'];
-const POOL = ['samosa', 'fetch', 'mark', 'friend', 'cross', 'explore', 'prasad', 'aunty', 'puppies', 'goats', 'rummage', 'cow', 'bike', 'pets8', 'biscuit', 'drinks3', 'bark10'];
+const POOL = ['samosa', 'fetch', 'mark', 'friend', 'cross', 'explore', 'prasad', 'aunty', 'puppies', 'goats', 'rummage', 'cow', 'bike', 'pets8', 'biscuit', 'drinks3', 'bark10', 'train', 'trainSnack'];
 
 export function tasksForDay(seed, day) {
   if (day <= 1) return DAY1.slice();
   const rng = makeRng(seed * 31 + day * 977);
   const pool = POOL.slice();
   const out = [];
-  // day two always offers the two signature heists
-  if (day === 2) { out.push('samosa', 'fetch'); }
+  // day two always offers the two signature heists, and the train
+  if (day === 2) { out.push('samosa', 'fetch', 'train'); }
   while (out.length < 5 && pool.length) {
     const k = pool.splice(Math.floor(rng() * pool.length), 1)[0];
     if (!out.includes(k)) out.push(k);

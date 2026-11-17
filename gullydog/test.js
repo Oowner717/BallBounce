@@ -1288,6 +1288,195 @@ test('walkers stay on the pavement unless they are crossing', () => {
 });
 
 /* ========================================================================== */
+/* The railway                                                                */
+/* ========================================================================== */
+
+group('the railway');
+
+/** Send a train down `track` now, its engine `x` along the line, at speed v. */
+function trainAt(S, track, x, v) {
+  S.rail.count = track; // the tracks take turns: this makes the next one `track`
+  S.rail.next = 0;
+  step(S, DT, IDLE);
+  drainEvents(S);
+  const t = S.rail.trains[S.rail.trains.length - 1];
+  t.x = x;
+  if (v !== undefined) t.v = t.vmax = v;
+  return t;
+}
+
+const trainSpan = (t) => [Math.min(t.x, t.x - t.dir * t.len), Math.max(t.x, t.x - t.dir * t.len)];
+
+test('trains keep a timetable, take the tracks in turn, and never cross the road with the booms up', () => {
+  const S = sim({ seed: 4, hour: 10 });
+  const X = S.W.special.crossing, C = S.C.rail;
+  const seen = new Map();
+  let first = -1, freeFor = 0;
+  for (let i = 0; i < Math.round(330 / DT); i++) {
+    step(S, DT, IDLE);
+    for (const e of drainEvents(S)) if (e.type === 'trainSpawn' && first < 0) first = S.t;
+    let wanted = false;
+    for (const t of S.rail.trains) {
+      if (!seen.has(t.id)) seen.set(t.id, { track: t.track, k: null });
+      const rec = seen.get(t.id);
+      if (rec.k === null && t.dir * t.x > -X.x1) rec.k = S.rail.gate.k; // the engine reaches the road
+      const [lo, hi] = trainSpan(t);
+      if (hi > X.x0 && lo < X.x1) assert.equal(S.rail.gate.state, 'closed', `a train over the road with the gate ${S.rail.gate.state}`);
+      if (!(t.dir * t.x - t.len > X.x1 + C.clearAfter) && -X.x1 - t.dir * t.x < C.warnDist) wanted = true;
+    }
+    // and with no train coming, the booms go back up
+    freeFor = wanted ? 0 : freeFor + DT;
+    if (freeFor > C.openTime + 0.5) assert.equal(S.rail.gate.state, 'open', 'the gate stayed shut with no train about');
+  }
+  assert.ok(near(first, C.firstTrain, 0.1), 'the first train came at ' + first.toFixed(1) + ' s');
+  const recs = [...seen.values()];
+  assert.ok(recs.length >= 3, 'only ' + recs.length + ' trains in five and a half minutes');
+  for (let i = 1; i < recs.length; i++) assert.notEqual(recs[i].track, recs[i - 1].track, 'two trains in a row on one track');
+  for (const r of recs) if (r.k !== null) assert.equal(r.k, 1, `the booms were only ${(r.k * 100).toFixed(0)}% down when an engine reached the road`);
+});
+
+test('every coach is packed: a crowd on the roof, people hanging out of the doors', () => {
+  const S = sim({ seed: 8, hour: 9 });
+  for (let k = 0; k < 4; k++) {
+    const t = trainAt(S, k % 2, -400);
+    const coaches = t.cars.filter((c) => c.kind === 'coach');
+    assert.ok(t.cars[0].kind === 'loco' && coaches.length >= S.C.rail.coaches[0], 'no engine, or too few coaches');
+    let roof = 0, door = 0;
+    for (const c of coaches) {
+      for (const r of c.riders) {
+        assert.ok(Math.abs(r.lx) <= c.len / 2, 'a rider beyond the end of the coach');
+        if (r.slot === 'roof') { roof++; assert.ok(Math.abs(r.lz) <= 1.35 && r.y > 4 && r.y <= 4.42 + 1e-9, 'a rider off the roof'); } else door++;
+      }
+    }
+    assert.ok(roof / coaches.length >= 14, `only ${(roof / coaches.length).toFixed(1)} on each roof`);
+    assert.ok(door / coaches.length >= 3, `only ${(door / coaches.length).toFixed(1)} at the doors of each coach`);
+  }
+});
+
+test('at rush hour traffic and people wait at the booms, and nobody is on the line when a train goes over the road', () => {
+  const S = sim({ seed: 3, hour: 17.5 });
+  const X = S.W.special.crossing, C = S.C.rail;
+  let queued = 0, opened = -1, stuckAfter = 0;
+  for (let i = 0; i < Math.round(150 / DT); i++) {
+    step(S, DT, IDLE);
+    for (const e of drainEvents(S)) if (e.type === 'gateOpen') opened = S.t;
+    for (const t of S.rail.trains) {
+      const [lo, hi] = trainSpan(t);
+      if (hi < X.x0 - 1 || lo > X.x1 + 1) continue;
+      for (const v of S.vehicles) {
+        if (Math.abs(v.x) < X.x1 && Math.abs(v.z - t.z) < C.halfW + v.len / 2) assert.fail(`a ${v.type} on the line as a train went over the road`);
+      }
+      for (const p of S.peds) {
+        if (!p.hidden && Math.abs(p.x) < X.x1 + 2.5 && Math.abs(p.z - t.z) < C.halfW) assert.fail('someone on the line as a train went over the road');
+      }
+    }
+    queued = Math.max(queued, S.vehicles.filter((v) => v.gateWait).length);
+    if (opened > 0 && S.t > opened + 25) stuckAfter = Math.max(stuckAfter, S.vehicles.filter((v) => v.gateWait).length);
+    if (i % 30 === 0) checkSane(S);
+  }
+  assert.ok(opened > 0, 'the gate never opened again');
+  assert.ok(queued >= 3, 'only ' + queued + ' vehicles ever waited at the gate at rush hour');
+  assert.equal(stuckAfter, 0, 'vehicles still waiting at an open gate');
+});
+
+test('nobody stops on the tracks, even with the booms up', () => {
+  const S = sim({ seed: 6, hour: 18 });
+  const X = S.W.special.crossing;
+  let worst = 0;
+  for (let i = 0; i < Math.round(120 / DT); i++) {
+    step(S, DT, IDLE);
+    drainEvents(S);
+    for (const v of S.vehicles) {
+      const onLine = Math.abs(v.x) < X.x1 && X.tracks.some((T) => Math.abs(v.z - T.z) < S.C.rail.halfW + v.len / 2);
+      if (onLine && v.v < 0.1) v.lineT = (v.lineT || 0) + DT; else v.lineT = 0;
+      worst = Math.max(worst, v.lineT);
+    }
+  }
+  assert.ok(worst < 3, `a vehicle sat on the tracks for ${worst.toFixed(1)} s`);
+});
+
+test('a train cannot stop for a dog: it sounds its horn, and a dog on the line is thrown clear, badly hurt', () => {
+  const S = sim({ seed: 2, hour: 10, quiet: true });
+  const T = S.W.special.crossing.tracks[0];
+  place(S, -30, T.z, 0);
+  const t = trainAt(S, 0, -110, 12);
+  const h0 = S.dog.needs.health;
+  const ev = runUntil(S, 12, IDLE, (S2, out) => only(out, 'hit').length > 0);
+  assert.ok(only(ev, 'trainHorn', (e) => e.atDog).length >= 1, 'no horn for the dog on the line');
+  const hit = only(ev, 'hit');
+  assert.equal(hit.length, 1, 'never hit');
+  assert.equal(hit[0].vtype, 'train');
+  assert.ok(near(S.dog.needs.health, h0 - S.C.rail.hitDamage, 1), `health ${h0.toFixed(0)} -> ${S.dog.needs.health.toFixed(0)}`);
+  const after = run(S, 2.5);
+  assert.equal(only(after, 'hit').length, 0, 'hit twice');
+  assert.ok(Math.abs(S.dog.z - T.z) > S.C.rail.halfW, 'still on the line');
+  assert.ok(t.v > 11, 'the train slowed for a dog');
+  checkSane(S);
+});
+
+test('the side of a passing train is a wall: pushing into it gets the dog nowhere', () => {
+  const S = sim({ seed: 2, hour: 10, quiet: true });
+  const T = S.W.special.crossing.tracks[0];
+  const gap = (T.z + S.W.special.crossing.tracks[1].z) / 2;
+  place(S, 30, gap, Math.PI);
+  trainAt(S, 0, 45, 9); // the engine is already past him; the coaches roll by
+  const r = S.C.dog.radius;
+  let worst = 0;
+  const ev = run(S, 6, { mx: 0, mz: -1 });
+  for (let i = 0; i < Math.round(6 / DT); i++) {
+    step(S, DT, { mx: 0.3, mz: -1 });
+    for (const e of drainEvents(S)) ev.push(e);
+    worst = Math.max(worst, S.C.rail.halfW + r - Math.abs(S.dog.z - T.z));
+  }
+  assert.equal(only(ev, 'hit').length, 0, 'hit by the side of a coach');
+  assert.ok(worst < 0.03, `sank ${worst.toFixed(2)} m into a coach`);
+});
+
+test('racing a train wins a cheer; sitting nicely by the line gets something thrown down', () => {
+  const S = sim({ seed: 2, hour: 10, quiet: true });
+  const X = S.W.special.crossing;
+  const gap = (X.tracks[0].z + X.tracks[1].z) / 2;
+  place(S, -40, gap, Math.PI / 2);
+  const t = trainAt(S, 0, -15, 12);
+  t.snack = false;
+  const ev = run(S, 7, { mx: 1, mz: 0, run: true });
+  assert.equal(only(ev, 'trainRace').length, 1, 'no race');
+  assert.ok(t.cheerT > 0, 'nobody cheering');
+
+  const S2 = sim({ seed: 2, hour: 10, quiet: true });
+  place(S2, -40, gap, 0);
+  S2.dog.sitting = true;
+  const t2 = trainAt(S2, 0, -25, 5);
+  t2.snack = true;
+  const ev2 = run(S2, 4);
+  assert.equal(only(ev2, 'trainSnack').length, 1, 'nothing thrown');
+  assert.ok(S2.items.some((it) => it.fromTrain), 'no snack on the ground');
+});
+
+test('a cow on the crossing stops the train short of the road, and then it goes on', () => {
+  const S = sim({ seed: 2, hour: 10, quiet: true });
+  const X = S.W.special.crossing, T = X.tracks[0];
+  const c = S.cows[0];
+  const t = trainAt(S, 0, -160, 12);
+  let minV = 99;
+  const stubborn = () => { c.x = 0; c.z = T.z; c.state = 'lie'; c.timer = 99; c.target = null; c.shooed = null; c.speed = 0; };
+  stubborn();
+  for (let i = 0; i < Math.round(25 / DT); i++) {
+    step(S, DT, IDLE);
+    drainEvents(S);
+    stubborn();
+    minV = Math.min(minV, t.v);
+    assert.ok(t.dir * (c.x - t.x) > 1, 'the train ran into the cow');
+  }
+  assert.ok(minV < 0.2, 'the train never stopped');
+  // the cow is let go: shooed off the line, and the train goes on its way
+  const ev = runUntil(S, 40, IDLE, () => t.dir * t.x > X.x1 + 5);
+  assert.ok(t.dir * t.x > X.x1 + 5, 'the train never got going again');
+  assert.ok(Math.abs(c.z - T.z) > S.C.rail.halfW, 'the cow is still on the line');
+  assert.ok(only(ev, 'trainHorn').length >= 1);
+});
+
+/* ========================================================================== */
 /* Tasks and cred                                                             */
 /* ========================================================================== */
 

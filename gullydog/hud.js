@@ -55,7 +55,7 @@ export class Hud {
     const col = {
       [SURF.ROAD]: [70, 70, 80], [SURF.CROSS]: [210, 210, 210], [SURF.WALK]: [176, 164, 142], [SURF.GALI]: [160, 148, 128],
       [SURF.PLAZA]: [196, 182, 152], [SURF.DIRT]: [176, 140, 96], [SURF.ISLAND]: [110, 160, 80], [SURF.MARKET]: [170, 150, 118],
-      [SURF.BUILDING]: [96, 86, 82], [SURF.MASS]: [96, 86, 82],
+      [SURF.BUILDING]: [96, 86, 82], [SURF.MASS]: [96, 86, 82], [SURF.RAIL]: [128, 120, 110],
     };
     for (let i = 0; i < N * N; i++) {
       const c3 = col[W.surf[i]] || [0, 0, 0];
@@ -104,6 +104,15 @@ export class Hud {
     }
     for (const c of S.cows) blip(c.x, c.z, '#f4f1e8', 2.6);
     for (const it of S.items) if (it.state === 'ground' && it.kind !== 'ball' && it.kind !== 'chappal') blip(it.x, it.z, '#ffd23f', 2.2);
+    // trains: a red bar from engine to tail
+    for (const tr of S.rail.trains) {
+      const lo = Math.min(tr.x, tr.x - tr.dir * tr.len), hi = Math.max(tr.x, tr.x - tr.dir * tr.len);
+      if (hi < d.x - 120 || lo > d.x + 120) continue;
+      g.fillStyle = '#c8372b';
+      g.fillRect((lo - d.x) * 2, (tr.z - 1.6 - d.z) * 2, (hi - lo) * 2, 6.4);
+      g.fillStyle = '#ffd23f';
+      g.fillRect((tr.x - d.x) * 2 - (tr.dir > 0 ? 3 : 0), (tr.z - 1.6 - d.z) * 2, 3, 6.4);
+    }
     const t = taskTarget(S);
     if (t) {
       const pulse = 4 + Math.sin(performance.now() / 180) * 1.2;
@@ -165,6 +174,16 @@ export class Hud {
         case 'newDay': this.toast(`Day ${e.day} — ${WEATHER_LABEL[e.weather] || e.weather}`, 'gold', 3.5); break;
         case 'cowMoved': if (e.fromRoad && e.byDog) this.toast('The cow ambles off the road. Traffic thanks you.', 'good'); break;
         case 'bikeChase': this.toast('Chased that scooter right off!', 'good', 2.4); break;
+        case 'gateClosing': {
+          const X = S.W.special.crossing;
+          const close = X && Math.hypot(S.dog.x, S.dog.z - X.gateZ[0]) < 70;
+          if (close || !this.sawTrain) this.toast(close ? 'Train coming! The phatak is closing.' : 'A train is coming! Hear it? The phatak is at the top of Bazaar Road.', 'gold', 3.6);
+          this.sawTrain = true;
+          break;
+        }
+        case 'trainHorn': if (e.atDog) { this.vig = Math.max(this.vig || 0, 0.5); this.toast('Get off the tracks!', 'bad', 1.4); } break;
+        case 'trainRace': this.toast('You raced the train! The whole roof is cheering.', 'good', 3.2); break;
+        case 'trainSnack': this.toast(`Somebody on the train threw you a ${e.kind}!`, 'good', 2.8); break;
         case 'crossed': break;
         default:
       }

@@ -641,6 +641,173 @@ export function buildRickshaw() {
   return m;
 }
 
+/* ===================================================================== TRAINS */
+
+// One rigid bone each. y = 0 is the ground; the rail heads are at RAIL_TOP and
+// the wheels sit on them. Slots: 1 body paint, 2 bands, 3 roof.
+const RAIL_TOP = 0.46;
+const BODY = [{ name: 'body', parent: -1, pivot: [0, 0, 0] }];
+const IRON = hex('#2a2827');
+const UNDER = hex('#353230');
+const SKINS = ['#8d5524', '#a0662f', '#6b4423', '#c68642', '#7a4a26'].map(hex);
+const SHIRTS = ['#e8e4d8', '#3d6fb5', '#c0392b', '#f1c40f', '#2e8b57', '#8e44ad', '#ecf0f1', '#d35400'].map(hex);
+
+/** A bogie: a frame and `axles` pairs of wheels on the two rails. */
+function bogie(b, zc, axles, r, pitch, gauge = 1.676) {
+  b.slot(0).color(IRON);
+  const half = ((axles - 1) * pitch) / 2;
+  b.box(-1.15, RAIL_TOP + r * 0.6, zc - half - 0.6, 1.15, RAIL_TOP + r * 1.55, zc + half + 0.6, { skip: 'b' });
+  b.box(-0.35, RAIL_TOP + r * 1.55, zc - 0.5, 0.35, RAIL_TOP + r * 1.55 + 0.25, zc + 0.5, { skip: 'b' });
+  for (let k = 0; k < axles; k++) {
+    const z = zc - half + k * pitch;
+    for (const x of [-gauge / 2, gauge / 2]) b.color(hex('#1f1d1c')).wheel(x, RAIL_TOP + r, z, r, 0.13, 10);
+    b.color(hex('#6b6560')).box(-gauge / 2, RAIL_TOP + r - 0.05, z - 0.05, gauge / 2, RAIL_TOP + r + 0.05, z + 0.05);
+  }
+}
+
+/** Buffers and a coupler at one end (s = +1 front, -1 back) of a body whose end is at z. */
+function buffers(b, z, s, y) {
+  b.slot(0).color(IRON).box(-1.45, y - 0.25, Math.min(z, z + s * 0.12), 1.45, y + 0.25, Math.max(z, z + s * 0.12));
+  for (const x of [-0.9, 0.9]) {
+    b.color(hex('#3f3c3a'));
+    const z1 = z + s * 0.45;
+    b.box(x - 0.17, y - 0.17, Math.min(z, z1), x + 0.17, y + 0.17, Math.max(z, z1));
+  }
+  b.color(hex('#3f3c3a')).box(-0.12, y - 0.12, Math.min(z, z + s * 0.4), 0.12, y + 0.12, Math.max(z, z + s * 0.4));
+}
+
+export function buildCoach() {
+  const L = 10.8, W = 1.6, y0 = 1.25, yWin0 = 2.3, yWin1 = 3.2, yTop = 4.0;
+  const m = model('coach', BODY, (b) => {
+    b.bone(0);
+    bogie(b, 7.6, 2, 0.46, 2.6);
+    bogie(b, -7.6, 2, 0.46, 2.6);
+    // underframe, battery boxes, the water tanks under the floor
+    b.slot(0).color(UNDER).box(-1.4, 1.05, -L, 1.4, y0, L, { skip: 'b' });
+    b.color(hex('#2b2b2b')).box(-1.1, 0.7, -4.5, 1.1, 1.05, -1.5, { skip: 't' }).box(-0.9, 0.75, 1.0, 0.9, 1.05, 4.2, { skip: 't' });
+    // body below and above the windows, then the pillars between them
+    b.slot(1).color(WHITE);
+    b.box(-W, y0, -L, W, yWin0, L, { skip: 'b' });
+    b.box(-W, yWin1, -L, W, yTop, L, { skip: 'b' });
+    const doorZ = L - 0.95;
+    const winZ = [];
+    for (let z = -L + 2.1; z <= L - 2.0; z += 1.32) winZ.push(z);
+    // the ends of the window band are solid (the doors and the vestibules)
+    b.box(-W, yWin0, -L, W, yWin1, -L + 1.75, { skip: 'tb' }).box(-W, yWin0, L - 1.75, W, yWin1, L, { skip: 'tb' });
+    for (const z of winZ) b.box(-W, yWin0, z + 0.48, W, yWin1, z + 0.84, { skip: 'tb' });
+    // the bands: one under the windows, one over them (slot 2)
+    b.slot(2).box(-W - 0.012, yWin0 - 0.16, -L, W + 0.012, yWin0 - 0.02, L, { skip: 'tb' });
+    b.box(-W - 0.012, yWin1 + 0.08, -L, W + 0.012, yWin1 + 0.2, L, { skip: 'tb' });
+    // the glass (open windows, dark inside) with their bars, and the crowd inside
+    b.slot(0).color(hex('#1b2024')).box(-W + 0.08, yWin0, -L + 1.75, W - 0.08, yWin1, L - 1.75, { skip: 'tb' });
+    let k = 0;
+    for (const z of winZ) {
+      for (const sx of [-1, 1]) {
+        b.color(hex('#9a9a96'));
+        for (let yb = yWin0 + 0.2; yb < yWin1 - 0.05; yb += 0.22) b.box(sx * W - 0.02, yb, z - 0.4, sx * W + 0.02, yb + 0.035, z + 0.48, { skip: 'tb' });
+        // two or three faces at each window, and a shirt under each
+        for (let q = 0; q < 2 + (k % 2); q++, k++) {
+          const hz = z - 0.25 + q * 0.32, hy = 2.72 + ((k * 7) % 3) * 0.05;
+          b.color(SHIRTS[k % SHIRTS.length]).box(sx * (W - 0.45), yWin0, hz - 0.13, sx * (W - 0.15), hy - 0.12, hz + 0.13);
+          b.color(SKINS[k % SKINS.length]).boxC(sx * (W - 0.28), hy, hz, 0.2, 0.25, 0.19);
+          if (k % 5 === 0) b.color(hex('#141414')).boxC(sx * (W - 0.29), hy + 0.13, hz, 0.21, 0.06, 0.2);
+        }
+      }
+    }
+    // the doors: open, dark, with two steps below each
+    for (const ez of [-1, 1]) {
+      for (const sx of [-1, 1]) {
+        const zc = ez * doorZ;
+        b.color(hex('#141210')).box(sx * W - 0.03, y0 + 0.05, zc - 0.45, sx * W + 0.03, yWin1 + 0.15, zc + 0.45, { skip: 'tb' });
+        b.color(hex('#7d7a75')).box(sx * W - 0.2, 0.92, zc - 0.45, sx * W + 0.04, 0.98, zc + 0.45).box(sx * W - 0.1, 1.12, zc - 0.45, sx * W + 0.06, 1.18, zc + 0.45);
+        b.color(hex('#c9c6c0')).box(sx * (W + 0.03), y0 + 0.3, zc - 0.5, sx * (W + 0.06), yWin1, zc - 0.46).box(sx * (W + 0.03), y0 + 0.3, zc + 0.46, sx * (W + 0.06), yWin1, zc + 0.5);
+      }
+    }
+    // the roof: a shallow curve in three facets, with its vents
+    b.slot(3).color(WHITE);
+    b.taper(0, yTop, 0, W * 2, L * 2, yTop + 0.3, W * 1.4, L * 2);
+    b.taper(0, yTop + 0.3, 0, W * 1.4, L * 2, 4.42, W * 0.7, L * 2, 0, { skip: 'b' });
+    b.slot(0).color(hex('#4a4744'));
+    for (let z = -L + 1.6; z < L - 1; z += 2.4) b.boxC(0, 4.47, z, 0.42, 0.12, 0.42);
+    // the vestibule bellows that join it to the next coach
+    b.color(hex('#1c1b1a')).box(-0.75, 1.3, -L - 0.36, 0.75, 3.6, -L).box(-0.75, 1.3, L, 0.75, 3.6, L + 0.36);
+    buffers(b, L, 1, 1.0);
+    buffers(b, -L, -1, 1.0);
+  });
+  m.halfLen = 10.8; m.halfWidth = 1.6; m.height = 4.45;
+  return m;
+}
+
+export function buildLoco() {
+  const L = 9.0;
+  const m = model('loco', BODY, (b) => {
+    b.bone(0);
+    bogie(b, 5.6, 3, 0.54, 1.9);
+    bogie(b, -5.6, 3, 0.54, 1.9);
+    // the running board, with a rail along each side
+    b.slot(0).color(UNDER).box(-1.5, 1.35, -L, 1.5, 1.65, L, { skip: 'b' });
+    b.color(hex('#2b2b2b')).box(-1.0, 0.9, -2.8, 1.0, 1.35, 2.6, { skip: 't' }); // fuel tank
+    b.color(hex('#d8d4ca'));
+    for (const sx of [-1.42, 1.42]) {
+      b.box(sx - 0.02, 2.55, -L + 0.3, sx + 0.02, 2.6, 2.6);
+      for (let z = -L + 0.4; z < 2.6; z += 1.6) b.box(sx - 0.02, 1.65, z, sx + 0.02, 2.55, z + 0.04);
+    }
+    // the long hood (behind the cab) and the short hood (the nose)
+    b.slot(1).color(WHITE);
+    b.box(-1.18, 1.65, -L + 0.2, 1.18, 3.75, 2.9, { skip: 'b' });
+    b.box(-1.18, 1.65, 6.1, 1.18, 3.0, L - 0.25, { skip: 'b' });
+    // the cab, with its windows
+    b.box(-1.5, 1.65, 2.9, 1.5, 2.6, 6.1, { skip: 'b' });
+    b.box(-1.5, 3.55, 2.9, 1.5, 4.1, 6.1, { skip: 'b' });
+    b.box(-1.5, 2.6, 2.9, 1.5, 3.55, 3.2, { skip: 'tb' }).box(-1.5, 2.6, 5.8, 1.5, 3.55, 6.1, { skip: 'tb' });
+    b.box(-1.5, 2.6, 4.35, 1.5, 3.55, 4.65, { skip: 'tb' });
+    b.box(-0.18, 2.6, 6.0, 0.18, 3.55, 6.12, { skip: 'tb' });
+    b.slot(0).color(GLASS).box(-1.46, 2.6, 3.2, 1.46, 3.55, 5.8, { skip: 'tb' }).box(-1.46, 2.6, 6.0, 1.46, 3.55, 6.08, { skip: 'tb' });
+    // the bands: round the nose and along the hoods (slot 2), chevrons on the nose
+    b.slot(2).box(-1.2, 2.25, 6.1, 1.2, 2.45, L - 0.24, { skip: 'tb' }).box(-1.2, 2.25, -L + 0.18, 1.2, 2.45, 2.9, { skip: 'tb' });
+    b.box(-1.52, 2.0, 2.9, 1.52, 2.2, 6.1, { skip: 'tb' });
+    for (let k = 0; k < 3; k++) {
+      const yy = 1.75 + k * 0.4;
+      b.rod([-1.15, yy, L - 0.24], [0, yy + 0.32, L - 0.24], 0.06, 4).rod([1.15, yy, L - 0.24], [0, yy + 0.32, L - 0.24], 0.06, 4);
+    }
+    // roof of the cab and the hood tops (slot 3), the exhaust stack, the horns
+    b.slot(3).color(WHITE).box(-1.55, 4.1, 2.85, 1.55, 4.22, 6.15).box(-1.2, 3.75, -L + 0.2, 1.2, 3.85, 2.9, { skip: 'b' });
+    b.box(-1.2, 3.0, 6.1, 1.2, 3.08, L - 0.25, { skip: 'b' });
+    b.slot(0).color(hex('#1e1e1e')).cyl(0, 3.85, -1.2, 0.26, 4.25, 0.3, 8);
+    for (let z = -7.5; z < 1.5; z += 1.5) b.color(hex('#555049')).box(-0.9, 3.85, z, 0.9, 3.95, z + 0.9);
+    b.color(hex('#b8b4ac')).cyl(0.4, 4.22, 4.0, 0.06, 4.45, 0.1, 6).cyl(-0.4, 4.22, 4.0, 0.06, 4.45, 0.1, 6);
+    // the lights: a big one on the nose and two on the cab roof
+    b.color(HEADLIGHT).emissive(220).cyl(0, 2.7, L - 0.2, 0.2, 2.72, 0.2, 10).boxC(0, 2.75, L - 0.2, 0.3, 0.3, 0.06);
+    b.boxC(0.6, 4.0, 6.13, 0.22, 0.16, 0.05).boxC(-0.6, 4.0, 6.13, 0.22, 0.16, 0.05);
+    b.color(TAILLIGHT).emissive(60).boxC(1.0, 1.85, -L + 0.17, 0.16, 0.16, 0.05).boxC(-1.0, 1.85, -L + 0.17, 0.16, 0.16, 0.05);
+    b.emissive(0);
+    // the cowcatcher under the nose
+    b.color(hex('#2b2b2b')).taper(0, 0.62, L + 0.05, 2.6, 0.5, 1.35, 2.8, 0.3, -0.12);
+    buffers(b, L - 0.1, 1, 1.0);
+    buffers(b, -L, -1, 1.0);
+  });
+  m.halfLen = 9.0; m.halfWidth = 1.55; m.height = 4.45;
+  return m;
+}
+
+/** A crossing boom: pivot at the origin, swinging shut along +z. Red and white, with its red disc. */
+export function buildBoom() {
+  return model('boom', BODY, (b) => {
+    b.bone(0).slot(0);
+    for (let k = 0; k < 15; k++) {
+      const z0 = k * 0.5, z1 = Math.min(7.5, z0 + 0.5);
+      b.color(k % 2 ? hex('#f4f2ec') : hex('#c62828')).box(-0.055, -0.06, z0, 0.055, 0.06, z1, { skip: k ? '' : 'n' });
+    }
+    b.color(hex('#c62828')).wheel(0, 0, 3.75, 0.3, 0.025, 14);
+    b.color(hex('#f4f2ec')).wheel(0, 0, 3.75, 0.2, 0.03, 14);
+    b.color(hex('#3a3a3a')).box(-0.13, -0.16, -1.05, 0.13, 0.16, -0.2).box(-0.09, -0.09, -0.2, 0.09, 0.09, 0.15);
+    // the hanging grille along its length that keeps people from ducking (it does not work)
+    b.color(hex('#3d3d3d'));
+    for (let z = 0.6; z < 7.3; z += 0.45) b.box(-0.01, -0.62, z, 0.01, -0.06, z + 0.02);
+    b.box(-0.012, -0.64, 0.6, 0.012, -0.6, 7.2);
+  });
+}
+
 /* ===================================================================== ITEMS */
 
 /** Small things the dog can carry or eat. One bone; drawn as instances. */
@@ -663,6 +830,19 @@ export function buildItems() {
     chappal: one('chappal', (b) => {
       b.color(hex('#2f6db5')).box(-0.045, 0, -0.12, 0.045, 0.02, 0.12);
       b.color(hex('#f2f2f2')).box(-0.04, 0.02, 0.0, 0.04, 0.03, 0.03);
+    }),
+    // luggage on the train roofs, and the gateman's flag
+    bundle: one('bundle', (b) => {
+      b.color(hex('#b03a2e')).sphere(0, 0.2, 0, 0.3, 1, 0.65);
+      b.color(hex('#f1c40f')).boxC(0, 0.36, 0, 0.12, 0.08, 0.12);
+    }),
+    trunk: one('trunk', (b) => {
+      b.color(hex('#2e6b8a')).box(-0.38, 0, -0.24, 0.38, 0.32, 0.24);
+      b.color(hex('#b8bcc2')).box(-0.39, 0.29, -0.25, 0.39, 0.33, 0.25).boxC(0, 0.2, 0.245, 0.08, 0.08, 0.02);
+    }),
+    flag: one('flag', (b) => {
+      b.color(hex('#7a5230')).rod([0, 0, 0], [0, 0.55, 0], 0.012, 4);
+      b.color(hex('#1f9d3a')).box(0, 0.32, -0.005, 0.34, 0.55, 0.005);
     }),
     bowl: one('bowl', (b) => {
       b.color(hex('#9a9da3')).cyl(0, 0, 0, 0.09, 0.06, 0.13, 10, { caps: 'b' });
@@ -688,6 +868,9 @@ export function buildAllModels() {
     bus: buildBus(),
     truck: buildTruck(),
     rickshaw: buildRickshaw(),
+    loco: buildLoco(),
+    coach: buildCoach(),
+    boom: buildBoom(),
   }, people, items);
 }
 

@@ -16,6 +16,7 @@
 import { routePose, ARMS, surfAt, SURF } from './world.js';
 import { pickWeighted, pick, rand, clamp, lerp, dist2, wrapAngle, hex, smoothstep } from './util.js';
 import { emit, say } from './simcore.js';
+import { gateStop } from './rail.js';
 import { SKIN_TONES, HAIR_COLORS, CLOTHES, VEHICLE_COLORS, SPEECH } from './data.js';
 
 const POSE = { x: 0, z: 0, tx: 0, tz: 0, halfW: 0, speed: 0, tag: 0 };
@@ -334,6 +335,12 @@ export function step(S, dt) {
       sense = { gap: 0, what: 'stop', ref: null, lead: 0 };
       if (v.stopWait <= 0) { v.stopAt = -1; v.dTarget = v.dPref; }
     }
+    // the railway crossing: wait at the line while the booms are down, and never
+    // stop on the tracks
+    const gs = gateStop(S, v, sense);
+    if (gs >= 0 && gs < sense.gap) sense = { gap: gs, what: 'gate', ref: null, lead: 0 };
+    // queued for the gate, at the front or further back: waiting, not stuck
+    v.gateWait = v.v < 0.5 && ((sense.what === 'gate' && sense.gap < 2) || (sense.what === 'veh' && sense.ref.gateWait && sense.gap < 5));
 
     // curve speed: look a little ahead for the tightest bend
     let curve = limit;
@@ -345,11 +352,12 @@ export function step(S, dt) {
     }
 
     // safe speed for the gap ahead
-    const g0 = sense.what === 'stop' || sense.what === 'yield' ? 0.05 : v.type === 'scooter' || v.type === 'bike' || v.type === 'cycle' ? T.minGap * 0.6 : T.minGap;
+    const g0 = sense.what === 'stop' || sense.what === 'yield' || sense.what === 'gate' ? 0.05 : v.type === 'scooter' || v.type === 'bike' || v.type === 'cycle' ? T.minGap * 0.6 : T.minGap;
     const free = Math.max(0, sense.gap - g0);
     const safe = Math.sqrt(sense.lead * sense.lead + 2 * v.T.decel * 0.7 * free);
     let target = Math.min(limit, curve, safe);
     if (nudging) target = Math.min(target, 1.0);
+    if (v.ducking) target = Math.min(target, 2.6); // heads down under the boom
     if (v.brakeT > 0) { v.brakeT -= dt; target = 0; }
 
     // creeping out of a deadlock: inch forward past another stuck vehicle
@@ -364,7 +372,7 @@ export function step(S, dt) {
     // weaving: two-wheelers, autos and cars squeeze past slow obstacles. Only
     // something actually in the way counts: at a crawl the look-ahead is short, and
     // an empty road ahead of a vehicle pulling away is not a reason to swerve.
-    const blocked = sense.what !== '' && sense.gap < 7 && (sense.what !== 'veh' || sense.lead < v.vmax * 0.45) && sense.what !== 'yield' && sense.what !== 'stop';
+    const blocked = sense.what !== '' && sense.gap < 7 && (sense.what !== 'veh' || sense.lead < v.vmax * 0.45) && sense.what !== 'yield' && sense.what !== 'stop' && sense.what !== 'gate' && !v.gateWait;
     v.blockedT = blocked ? v.blockedT + dt : Math.max(0, v.blockedT - dt * 2);
     v.weaveT -= dt;
     const hw = POSE.halfW;
@@ -416,7 +424,7 @@ export function step(S, dt) {
     place(S, v);
     v.steer = clamp(wrapAngle(v.yaw - prevYaw) / Math.max(dt, 1e-3) * 0.35, -0.5, 0.5);
     v.pitch = lerp(v.pitch, clamp((target - v.v) * 0.01, -0.03, 0.03), 1 - Math.exp(-6 * dt));
-    if (v.v < 0.1) v.stopT += dt; else v.stopT = 0;
+    if (v.v < 0.1 && !v.gateWait) v.stopT += dt; else if (v.v >= 0.1) v.stopT = 0;
     // patience wears down and only slowly comes back: a slow rickshaw cannot use a
     // momentary gap in the ring, so a gap must not make it polite all over again
     if (sense.what === 'yield' || (sense.what === 'veh' && v.v < 0.3)) v.waitT += dt; else v.waitT = Math.max(0, v.waitT - dt * 2);

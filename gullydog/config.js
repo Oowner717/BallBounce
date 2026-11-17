@@ -178,6 +178,31 @@ export const CONFIG = {
     samosaRefill: 40,      // game minutes per samosa back on the tray
   },
 
+  /* ----------------------------------------------------------------- rail */
+  // Real seconds, not game minutes: the train is a show, and a show keeps time.
+  rail: {
+    firstTrain: 30,        // seconds after the day starts (or a load) until the first train
+    every: [95, 160],      // seconds between trains
+    speed: [11.5, 14],     // m/s through the town
+    coaches: [8, 11],
+    locoLen: 18.0,
+    coachLen: 21.6,
+    coupling: 0.7,         // gap between cars
+    halfW: 1.6,            // half the width of a coach
+    spawnX: 470,           // trains appear and vanish this far along the line
+    warnDist: 210,         // the gate starts to close when a nose is this far from the road
+    closeTime: 7,          // seconds for the booms to come down
+    openTime: 4,
+    clearAfter: 8,         // metres past the road the tail must be before the booms go up
+    duckDist: 120,         // two-wheelers still duck under the boom while every nose is further off than this
+    hornAt: [300, 120],    // distances from the crossing where the driver sounds the horn
+    brake: 1.6,            // m/s^2: a train cannot stop for a dog, only for a cow on the crossing
+    hitDamage: 55,
+    raceTime: 4,           // seconds of running alongside to win a race
+    raceSpeed: 4,          // m/s along the train the dog must make
+    snackChance: 0.35,     // per train, someone throws the dog a snack if he is close and keeps up
+  },
+
   /* ----------------------------------------------------------------- cred */
   cred: {
     ranks: [[0, "Nobody's Pup"], [60, 'Gali Dog'], [180, 'Mohalla Favourite'], [400, 'Bazaar Boss'], [750, 'Gully King']],

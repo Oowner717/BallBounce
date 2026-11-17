@@ -24,6 +24,7 @@ import * as Traffic from './traffic.js';
 import * as Crowd from './crowd.js';
 import * as Fauna from './fauna.js';
 import * as Scenes from './scenes.js';
+import * as Rail from './rail.js';
 import * as Tasks from './tasks.js';
 
 export { drainEvents };
@@ -85,6 +86,7 @@ export function createSim({ world, config, seed = 1, save = null, weather = null
   Crowd.init(S);
   Fauna.init(S);
   Scenes.init(S);
+  Rail.init(S);
   Tasks.startDay(S);
   if (save && save.mid && save.mid.day === S.clock.day) applyMidDay(S, save.mid);
   S.dog.y = groundAt(S, S.dog.x, S.dog.z, 1);
@@ -112,6 +114,7 @@ export function step(S, dt, input) {
   Fauna.insertGrid(S);
   S.grid.insert('dog', S.dog, S.dog.x, S.dog.z, S.C.dog.radius);
   updateDog(S, dt, input);
+  Rail.step(S, dt);
   Traffic.step(S, dt);
   Crowd.step(S, dt);
   Fauna.step(S, dt);
@@ -959,6 +962,8 @@ export function hashState(S) {
   for (const c of S.cows) { mix(c.x); mix(c.z); }
   for (const b of S.birds) { mix(b.x); mix(b.y); mix(b.z); }
   for (const q of S.dogs) { mix(q.x); mix(q.z); }
+  for (const t of S.rail.trains) { mix(t.id); mix(t.x); mix(t.v); }
+  mix(S.rail.gate.k); mix(S.rail.next);
   mix(S.items.length);
   mix(S.rng.getState());
   return h >>> 0;

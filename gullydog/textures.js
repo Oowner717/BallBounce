@@ -43,6 +43,8 @@ export function atlasLayout() {
   place('mandi', 256, 64);
   place('chai', 256, 64);
   place('police', 128, 48);
+  place('phatak', 256, 64);
+  place('whistle', 64, 64);
   for (let i = 0; i < 4; i++) place('plate:' + i, 128, 32);
   place('shutter', 64, 64);
   place('brick', 128, 128);
@@ -340,6 +342,8 @@ export function paintAtlas(layout, doc) {
   banner('mandi', '#2e7d32', '#ffffff', 'SABZI MANDI');
   banner('chai', '#5b2a86', '#ffd400', devanagari ? 'चाय  •  CHAI' : 'CHAI  •  TEA');
   banner('police', '#ffffff', '#c62828', 'POLICE');
+  banner('phatak', '#f2c230', '#141414', devanagari ? 'फाटक  •  LEVEL CROSSING' : 'LEVEL CROSSING');
+  banner('whistle', '#f2c230', '#141414', 'W/L', '"Arial Black", Impact, sans-serif');
   // one invented state code for the whole town: real codes would put it on a real map
   const plates = ['GD 07 CK 4721', 'GD 02 BZ 0912', 'GD 04 MD 5588', 'GD 01 TT 2046'];
   plates.forEach((t, i) => banner('plate:' + i, i === 1 ? '#f5d300' : '#f4f4f4', '#111111', t, '"Arial Narrow", Arial, sans-serif'));
