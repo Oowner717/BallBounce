@@ -120,7 +120,6 @@ For looking at a particular moment without playing up to it:
 | `?hour=18.6` | Set the clock. |
 | `?weather=rain` | `clear`, `hazy`, `rain`, `holi` or `diwali`. |
 | `?x=-36&z=-30&yaw=3.1` | Put the dog somewhere. |
-| `?seed=7` | World and simulation seed (7 is the neighbourhood everyone plays). |
 | `?quality=low` | `low`, `medium` or `high`, overriding the setting. |
 | `?fixedstep` | Advance exactly 1/30 s per frame, however slow the frame. For headless browsers. |
 | `?debug` | Frame timings, draw calls, triangles, counts and the dog's state. |

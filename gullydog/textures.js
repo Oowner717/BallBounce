@@ -340,7 +340,8 @@ export function paintAtlas(layout, doc) {
   banner('mandi', '#2e7d32', '#ffffff', 'SABZI MANDI');
   banner('chai', '#5b2a86', '#ffd400', devanagari ? 'चाय  •  CHAI' : 'CHAI  •  TEA');
   banner('police', '#ffffff', '#c62828', 'POLICE');
-  const plates = ['DL 3C AB 4721', 'MH 01 BZ 0912', 'UP 32 GT 5588', 'KA 05 MN 2046'];
+  // one invented state code for the whole town: real codes would put it on a real map
+  const plates = ['GD 07 CK 4721', 'GD 02 BZ 0912', 'GD 04 MD 5588', 'GD 01 TT 2046'];
   plates.forEach((t, i) => banner('plate:' + i, i === 1 ? '#f5d300' : '#f4f4f4', '#111111', t, '"Arial Narrow", Arial, sans-serif'));
   {
     const [x, y, w, h] = P.shutter;

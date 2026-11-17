@@ -4,7 +4,8 @@
  * generator (which picks), the texture painter (which draws every sign once),
  * and the HUD (which shows the speech).
  *
- * Every business name here is invented. Nothing is a real brand.
+ * Every business name here is invented. Nothing is a real brand, and no sign
+ * names a real city: the town itself is made up.
  */
 
 export const DOG_NAME = 'Bhura';
@@ -60,8 +61,8 @@ export const SHOP_TYPES = {
     weight: 2,
   },
   tailor: {
-    name: ['Bombay Tailors', 'Fashion Point Tailors', 'Perfect Fit Tailors'],
-    hi: ['बॉम्बे टेलर्स', 'फैशन पॉइंट टेलर्स', 'परफेक्ट फिट टेलर्स'],
+    name: ['Modern Tailors', 'Fashion Point Tailors', 'Perfect Fit Tailors'],
+    hi: ['मॉडर्न टेलर्स', 'फैशन पॉइंट टेलर्स', 'परफेक्ट फिट टेलर्स'],
     sub: ['Gents & Ladies Tailoring', 'Alteration Done Here', 'Blouse Specialist'],
     signs: [['#14213d', '#fca311'], ['#8338ec', '#ffffff']],
     goods: ['#e63946', '#457b9d', '#f1faee', '#ffb4a2'],
@@ -92,8 +93,8 @@ export const SHOP_TYPES = {
     food: 'beg', weight: 1,
   },
   pan: {
-    name: ['Raju Pan Bhandar', 'Banarasi Pan Corner'],
-    hi: ['राजू पान भंडार', 'बनारसी पान कॉर्नर'],
+    name: ['Raju Pan Bhandar', 'Rangeela Pan Corner'],
+    hi: ['राजू पान भंडार', 'रंगीला पान कॉर्नर'],
     sub: ['Meetha Pan Special', 'Cold Drinks Available'],
     signs: [['#70e000', '#1b4332'], ['#ff4d6d', '#ffffff']],
     goods: ['#38b000', '#ff4d6d', '#ffd60a', '#ffffff'],
@@ -216,7 +217,7 @@ export const CLOTHES = {
 
 export const VEHICLE_COLORS = {
   autoCng: [['#2e9e4f', '#f5c518'], ['#2a8f47', '#f2c21a']],
-  autoMumbai: [['#151515', '#f5c518']],
+  autoBlack: [['#151515', '#f5c518']],
   car: ['#f2f2f2', '#c8ccd0', '#b71c1c', '#6c757d', '#1f4e79', '#7b1e2b', '#e8e2d0', '#2f3e46'],
   taxi: [['#f5c518', '#151515']],
   scooter: ['#c62828', '#f2f2f2', '#212121', '#1565c0', '#8e8e8e', '#6d1b2b', '#00796b', '#f9a825'],

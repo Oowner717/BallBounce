@@ -68,6 +68,8 @@ let W, layout, city, models, R, S, input, audio, hud;
 const rigs = {};
 const anims = new WeakMap();
 const animOf = (o) => { let a = anims.get(o); if (!a) { a = newAnim(); a.t = Math.random() * 10; anims.set(o, a); } return a; };
+// One town, always the same: there is no choosing another map.
+const WORLD_SEED = 7;
 let state = 'loading'; // loading | start | play | pause | summary
 let glLost = false;
 let lastSave = 0;
@@ -84,7 +86,7 @@ function fail(err) {
 window.addEventListener('error', (e) => { if (state === 'loading') fail(e.error || e.message); });
 
 async function boot() {
-  const seed = Number(Q.get('seed')) || 7;
+  const seed = WORLD_SEED;
   setLoading('Laying out the galis…');
   await frame0();
   W = generateWorld(seed);

@@ -114,7 +114,7 @@ function vehicleColors(S, type) {
   const rng = S.rng, V = VEHICLE_COLORS;
   const black = hex('#222222'), white = hex('#ffffff');
   switch (type) {
-    case 'auto': { const c = rng() < 0.75 ? pick(rng, V.autoCng) : pick(rng, V.autoMumbai); return [hex(c[0]), hex(c[1]), black, white]; }
+    case 'auto': { const c = rng() < 0.75 ? pick(rng, V.autoCng) : pick(rng, V.autoBlack); return [hex(c[0]), hex(c[1]), black, white]; }
     case 'taxi': { const c = pick(rng, V.taxi); return [hex(c[0]), hex(c[1]), black, white]; }
     case 'car': { const c = hex(pick(rng, V.car)); return [c, c, black, white]; }
     case 'bus': { const c = pick(rng, V.bus); return [hex(c[0]), hex(c[1]), black, white]; }

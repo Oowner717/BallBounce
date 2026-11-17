@@ -29,6 +29,7 @@ import { groundAt, spawnItem } from './simcore.js';
 import { makePerson } from './crowd.js';
 import { samosasLeft } from './scenes.js';
 import { TASKS, tasksForDay, rankFor, addCred } from './tasks.js';
+import { SHOP_TYPES, UPPER_SIGNS, WALL_ADS, SPEECH } from './data.js';
 import { environment, sunDirection, lampLevel, nightFactor, WEATHERS } from './env.js';
 import { atlasLayout, paintAtlas, paintNoise } from './textures.js';
 import { buildCity } from './cityMesh.js';
@@ -273,8 +274,8 @@ test('the same seed builds the same neighbourhood', () => {
   assert.equal(digestWorld(generateWorld(7)), WORLD_DIGEST);
 });
 
-test('the pavements are one network, reaching all eight ways off the map (seeds 7, 3, 21)', () => {
-  for (const W of [WORLD, generateWorld(3), generateWorld(21)]) {
+test('the pavements are one network, reaching all eight ways off the map', () => {
+  for (const W of [WORLD]) {
     const G = W.peds;
     assert.equal(G.portals.length, 8, 'a way off the map was cut off');
     const seen = new Uint8Array(G.nodes.length);
@@ -368,6 +369,30 @@ test('everything the game sends you to is on open ground', () => {
     const w = TASKS[id].where(sim({ quiet: true }));
     if (w) open(w, 'task ' + id);
   }
+});
+
+test('the town is made up: no sign, place or number plate names a real city', () => {
+  const CITIES = ['Delhi', 'Dilli', 'Bombay', 'Mumbai', 'Calcutta', 'Kolkata', 'Madras', 'Chennai', 'Bangalore', 'Bengaluru',
+    'Hyderabad', 'Ahmedabad', 'Pune', 'Poona', 'Surat', 'Jaipur', 'Lucknow', 'Kanpur', 'Nagpur', 'Indore', 'Bhopal', 'Patna',
+    'Agra', 'Varanasi', 'Banaras', 'Benares', 'Mathura', 'Amritsar', 'Ludhiana', 'Chandigarh', 'Bikaner', 'Jodhpur', 'Udaipur',
+    'Ajmer', 'Mysore', 'Udupi', 'Kochi', 'Cochin', 'Shimla', 'Haridwar', 'Rishikesh', 'Allahabad', 'Prayagraj', 'Meerut',
+    'Gwalior', 'Ranchi', 'Guwahati', 'Madurai', 'Kolhapur', 'Rajkot', 'Baroda', 'Vadodara', 'Ayodhya', 'Kashi', 'Tirupati',
+    'Lahore', 'Karachi', 'Dhaka', 'Kathmandu', 'Kanchipuram', 'Noida', 'Gurgaon', 'Gurugram', 'Howrah', 'Darjeeling'];
+  const texts = [];
+  for (const T of Object.values(SHOP_TYPES)) texts.push(...T.name, ...T.sub);
+  for (const u of UPPER_SIGNS) texts.push(u[0]);
+  for (const a of WALL_ADS) texts.push(a[0], a[1]);
+  for (const z of WORLD.zones) texts.push(z.name);
+  for (const lines of Object.values(SPEECH)) for (const l of Array.isArray(lines) ? lines : Object.values(lines).flat()) texts.push(...l);
+  for (const t of texts) {
+    for (const c of CITIES) assert.ok(!new RegExp('\\b' + c, 'i').test(t), `"${t}" names ${c}`);
+  }
+  // number plates carry a state code; the town's is invented
+  const src = readFileSync(new URL('./textures.js', import.meta.url), 'utf8');
+  const plates = src.match(/const plates = \[([^\]]+)\]/)[1].match(/'([^']+)'/g).map((q) => q.slice(1, -1));
+  const REAL_CODES = ['AN', 'AP', 'AR', 'AS', 'BR', 'CG', 'CH', 'DD', 'DL', 'DN', 'GA', 'GJ', 'HP', 'HR', 'JH', 'JK', 'KA', 'KL', 'LA',
+    'LD', 'MH', 'ML', 'MN', 'MP', 'MZ', 'NL', 'OD', 'OR', 'PB', 'PY', 'RJ', 'SK', 'TN', 'TR', 'TS', 'UK', 'UP', 'WB', 'BH'];
+  for (const pl of plates) assert.ok(!REAL_CODES.includes(pl.slice(0, 2)), `plate ${pl} uses a real state code`);
 });
 
 test('every spot on the map has a name', () => {
