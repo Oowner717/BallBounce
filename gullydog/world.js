@@ -543,7 +543,9 @@ function placeRailway(W) {
     booms: posts.map(([x, z, dir]) => ({ x, z, dir })),
     hut: { x: 10.8, z: -75.2, door: { x: 10.8, z: -73.6 } },
     keeper: { x: 9.0, z: -73.4, yaw: -Math.PI / 2 },
-    kids: { x: 14.5, z: -73.6 },
+    // the kids who work the queue: their spot on the verge, and the corner of the
+    // pavement they go out by
+    kids: { x: 14.6, z: -72.5, kerb: { x: 8.6, z: -72.5 } },
   };
   W.pois.landmarks.push({ id: 'phatak', x: 9, z: -73.5, name: 'Railway Phatak' });
 }
@@ -605,6 +607,19 @@ function placeLandmarks(W, rng) {
   bench(W, -30.5, -26.2, Math.PI);
   W.spawns.flocks = [{ x: -37, z: -31.5, n: 16, kind: 'pigeon', grain: true }];
   W.special.squareCenter = { x: -36, z: -32 };
+  // A rope walker's pitch: two bamboo tripods with a rope between them. The family
+  // performs mornings and evenings (street.js); the crowd stands round it.
+  const RW = { x0: -41.6, x1: -34.4, z: -28.4, h: 2.05 };
+  prop(W, 'tightrope', (RW.x0 + RW.x1) / 2, RW.z, RW);
+  for (const x of [RW.x0, RW.x1]) addCircle(W, x, RW.z, 0.5, 2.3, { tag: 'tripod' });
+  W.special.show = Object.assign({}, RW, {
+    drum: { x: RW.x1 + 1.25, z: RW.z + 1.0, yaw: -Math.PI / 2 - 0.5 },
+    rest: { x: RW.x0 - 1.1, z: RW.z + 0.9 },
+    ring: { x: (RW.x0 + RW.x1) / 2, z: RW.z, rx: 5.6, rz: 3.4 },
+    // where the crowd stands to watch, and which way they come from
+    spots: [[-41.2, -25.7], [-39.8, -25.4], [-38.3, -25.6], [-36.8, -25.3], [-35.3, -25.7], [-40.4, -31.2], [-38.0, -31.5], [-35.6, -31.1]],
+    from: [[-45, -24.6], [-40, -24.4], [-33, -24.4], [-30.5, -27.5], [-30.5, -31], [-44, -33], [-36, -36.6], [-31, -34]],
+  });
   for (const [x, z] of [[-48.8, -25.2], [-23.2, -48.8], [-48.8, -48.8], [-23.2, -25.2]]) lampPost(W, x, z, 4.2);
 
   /* ---- Gully Maidan ---- */

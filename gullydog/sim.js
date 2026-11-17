@@ -25,6 +25,7 @@ import * as Crowd from './crowd.js';
 import * as Fauna from './fauna.js';
 import * as Scenes from './scenes.js';
 import * as Rail from './rail.js';
+import * as Street from './street.js';
 import * as Tasks from './tasks.js';
 
 export { drainEvents };
@@ -87,6 +88,7 @@ export function createSim({ world, config, seed = 1, save = null, weather = null
   Fauna.init(S);
   Scenes.init(S);
   Rail.init(S);
+  Street.init(S);
   Tasks.startDay(S);
   if (save && save.mid && save.mid.day === S.clock.day) applyMidDay(S, save.mid);
   S.dog.y = groundAt(S, S.dog.x, S.dog.z, 1);
@@ -119,6 +121,7 @@ export function step(S, dt, input) {
   Crowd.step(S, dt);
   Fauna.step(S, dt);
   Scenes.step(S, dt);
+  Street.step(S, dt);
   updateItems(S, dt);
   updateNeeds(S, dt);
   updateBubbles(S, dt);

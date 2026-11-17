@@ -234,7 +234,7 @@ function arrive(S, p) {
 
 export function insertGrid(S) {
   for (const p of S.peds) {
-    if (p.hidden) continue; // indoors (Aunty between meals, kids after dark)
+    if (p.hidden || p.aloft) continue; // indoors (Aunty between meals, kids after dark), or up on a rope
     S.grid.insert('ped', p, p.x, p.z, S.C.crowd.radius * (p.kid ? 0.8 : 1));
   }
 }

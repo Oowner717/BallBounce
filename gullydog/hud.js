@@ -184,6 +184,9 @@ export class Hud {
         case 'trainHorn': if (e.atDog) { this.vig = Math.max(this.vig || 0, 0.5); this.toast('Get off the tracks!', 'bad', 1.4); } break;
         case 'trainRace': this.toast('You raced the train! The whole roof is cheering.', 'good', 3.2); break;
         case 'trainSnack': this.toast(`Somebody on the train threw you a ${e.kind}!`, 'good', 2.8); break;
+        case 'showStart': if (Math.hypot(S.dog.x - e.x, S.dog.z - e.z) < 70) this.toast("Drums in Mandir Square: the rope walker's show is starting!", 'gold', 3.6); break;
+        case 'showTrick': this.toast('The crowd loves it! Ek aur!', 'good', 1.8); break;
+        case 'showWobble': this.toast('She wobbles! The crowd gasps.', 'bad', 1.8); break;
         case 'crossed': break;
         default:
       }

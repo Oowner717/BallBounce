@@ -261,6 +261,7 @@ export function animateHuman(a, h, dt, stride = 0.72) {
   const sp = h.speed || 0;
   a.phase = (a.phase + (dt * sp) / (mode === 'run' ? stride * 1.7 : stride)) % 1;
   a.spin = (a.spin + dt * (h.pedal || 0) * 1.6) % 1;
+  a.wob = h.wob || 0;
   a.headYaw = approachTo(a.headYaw, clamp(h.look || 0, -1.1, 1.1), 4, dt);
 }
 
@@ -497,6 +498,39 @@ function humanPose(rig, a, speed, mode) {
       rig.add(5, 0, -1.25 - 0.4 * Math.sin(c), -0.12); rig.add(6, 0, -0.55 - 0.35 * Math.cos(c), 0);
       rig.add(7, 0, -0.15, 0.06); rig.add(9, 0, 0.1, -0.06);
       rig.add(2, 0, 0.25, 0);
+      break;
+    }
+    case 'balance': {
+      // on the rope: arms out holding the pole, small careful steps, a sway that a
+      // barking dog makes much bigger
+      const wob = a.wob || 0;
+      const s = Math.sin(t * 1.7), f = Math.sin(t * 6.5);
+      legs(0.22 * Math.min(1, speed * 3), 0.35 * Math.min(1, speed * 3));
+      rig.add(3, 0, -0.75, 0.75 + 0.2 * wob * f); rig.add(4, 0, -0.85, 0);
+      rig.add(5, 0, -0.75, -0.75 + 0.2 * wob * f); rig.add(6, 0, -0.85, 0);
+      rig.add(0, 0, 0, 0.05 * s + 0.3 * wob * f);
+      rig.add(1, 0, 0.05, -0.04 * s - 0.2 * wob * f);
+      rig.add(2, 0, 0.15, 0);
+      break;
+    }
+    case 'drum': {
+      // cross-legged on the ground, the dholak across his lap, both hands going
+      const b1 = Math.max(0, Math.sin(t * 13)), b2 = Math.max(0, Math.sin(t * 13 + 2.2));
+      rig.oy -= 0.74;
+      rig.add(7, 0.55, -1.5, 0.2); rig.add(9, -0.55, -1.5, -0.2);
+      rig.add(8, 0, 2.5, 0); rig.add(10, 0, 2.5, 0);
+      rig.add(1, 0, 0.18, 0);
+      rig.add(3, 0, -0.45 - 0.35 * b1, 0.35); rig.add(4, 0, -0.9, 0);
+      rig.add(5, 0, -0.45 - 0.35 * b2, -0.35); rig.add(6, 0, -0.9, 0);
+      rig.add(2, look + 0.2 * Math.sin(t * 0.7), 0.1 * b1, 0);
+      break;
+    }
+    case 'clap': {
+      const c = Math.abs(Math.sin(t * 8));
+      rig.add(3, 0, -0.95, -0.25 - 0.25 * c); rig.add(4, 0, -0.7, 0);
+      rig.add(5, 0, -0.95, 0.25 + 0.25 * c); rig.add(6, 0, -0.7, 0);
+      rig.add(1, 0, breathe, 0);
+      rig.add(2, look, -0.08, 0);
       break;
     }
     case 'flag':

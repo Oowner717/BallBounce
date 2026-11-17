@@ -434,6 +434,37 @@ export class AudioEngine {
     }
   }
 
+  /** A coin dropped on a steel plate, or into a palm. */
+  coin(x, z) {
+    const out = this.voice(this.sfx, x, z, { gain: 0.35, ref: 6, max: 40 });
+    if (!out) return;
+    const t = this.ctx.currentTime;
+    for (const [f, a, d] of [[2640, 0.12, 0.35], [3950, 0.07, 0.25], [5230, 0.04, 0.18]]) this.osc('sine', f, t, d, out, a, 0.001);
+    this.osc('sine', 2900, t + 0.09, 0.2, out, 0.05, 0.001);
+  }
+
+  /** A crowd clapping and calling out: a scatter of hand claps over a second or so. */
+  claps(x, z) {
+    const out = this.voice(this.sfx, x, z, { gain: 0.5, ref: 9, max: 60 });
+    if (!out) return;
+    const t = this.ctx.currentTime;
+    for (let k = 0; k < 16; k++) this.noiseBurst(t + Math.random() * 1.3, 0.03, out, 'bandpass', 1200 + Math.random() * 900, 1.1, 0.18 + Math.random() * 0.1, 0.002);
+  }
+
+  /** One stroke on the dholak: 'dha' is the deep side, 'ta' the bright one. */
+  dholak(x, z, deep) {
+    const out = this.voice(this.sfx, x, z, { gain: 0.5, ref: 7, max: 55 });
+    if (!out) return;
+    const t = this.ctx.currentTime;
+    if (deep) {
+      const o = this.osc('sine', 150, t, 0.28, out, 0.55, 0.002);
+      o.frequency.exponentialRampToValueAtTime(82, t + 0.2);
+    } else {
+      this.osc('sine', 420, t, 0.09, out, 0.25, 0.001);
+      this.noiseBurst(t, 0.04, out, 'bandpass', 2600, 1.4, 0.16, 0.001);
+    }
+  }
+
   /** Wheels over a rail joint: a metallic click with a thump under it. */
   clack(gain) {
     const t = this.ctx.currentTime;
@@ -493,6 +524,16 @@ export class AudioEngine {
     const ring = X && (G.state === 'closing' || (G.state === 'closed' && G.t < 3));
     const bd = X ? Math.hypot(X.hut.x - d.x, X.hut.z - d.z) : 999;
     this.gateBell.g.gain.setTargetAtTime(ring ? 0.06 / (1 + (bd / 14) * (bd / 14)) : 0, t, 0.04);
+    // the rope walker's drum: dha . . ta dha . ta . , over and over
+    const sh = S.street && S.street.show;
+    if (sh && sh.on && !sh.drummer.hidden && sh.drummer.mode === 'drum' && dist2(sh.drummer.x, sh.drummer.z, d.x, d.z) < 50 * 50) {
+      this.drumT = (this.drumT || 0) + dt;
+      if (this.drumT >= 0.19) {
+        this.drumT -= 0.19;
+        const beat = [1, 0, 0, 2, 1, 0, 2, 0][(this.drumI = ((this.drumI || 0) + 1) % 8)];
+        if (beat) this.dholak(sh.drummer.x, sh.drummer.z, beat === 1);
+      }
+    }
     // panting, in rhythm
     const pant = d.panting && !d.sleeping ? (Math.sin(t * 22) > 0 ? 0.07 : 0.012) : 0;
     this.pant.g.gain.setTargetAtTime(pant, t, 0.03);
@@ -533,6 +574,8 @@ export class AudioEngine {
         case 'honk': this.horn(e.horn, e.x, e.z, e.atDog); break;
         case 'trainHorn': this.trainHorn(e.x, e.z, e.long); break;
         case 'trainHit': this.thud(0.8); break;
+        case 'coin': this.coin(e.x, e.z); break;
+        case 'showCheer': this.claps(e.x, e.z); break;
         case 'hit': this.yelp(); this.thud(0.5); break;
         case 'nipped': this.yelp(); break;
         case 'bell': this.templeBell(e.x, e.z, e.single); break;

@@ -206,7 +206,7 @@ export const CONFIG = {
   /* ----------------------------------------------------------------- cred */
   cred: {
     ranks: [[0, "Nobody's Pup"], [60, 'Gali Dog'], [180, 'Mohalla Favourite'], [400, 'Bazaar Boss'], [750, 'Gully King']],
-    pet: 3, fed: 2, scatter: 2, fetch: 12, friend: 25, stole: 8, task: 20, prasad: 5, crossed: 2,
+    pet: 3, fed: 2, scatter: 2, fetch: 12, friend: 25, stole: 8, task: 20, prasad: 5, crossed: 2, trick: 3, race: 6,
   },
 };
 

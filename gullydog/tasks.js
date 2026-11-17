@@ -40,11 +40,13 @@ export const TASKS = {
   drinks3: { title: 'Water hopper', desc: 'Drink from 3 different places', ev: 'drank', unique: (e) => e.src, count: 3, reward: 20, hint: 'Puddles, the pump, the temple trough, Aunty\'s bowl...' },
   bark10: { title: 'Loudmouth', desc: 'Bark 15 times', ev: 'bark', count: 15, reward: 10, hint: 'Press B. Everyone will love it. Mostly.' },
   train: { title: 'Race the train', desc: 'Run alongside a passing train', ev: 'trainRace', count: 1, reward: 30, hint: 'Trains pass the phatak at the top of Bazaar Road every couple of minutes. Sprint (Shift) beside one, never on the tracks!', where: (S) => S.W.special.crossing && { x: 20, z: -76.5 } },
+  show: { title: 'Street star', desc: "Do tricks for the rope walker's crowd", ev: 'showTrick', count: 3, reward: 25, hint: 'In Mandir Square a girl walks a tightrope, 10 to 12:30 and 4 to 6:45. Jump (Space) in front of the crowd while she is up!', where: (S) => S.W.special.show && { x: S.W.special.show.ring.x, z: S.W.special.show.ring.z + 2.2 } },
+  gateKids: { title: 'Phatak gang', desc: 'Get petted by the kids at the railway gate', ev: 'petted', filter: (e, S) => !!(S.street && S.street.kids.some((k) => k.p.id === e.by)), count: 1, reward: 15, hint: 'Three kids hang about by the gateman\'s hut at the phatak. Sit (E) in front of one.', where: (S) => S.W.special.crossing && S.W.special.crossing.kids },
   trainSnack: { title: 'Snack express', desc: 'Get a snack from a passing train', ev: 'trainSnack', count: 1, reward: 20, hint: 'Sit (E) by the line as a train goes by, or race it. Somebody up there always has a biscuit.', where: (S) => S.W.special.crossing && { x: -20, z: -76.5 } },
 };
 
 const DAY1 = ['eat', 'drink', 'pets3', 'pigeons', 'nap'];
-const POOL = ['samosa', 'fetch', 'mark', 'friend', 'cross', 'explore', 'prasad', 'aunty', 'puppies', 'goats', 'rummage', 'cow', 'bike', 'pets8', 'biscuit', 'drinks3', 'bark10', 'train', 'trainSnack'];
+const POOL = ['samosa', 'fetch', 'mark', 'friend', 'cross', 'explore', 'prasad', 'aunty', 'puppies', 'goats', 'rummage', 'cow', 'bike', 'pets8', 'biscuit', 'drinks3', 'bark10', 'train', 'trainSnack', 'show', 'gateKids'];
 
 export function tasksForDay(seed, day) {
   if (day <= 1) return DAY1.slice();
@@ -88,7 +90,7 @@ export function addCred(S, n, why) {
 }
 
 /** Cred for good moments, independent of tasks. */
-const MOMENT = { petted: 'pet', fed: 'fed', scatter: 'scatter', fetch: 'fetch', friend: 'friend', escaped: 'stole', crossed: 'crossed' };
+const MOMENT = { petted: 'pet', fed: 'fed', scatter: 'scatter', fetch: 'fetch', friend: 'friend', escaped: 'stole', crossed: 'crossed', showTrick: 'trick', trainRace: 'race' };
 
 export function step(S) {
   const C = S.C.cred;

@@ -799,6 +799,7 @@ function buildProp(ctx, p) {
     case 'gumti': return gumti(B, p, y0, uv);
     case 'gatepost': return gatePost(B, p, y0);
     case 'whistle': return whistleBoard(B, p, y0, uv);
+    case 'tightrope': return tightrope(B, p, y0);
     default: return null; // parked vehicles and puddles are drawn elsewhere
   }
 }
@@ -910,6 +911,35 @@ function whistleBoard(B, p, y0, uv) {
   const { x, z } = p;
   B.color(hex('#d9d4c8')).detail(0.4).box(x - 0.04, y0, z - 0.04, x + 0.04, y0 + 1.75, z + 0.04, { skip: 'b' });
   B.color([1, 1, 1]).detail(0.2).box(x - 0.02, y0 + 1.15, z - 0.3, x + 0.02, y0 + 1.75, z + 0.3, { uvFace: p.face > 0 ? { e: uv.whistle } : { w: uv.whistle } });
+}
+
+/** The rope walker's rig: a bamboo tripod at each end, the rope between them, guy ropes pegged out. */
+function tightrope(B, p, y0) {
+  const { x0, x1, z, h } = p;
+  const bamboo = hex('#b8975a');
+  for (const [x, s] of [[x0, -1], [x1, 1]]) {
+    B.color(bamboo).detail(0.5);
+    const top = [x, y0 + h + 0.18, z];
+    for (const [fx, fz] of [[s * 0.55, 0], [-s * 0.25, 0.75], [-s * 0.25, -0.75]]) B.rod([x + fx, y0, z + fz], top, 0.045, 5);
+    B.rod([x - 0.08, y0 + h + 0.25, z], [x + 0.08, y0 + h + 0.12, z], 0.05, 5);
+    // guy ropes to stakes beyond each end
+    B.color(hex('#d8cfb8')).detail(0.2);
+    for (const fz of [-0.9, 0.9]) {
+      B.rod(top, [x + s * 1.6, y0 + 0.05, z + fz], 0.012, 4);
+      B.color(hex('#6b4f36')).box(x + s * 1.6 - 0.03, y0, z + fz - 0.03, x + s * 1.6 + 0.03, y0 + 0.2, z + fz + 0.03, { skip: 'b' }).color(hex('#d8cfb8'));
+    }
+  }
+  // the rope itself, with a little sag
+  B.color(hex('#e8dfc8')).detail(0.2);
+  const n = 8;
+  for (let k = 0; k < n; k++) {
+    const a = k / n, b = (k + 1) / n;
+    const sag = (t) => -0.06 * Math.sin(Math.PI * t);
+    B.rod([x0 + (x1 - x0) * a, y0 + h + sag(a), z], [x0 + (x1 - x0) * b, y0 + h + sag(b), z], 0.016, 4);
+  }
+  // a rolled mat and a tin trunk at the foot of the west tripod
+  B.color(hex('#a33b2c')).detail(0.6).cyl(x0 - 1.6, y0, z - 0.9, 0.16, y0 + 0.9, 0.16, 7);
+  B.color(hex('#2e6b8a')).box(x0 - 1.9, y0, z - 0.4, x0 - 1.2, y0 + 0.35, z + 0.05, { skip: 'b' });
 }
 
 function pole(B, p, y0, rng) {

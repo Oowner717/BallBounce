@@ -258,4 +258,15 @@ export const SPEECH = {
   trainWave: [['Oye! Hello!', ''], ['Jai ho!', 'Hooray!'], ['Ram Ram!', 'Hello!'], ['Ghar jaa rahe hain!', "We're going home!"]],
   trainSnack: [['Le, pakad!', 'Here, catch!'], ['Biscuit le ja!', 'Have a biscuit!']],
   waiting: [['Kitni der lagegi?', 'How long will this take?'], ['Roz ka yahi haal hai', 'Same story every day'], ['Gaadi kab niklegi?', "When's the train going to pass?"], ['Late ho gaye!', "We're late!"]],
+  // the kids who work the queue at the phatak
+  kidBalloons: [['Gubbare! Gubbare le lo!', 'Balloons! Get your balloons!'], ['Bachche ke liye ek gubbara?', 'A balloon for the little one?']],
+  kidFlowers: [['Gajra le lo, didi!', 'Buy a flower string, sister!'], ['Phool le lo, sirf das rupaye!', 'Flowers, only ten rupees!']],
+  kidCoins: [['Ek rupaiya de do, uncle!', 'Spare a rupee, uncle!'], ['Bhookh lagi hai, aunty!', "I'm hungry, aunty!"], ['Bhagwan bhala karega!', 'God will bless you!']],
+  kidThanks2: [['Thank you, uncle!', ''], ['Jai ho, babuji!', 'Bless you, sir!']],
+  driverKid: [['Chalo, chalo', 'Go on, go on'], ['Abhi nahi, beta', 'Not now, kid'], ['Le, beta', 'Here you go, kid']],
+  // the rope walker's show
+  showCall: [['Aaiye, aaiye! Dekhiye tamasha!', 'Come one, come all! See the show!'], ['Rassi pe chalegi meri beti!', 'My daughter walks the rope!'], ['Kuch de do, babuji!', 'Spare something, sir!']],
+  showCrowd: [['Wah! Wah!', 'Bravo!'], ['Shabash, beti!', 'Well done, girl!'], ['Dekho, dekho!', 'Look, look!'], ['Kamaal hai!', 'Amazing!']],
+  showDog: [['Kutta bhi kalakaar hai!', "The dog's a performer too!"], ['Wah, Bhura, wah!', 'Bravo, Bhura!'], ['Ek aur!', 'Another one!']],
+  showBark: [['Arre! Kutte ko bhagao!', 'Hey! Shoo that dog!'], ['Sambhal ke, beti!', 'Careful, girl!']],
 };

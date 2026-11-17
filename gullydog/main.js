@@ -502,18 +502,14 @@ function drawScene(dt, time) {
     const maxD = p.role === 'keeper' ? 42 : pd;
     if (!near(p.x, p.z, maxD) || !vis(p.x, 0.9, p.z, 1.1)) continue;
     const a = animOf(p);
-    animateHuman(a, { speed: p.speed, mode: p.mode, look: p.look }, dt);
+    animateHuman(a, { speed: p.speed, mode: p.mode, look: p.look, wob: p.wobble }, dt);
     const rig = rigs[p.kind] || rigs.man;
     poseHuman(rig, a, p.speed, p.mode);
     const b = R.batch(PEOPLE_KINDS.includes(p.kind) ? p.kind : 'man');
     const o = b.alloc();
     b.colors(o, p.colors[0], p.colors[1], p.colors[2], p.colors[3]);
     rig.write(b.data, o + 16, p.x, p.y || 0, p.z, p.yaw, p.scale);
-    if (p.mode === 'flag') {
-      // the gateman's green flag, in his raised hand
-      rig.pointOn(6, -0.205, 0.66, 0.05, flagPt);
-      itemInstance('flag', flagPt[0], flagPt[1] - 0.12, flagPt[2], p.yaw + Math.PI / 2);
-    }
+    if (p.mode === 'flag' || p.ware || p.hat) heldItems(rig, p);
     if (!shadowsOn && near(p.x, p.z, 35)) R.decal(p.x, (p.y || 0) + 0.02, p.z, 0.32 * p.scale, 0, layout.uv['decal:soft'], 0, 0, 0, 0.35, 0);
   }
 
@@ -719,6 +715,34 @@ const LOCO_PAINT = [
 const BOOM_C = [1, 1, 1];
 let railLamp = null;
 const flagPt = [0, 0, 0];
+
+/** Whatever someone has in hand (or on their head), placed on the bones just written. */
+function heldItems(rig, p) {
+  if (p.mode === 'flag') {
+    // the gateman's green flag, in his raised hand
+    rig.pointOn(6, -0.205, 0.66, 0.05, flagPt);
+    itemInstance('flag', flagPt[0], flagPt[1] - 0.12, flagPt[2], p.yaw + Math.PI / 2);
+  }
+  switch (p.ware) {
+    case 'pole': // across the body, at the hands
+      rig.pointOn(1, 0, 1.08, 0.36, flagPt);
+      itemInstance('pole', flagPt[0], flagPt[1], flagPt[2], p.yaw);
+      break;
+    case 'dholak': // across the lap
+      rig.pointOn(0, 0, 1.12, 0.34, flagPt);
+      itemInstance('dholak', flagPt[0], flagPt[1], flagPt[2], p.yaw + Math.PI / 2);
+      break;
+    case 'balloons': case 'garlands': case 'plate':
+      rig.pointOn(6, -0.205, 0.68, 0.04, flagPt);
+      itemInstance(p.ware, flagPt[0], flagPt[1] - (p.ware === 'plate' ? 0.02 : 0), flagPt[2], p.yaw);
+      break;
+    default:
+  }
+  if (p.hat === 'pot') {
+    rig.pointOn(2, 0, 1.72, 0, flagPt);
+    itemInstance('pot', flagPt[0], flagPt[1], flagPt[2], p.yaw);
+  }
+}
 
 function drawRail(dt, time, env, headlights) {
   const X = W.special.crossing;

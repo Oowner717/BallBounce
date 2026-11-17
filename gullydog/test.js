@@ -1477,6 +1477,91 @@ test('a cow on the crossing stops the train short of the road, and then it goes 
 });
 
 /* ========================================================================== */
+/* Street life: the phatak kids, the rope walker                              */
+/* ========================================================================== */
+
+group('street life');
+
+test('the phatak kids work the queue while the gate is down, and are off the road before the traffic moves', () => {
+  const S = sim({ seed: 3, hour: 17.5 });
+  const kids = S.street.kids;
+  assert.equal(kids.length, 3);
+  let pitching = 0, wasShut = false, onRoadWhileOpen = 0, cycles = 0;
+  for (let i = 0; i < Math.round(110 / DT); i++) {
+    step(S, DT, IDLE);
+    drainEvents(S);
+    const g = S.rail.gate;
+    if (g.state === 'closed') wasShut = true;
+    if (wasShut && g.state === 'open') { cycles++; wasShut = false; }
+    for (const k of kids) {
+      if (k.state === 'pitch') pitching++;
+      const sf = surfAt(S.W, k.p.x, k.p.z);
+      if (g.state === 'open' && (sf === SURF.ROAD || sf === SURF.CROSS)) onRoadWhileOpen++;
+    }
+  }
+  assert.ok(cycles >= 1, 'the gate never went down and up');
+  assert.ok(pitching > 0, 'nobody went out to the queue');
+  assert.equal(onRoadWhileOpen, 0, 'a kid was still in the road with the traffic moving');
+  for (const k of kids) assert.equal(k.state, 'home', 'a kid did not come back');
+});
+
+test('the kids at the phatak are kind to a dog who sits nicely', () => {
+  const S = sim({ seed: 3, hour: 9, quiet: true });
+  const k = S.street.kids[2];
+  place(S, k.p.x - 1.1, k.p.z, k.p);
+  S.dog.sitting = true;
+  const ev = run(S, 5);
+  assert.ok(only(ev, 'petted', (e) => S.street.kids.some((q) => q.p.id === e.by)).length >= 1, 'no pat from the phatak kids');
+});
+
+test('the rope walker plays mornings and evenings: up on the rope, end to end, with a crowd watching', () => {
+  const S = sim({ seed: 5, hour: 10.02, quiet: true });
+  const sh = S.street.show, R = S.W.special.show;
+  let lo = Infinity, hi = -Infinity, maxWatch = 0, cheers = 0;
+  for (let i = 0; i < Math.round(70 / DT); i++) {
+    step(S, DT, IDLE);
+    cheers += only(drainEvents(S), 'showCheer').length;
+    if (sh.girl.aloft) {
+      lo = Math.min(lo, sh.girl.x); hi = Math.max(hi, sh.girl.x);
+      assert.ok(near(sh.girl.y, R.h, 1e-6), 'off the rope at height ' + sh.girl.y.toFixed(2));
+    }
+    maxWatch = Math.max(maxWatch, sh.crowd.filter((c) => c.state === 'watch').length);
+  }
+  assert.ok(hi - lo > R.x1 - R.x0 - 1.8, `she only walked ${(hi - lo).toFixed(1)} m of the rope`);
+  assert.ok(maxWatch >= 6, 'only ' + maxWatch + ' watching');
+  assert.ok(cheers >= 1, 'no cheer');
+  // the show ends; the crowd drifts off, she comes down
+  setHour(S, 13);
+  run(S, 25);
+  assert.ok(!sh.girl.aloft, 'still up on the rope after the show');
+  assert.ok(sh.crowd.every((c) => c.p.hidden), 'the crowd is still standing there');
+  // and nobody is about at night
+  setHour(S, 22);
+  run(S, 1);
+  assert.ok(sh.girl.hidden && sh.drummer.hidden && sh.mother.hidden, 'the family is out in the middle of the night');
+});
+
+test('a dog jumping for the crowd joins the show; a bark puts her off her stride', () => {
+  const S = sim({ seed: 5, hour: 10.02, quiet: true });
+  const sh = S.street.show, R = S.W.special.show;
+  runUntil(S, 30, IDLE, () => sh.girl.aloft && sh.phase === 'walk');
+  assert.ok(sh.girl.aloft, 'she never went up');
+  place(S, R.ring.x + 1, R.ring.z + 2, 0);
+  const cred0 = S.cred;
+  const ev = [];
+  for (let j = 0; j < 3; j++) {
+    step(S, DT, { jump: true });
+    for (const e of drainEvents(S)) ev.push(e);
+    for (const e of run(S, 1.6)) ev.push(e);
+  }
+  assert.equal(only(ev, 'showTrick').length, 3, 'tricks counted: ' + only(ev, 'showTrick').length);
+  assert.ok(S.cred >= cred0 + 3 * S.C.cred.trick, 'no cred for the tricks');
+  const ev2 = run(S, 0.1, { bark: true });
+  assert.equal(only(ev2, 'showWobble').length, 1, 'no wobble');
+  assert.ok(sh.girl.wobble > 0);
+});
+
+/* ========================================================================== */
 /* Tasks and cred                                                             */
 /* ========================================================================== */
 

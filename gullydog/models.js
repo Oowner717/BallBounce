@@ -840,6 +840,43 @@ export function buildItems() {
       b.color(hex('#2e6b8a')).box(-0.38, 0, -0.24, 0.38, 0.32, 0.24);
       b.color(hex('#b8bcc2')).box(-0.39, 0.29, -0.25, 0.39, 0.33, 0.25).boxC(0, 0.2, 0.245, 0.08, 0.08, 0.02);
     }),
+    // things the street kids and the rope walker's family carry
+    balloons: one('balloons', (b) => {
+      const cols = ['#e53935', '#fdd835', '#1e88e5', '#43a047', '#e91e63', '#ff9800'];
+      cols.forEach((c, i) => {
+        const a = (i / cols.length) * Math.PI * 2, r = i % 2 ? 0.16 : 0.1;
+        const top = [Math.cos(a) * r, 0.75 + (i % 3) * 0.12, Math.sin(a) * r];
+        b.color(hex('#e8e8e8')).rod([0, 0, 0], top, 0.004, 3);
+        b.color(hex(c)).sphere(top[0], top[1] + 0.11, top[2], 0.11, 1, 1.2);
+      });
+    }),
+    garlands: one('garlands', (b) => {
+      // three loops of marigold and jasmine hanging from the hand
+      [['#ff8f00', 0.0], ['#ffd54f', 0.05], ['#fafafa', -0.05]].forEach(([c, dx]) => {
+        b.color(hex(c));
+        for (let k = 0; k <= 8; k++) {
+          const t = k / 8, a = Math.PI * t;
+          b.boxC(dx + Math.cos(a) * 0.09, -Math.sin(a) * 0.38, 0.02, 0.045, 0.045, 0.045);
+        }
+      });
+    }),
+    pole: one('pole', (b) => {
+      b.color(hex('#c9a66b')).rod([-1.7, 0, 0], [1.7, 0, 0], 0.022, 5);
+      b.color(hex('#d32f2f')).rod([-1.72, 0, 0], [-1.55, 0, 0], 0.03, 5).rod([1.55, 0, 0], [1.72, 0, 0], 0.03, 5);
+    }),
+    pot: one('pot', (b) => {
+      b.color(hex('#d4a017')).sphere(0, 0.13, 0, 0.13, 1, 0.9);
+      b.cyl(0, 0.22, 0, 0.06, 0.3, 0.085, 8, { smooth: true });
+    }),
+    dholak: one('dholak', (b) => {
+      b.color(hex('#8d3b1f')).cyl(0, -0.15, 0, 0.14, 0.15, 0.14, 10, { smooth: true });
+      b.color(hex('#efe6d2'));
+      for (let k = 0; k < 6; k++) b.boxC(0, -0.15 + k * 0.06, 0, 0.3, 0.012, 0.3);
+    }),
+    plate: one('plate', (b) => {
+      b.color(hex('#c0c4c8')).cyl(0, 0, 0, 0.17, 0.025, 0.19, 10, { caps: 'b' });
+      b.color(hex('#e6c35c')).boxC(0.04, 0.03, 0.02, 0.04, 0.008, 0.04).boxC(-0.05, 0.03, -0.03, 0.04, 0.008, 0.04);
+    }),
     flag: one('flag', (b) => {
       b.color(hex('#7a5230')).rod([0, 0, 0], [0, 0.55, 0], 0.012, 4);
       b.color(hex('#1f9d3a')).box(0, 0.32, -0.005, 0.34, 0.55, 0.005);
