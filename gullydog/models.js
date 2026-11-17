@@ -831,6 +831,38 @@ export function buildItems() {
       b.color(hex('#2f6db5')).box(-0.045, 0, -0.12, 0.045, 0.02, 0.12);
       b.color(hex('#f2f2f2')).box(-0.04, 0.02, 0.0, 0.04, 0.03, 0.03);
     }),
+    // what floats down the nala
+    bag: one('bag', (b) => {
+      b.color(hex('#f2f2ee')).sphere(0, 0.03, 0, 0.12, 0, 0.45).sphere(0.09, 0.04, 0.05, 0.08, 0, 0.5);
+      b.color(hex('#3d6fb5')).box(-0.03, 0.06, -0.1, 0.03, 0.08, -0.04);
+    }),
+    bagb: one('bagb', (b) => {
+      b.color(hex('#2f5fa8')).sphere(0, 0.03, 0, 0.13, 0, 0.45).sphere(-0.08, 0.04, 0.06, 0.07, 0, 0.5);
+    }),
+    bagp: one('bagp', (b) => {
+      b.color(hex('#d6457a')).sphere(0, 0.03, 0, 0.11, 0, 0.45);
+    }),
+    bottle: one('bottle', (b) => {
+      b.color(hex('#a9cbb4')).rod([-0.1, 0.035, 0], [0.08, 0.035, 0], 0.035, 6);
+      b.color(hex('#d23c2c')).rod([0.08, 0.035, 0], [0.13, 0.035, 0], 0.018, 5);
+    }),
+    cup: one('cup', (b) => {
+      b.color(hex('#efefe8')).rod([-0.05, 0.03, 0], [0.04, 0.03, 0], 0.035, 7);
+    }),
+    foam: one('foam', (b) => {
+      b.color(hex('#f4f4ef')).box(-0.2, 0, -0.12, 0.2, 0.06, 0.12).box(0.05, 0, 0.05, 0.3, 0.05, 0.2);
+    }),
+    carton: one('carton', (b) => {
+      b.color(hex('#f5f5f0')).box(-0.05, 0, -0.03, 0.05, 0.16, 0.03);
+      b.color(hex('#c62828')).box(-0.051, 0.05, -0.031, 0.051, 0.11, 0.031);
+    }),
+    tyre: one('tyre', (b) => {
+      b.color(hex('#1d1d1f'));
+      for (let k = 0; k < 10; k++) {
+        const a0 = (k / 10) * Math.PI * 2, a1 = ((k + 1) / 10) * Math.PI * 2;
+        b.rod([Math.cos(a0) * 0.28, 0.04, Math.sin(a0) * 0.28], [Math.cos(a1) * 0.28, 0.04, Math.sin(a1) * 0.28], 0.07, 5);
+      }
+    }),
     // luggage on the train roofs, and the gateman's flag
     bundle: one('bundle', (b) => {
       b.color(hex('#b03a2e')).sphere(0, 0.2, 0, 0.3, 1, 0.65);

@@ -525,6 +525,16 @@ function humanPose(rig, a, speed, mode) {
       rig.add(2, look + 0.2 * Math.sin(t * 0.7), 0.1 * b1, 0);
       break;
     }
+    case 'kick': {
+      // out and back once with the right foot
+      const k = Math.sin(Math.min(1, (a.modeT || 0) / 0.5) * Math.PI);
+      rig.add(9, 0, -1.35 * k, 0); rig.add(10, 0, 0.35 * k, 0);
+      rig.add(7, 0, 0.12 * k, 0);
+      rig.add(1, 0, -0.18 * k, 0);
+      rig.add(3, 0, 0.35 * k, 0.45 * k); rig.add(5, 0, 0.45 * k, -0.35 * k);
+      rig.add(2, look, 0.12, 0);
+      break;
+    }
     case 'clap': {
       const c = Math.abs(Math.sin(t * 8));
       rig.add(3, 0, -0.95, -0.25 - 0.25 * c); rig.add(4, 0, -0.7, 0);

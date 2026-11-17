@@ -61,6 +61,30 @@ export function updateBubbles(S, dt) {
   }
 }
 
+/**
+ * Someone puts the boot in: the dog yelps and is shoved away from (fx, fz) at
+ * `power` m/s. Not a vehicle hit: a short stagger, a little hurt, a lot of
+ * dignity lost. Returns false if he is still reeling from the last one.
+ */
+export function kickDog(S, fx, fz, power, dmg, who, extra) {
+  const d = S.dog;
+  if (d.invuln > 0) return false;
+  let nx = d.x - fx, nz = d.z - fz;
+  const l = Math.hypot(nx, nz) || 1;
+  nx /= l; nz /= l;
+  d.vx = nx * power; d.vz = nz * power; d.vy = 2.0 + power * 0.3;
+  d.onGround = false;
+  d.action = { kind: 'knock', t: 0, dur: 0.6 };
+  d.invuln = 1.0;
+  d.sitting = d.lying = d.sleeping = d.begging = false;
+  d.needs.health = Math.max(0, d.needs.health - dmg);
+  d.needs.mood = Math.max(0, d.needs.mood - 7);
+  d.scaredT = 2.5;
+  if (d.carry) { const it = d.carry; it.state = 'air'; it.vx = it.vz = 0; it.vy = 1; d.carry = null; }
+  emit(S, 'kicked', Object.assign({ by: who ? who.id : 0, x: d.x, z: d.z, dmg }, extra || {}));
+  return true;
+}
+
 /** Ground height at (x, z) for something whose feet are at y: kerbs, platforms, steps. */
 export function groundAt(S, x, z, y, stepUp = 0.32) {
   const s = surfAt(S.W, x, z);

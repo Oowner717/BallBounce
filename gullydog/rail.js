@@ -339,25 +339,27 @@ function inGateZone(X, x, z, pad = 0.3) {
 
 /**
  * For crowd.js: should a walker at p, heading for (tx, tz), stop at the boom?
- * Someone already between the booms carries on across (and hurries).
+ * Someone already on the line itself carries on across (and hurries). Anyone
+ * else whose way crosses the line waits at the boom on their side, wherever
+ * they came from (the dirt pockets beyond the line included).
  */
 export function pedMustWait(S, p, tx, tz) {
   const R = S.rail, X = S.W.special.crossing;
   if (!X || R.gate.state === 'open') return false;
-  if (Math.abs(p.x) > X.x1 + 2.5) return false;
-  const hi = X.gateZ[0] + 0.3, lo = X.gateZ[1] - 0.3;
-  if (p.z < hi && p.z > lo) return false;
+  if (Math.abs(p.x) > X.x1 + 2.5 && Math.abs(tx) > X.x1 + 2.5) return false;
+  const lo = X.z0 - 0.3, hi = X.z1 + 0.3; // the line itself, ballast and all
+  if (p.z > lo && p.z < hi) return false;
   const south = p.z >= hi;
-  if (south ? tz >= hi : tz <= lo) return false;           // not going over
-  if ((south ? p.z - hi : lo - p.z) > 1.2) return false;   // walk up to the boom first
+  if (south ? tz >= hi : tz <= lo) return false;                       // not going over
+  if ((south ? p.z - X.gateZ[0] : X.gateZ[1] - p.z) > 1.2) return false; // walk up to the boom first
   // about half of them duck under it while the train is still far off
   return !(R.pedDuckOk && ((p.id * 2654435761) >>> 0) % 100 < 50);
 }
 
-/** For crowd.js: on the tracks with the gate down. Get across! */
+/** For crowd.js: on the line with the gate down. Get across! */
 export function pedHurry(S, p) {
   const X = S.W.special.crossing;
-  return !!X && S.rail.gate.state !== 'open' && inGateZone(X, p.x, p.z, 0);
+  return !!X && S.rail.gate.state !== 'open' && Math.abs(p.x) < X.x1 + 2.5 && p.z > X.z0 - 0.3 && p.z < X.z1 + 0.3;
 }
 
 /** Last resort: nobody is ever run over. Anyone on foot in a train's way is shoved clear. */

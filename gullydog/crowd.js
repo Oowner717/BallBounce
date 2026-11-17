@@ -15,7 +15,7 @@
 
 import { pedPath, nearestPedNode, pedWalkable, clearLine, baseHeightAt, facadePoint } from './world.js';
 import { pick, pickWeighted, rand, clamp, lerp, dist2, wrapAngle, approachAngle, hex, angleDiff } from './util.js';
-import { emit, say, spawnItem, tossToDog, groundAt } from './simcore.js';
+import { emit, say, spawnItem, tossToDog, groundAt, kickDog } from './simcore.js';
 import { SPEECH, SKIN_TONES, HAIR_COLORS, CLOTHES, SHOP_TYPES } from './data.js';
 import { pedMustWait, pedHurry } from './rail.js';
 
@@ -288,6 +288,8 @@ export function step(S, dt) {
 }
 
 const near2 = (S, p, r) => dist2(p.x, p.z, S.dog.x, S.dog.z) < r * r;
+/** Who might kick a dog that barks in their face: passers-by and shopkeepers, not the named characters. */
+const KICKERS = new Set(['walker', 'vendor', 'keeper']);
 
 function faceToward(p, x, z, dt, rate) {
   p.yaw = approachAngle(p.yaw, Math.atan2(x - p.x, z - p.z), rate * dt);
@@ -639,7 +641,13 @@ function dogInteractions(S, dt) {
       p.startleT = 4;
       if (p.react <= 0 || p.reactKind === 'pet') {
         if (p.kid && S.rng() < 0.6) { startReaction(S, p, 'cheer', 1.2, 'cheer'); say(S, p, [['Bhow bhow!', 'Woof woof!'], ['Hahaha!', '']]); }
-        else if (p.disp === 'grumpy' && dist < 3.5) { startReaction(S, p, 'shoo', 1.4, 'shoo'); say(S, p, SPEECH.shoo); emit(S, 'shooed', { by: p.id }); d.scaredT = 1.5; }
+        // bark right in someone's face and they may well kick out
+        else if (!p.kid && dist < 1.7 && KICKERS.has(p.role) && S.rng() < (p.disp === 'grumpy' ? 0.5 : p.disp === 'neutral' ? 0.15 : 0)) {
+          startReaction(S, p, 'kick', 0.9, 'kick');
+          p.yaw = Math.atan2(d.x - p.x, d.z - p.z);
+          say(S, p, SPEECH.kick);
+          kickDog(S, p.x, p.z, 4.2, 3, p);
+        } else if (p.disp === 'grumpy' && dist < 3.5) { startReaction(S, p, 'shoo', 1.4, 'shoo'); say(S, p, SPEECH.shoo); emit(S, 'shooed', { by: p.id }); d.scaredT = 1.5; }
         else if (dist < 3.2) { startReaction(S, p, 'startle', 0.9, 'startle'); if (S.rng() < 0.45) say(S, p, SPEECH.startled); emit(S, 'startled', { by: p.id }); }
       }
       continue;

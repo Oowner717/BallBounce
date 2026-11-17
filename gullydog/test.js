@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { CONFIG, cloneConfig } from './config.js';
 import {
-  generateWorld, surfAt, SURF, WALKABLE, PLAY_HALF, collidersNear, routePose, zoneAt, pedWalkable,
+  generateWorld, surfAt, SURF, WALKABLE, PLAY_HALF, LAYOUT, collidersNear, routePose, zoneAt, pedWalkable,
 } from './world.js';
 import {
   createSim, step, drainEvents, contextAction, newDay, weatherFor,
@@ -221,7 +221,7 @@ function checkSane(S) {
   for (const k of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw']) assert.ok(Number.isFinite(d[k]), 'dog.' + k + ' = ' + d[k]);
   for (const [k, v] of Object.entries(d.needs)) assert.ok(v >= 0 && v <= 100, `need ${k} = ${v}`);
   assert.ok(Math.abs(d.x) <= PLAY_HALF + 1e-9 && Math.abs(d.z) <= PLAY_HALF + 1e-9, 'the dog left the map');
-  assert.ok(d.y > -0.01 && d.y < 3, 'dog height ' + d.y);
+  assert.ok(d.y > -0.56 && d.y < 3, 'dog height ' + d.y); // the river bed is the lowest ground
   for (const list of [S.peds, S.vehicles, S.cows, S.goats, S.birds, S.dogs, S.items]) {
     for (const e of list) assert.ok(Number.isFinite(e.x) && Number.isFinite(e.z) && Number.isFinite(e.y || 0), 'non-finite position');
   }
@@ -1271,6 +1271,35 @@ test('nobody freezes: every walker keeps making progress (four seeds, four hours
   }
 });
 
+test('bark in a grumpy face and you may get kicked; kind people and kids never kick', () => {
+  const S = sim({ seed: 4, hour: 9, quiet: true });
+  const at = { x: -30, z: -40 };
+  const person = (disp, kid) => {
+    const p = makePerson(S, { kid, x: at.x, z: at.z, role: 'walker' });
+    p.disp = disp; p.state = 'idle'; p.timer = 9999; p.mode = 'stand';
+    S.peds.push(p);
+    return p;
+  };
+  const kicksFrom = (p, tries) => {
+    let n = 0;
+    for (let i = 0; i < tries; i++) {
+      p.x = at.x; p.z = at.z; p.react = 0; p.startleT = 0;
+      place(S, at.x, at.z + 1.2, p);
+      S.dog.needs.health = 100;
+      const ev = run(S, 0.1, { bark: true });
+      const k = only(ev, 'kicked', (e) => e.by === p.id);
+      if (k.length) { n++; assert.ok(S.dog.needs.health < 100, 'a kick that did not hurt'); }
+      run(S, 1.2);
+    }
+    p.gone = true;
+    run(S, 0.1);
+    return n;
+  };
+  assert.ok(kicksFrom(person('grumpy', false), 12) >= 2, 'a grumpy man never kicked out');
+  assert.equal(kicksFrom(person('kind', false), 12), 0, 'a kind soul kicked the dog');
+  assert.equal(kicksFrom(person('grumpy', true), 12), 0, 'a kid kicked the dog');
+});
+
 test('walkers stay on the pavement unless they are crossing', () => {
   const S = sim({ seed: 6, hour: 18 });
   let samples = 0, bad = 0;
@@ -1474,6 +1503,29 @@ test('a cow on the crossing stops the train short of the road, and then it goes 
   assert.ok(t.dir * t.x > X.x1 + 5, 'the train never got going again');
   assert.ok(Math.abs(c.z - T.z) > S.C.rail.halfW, 'the cow is still on the line');
   assert.ok(only(ev, 'trainHorn').length >= 1);
+});
+
+test('the nala: a dog can wade in and climb back out; people keep out; drinking it is a gamble', () => {
+  const S = sim({ seed: 2, hour: 10, quiet: true });
+  const R = LAYOUT.river;
+  assert.ok(!pedWalkable(S.W, 20, (R.z0 + R.z1) / 2) && !pedWalkable(S.W, 20, R.step + 0.5), 'people may walk in the river');
+  place(S, 20, R.bank + 0.6, 0);
+  walkTo(S, 20, R.z0 + 2.5, { max: 8 });
+  run(S, 0.5);
+  assert.ok(S.dog.y < -0.4, 'not down in the water: y = ' + S.dog.y.toFixed(2));
+  walkTo(S, 20, R.bank + 0.6, { max: 10 });
+  assert.ok(S.dog.y > 0, 'still in the river');
+  // a drink from the nala: thirst goes, and often so does breakfast
+  let queasy = 0;
+  for (let i = 0; i < 10; i++) {
+    place(S, 22, R.step + 0.3, 0);
+    S.dog.needs.thirst = 40;
+    assert.equal(contextAction(S).kind, 'drink', 'cannot drink from the river here');
+    const ev = press(S, 'act', 3);
+    assert.ok(only(ev, 'drank').length === 1, 'no drink');
+    queasy += only(ev, 'queasy').length;
+  }
+  assert.ok(queasy >= 2, 'drank the nala ten times and felt fine every time');
 });
 
 /* ========================================================================== */

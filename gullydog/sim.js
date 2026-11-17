@@ -455,7 +455,7 @@ function finishAction(S, a) {
     case 'drink': {
       const w = a.target;
       d.needs.thirst = Math.min(100, d.needs.thirst + F.drinkGain);
-      if (w && !w.clean && S.rng() < 0.15) { d.needs.health -= 3; emit(S, 'queasy', {}); }
+      if (w && !w.clean && S.rng() < (w.filthy ? 0.45 : 0.15)) { d.needs.health -= w.filthy ? 5 : 3; emit(S, 'queasy', { filthy: !!w.filthy }); }
       if (w && w.item) removeItem(S, w.item);
       S.day.drank++;
       emit(S, 'drank', { src: w ? w.id || w.kind + Math.round(w.x) + ',' + Math.round(w.z) : 'x', kind: w ? w.kind : '' });
@@ -515,7 +515,7 @@ function eatItem(S, it) {
   emit(S, 'ate', { kind: it.kind, aunty: !!it.aunty, prasad: !!it.prasad, stolen: !!it.stolen });
 }
 
-function dropCarry(S, gentle) {
+function dropCarry(S, gentle, forDog) {
   const d = S.dog;
   const it = d.carry;
   if (!it) return null;
@@ -526,8 +526,8 @@ function dropCarry(S, gentle) {
   it.vx = gentle ? 0 : d.vx * 0.5; it.vz = gentle ? 0 : d.vz * 0.5; it.vy = 0.5;
   it.state = 'air';
   it.byPlayer = true;
-  // dropped in front of a dog: it's for them
-  const npc = Fauna.npcDogNear(S, it.x, it.z, 2.6);
+  // dropped in front of a dog: it's for them (the one the prompt named, if it did)
+  const npc = forDog || Fauna.npcDogNear(S, it.x, it.z, 2.6);
   if (npc && isFood(it)) it.forDog = npc.key;
   emit(S, 'drop', { kind: it.kind });
   return it;
@@ -576,7 +576,7 @@ export function contextAction(S) {
   if (d.carry) {
     if (isFood(d.carry)) {
       const npc = Fauna.npcDogNear(S, d.x, d.z, 2.6);
-      if (npc) return { kind: 'drop', label: 'Share with ' + (npc.puppy ? 'the puppy' : npc.name) };
+      if (npc) return { kind: 'drop', label: 'Share with ' + (npc.puppy ? 'the puppy' : npc.name), target: npc };
       return { kind: 'eatCarry', label: 'Eat the ' + d.carry.kind, target: d.carry };
     }
     return { kind: 'drop', label: 'Drop the ' + d.carry.kind };
@@ -631,6 +631,8 @@ function nearestWater(S, x, z, r) {
   }
   // rain fills every pothole
   if (!best && S.weather === 'rain' && surfAt(S.W, x, z) === SURF.ROAD) best = { x, z, kind: 'rain', clean: false, id: 'rain' };
+  // and the nala is water all along its length, of a kind
+  if (!best) { const s = surfAt(S.W, x, z); if (s === SURF.RIVER || s === SURF.BANK) best = { x, z, kind: 'river', clean: false, filthy: true, id: 'river' }; }
   return best;
 }
 
@@ -656,7 +658,7 @@ function doContext(S) {
     case 'greet': startAction(S, 'greet', 1.1, a.target); break;
     case 'rummage': startAction(S, 'rummage', F.rummageTime, a.target); break;
     case 'mark': startAction(S, 'mark', 1.4, a.target); break;
-    case 'drop': dropCarry(S, true); break;
+    case 'drop': dropCarry(S, true, a.target); break;
     case 'stand': d.sitting = false; d.begging = false; break;
     case 'sit':
       d.lying = false;

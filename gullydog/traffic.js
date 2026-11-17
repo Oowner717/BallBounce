@@ -339,8 +339,9 @@ export function step(S, dt) {
     // stop on the tracks
     const gs = gateStop(S, v, sense);
     if (gs >= 0 && gs < sense.gap) sense = { gap: gs, what: 'gate', ref: null, lead: 0 };
-    // queued for the gate, at the front or further back: waiting, not stuck
-    v.gateWait = v.v < 0.5 && ((sense.what === 'gate' && sense.gap < 2) || (sense.what === 'veh' && sense.ref.gateWait && sense.gap < 5));
+    // queued for the gate, at the front or further back: waiting, not stuck. Once
+    // waiting, still waiting while the booms are down, whoever steps in front.
+    v.gateWait = v.v < 0.5 && ((gs >= 0 && gs < 2) || (sense.what === 'veh' && sense.ref.gateWait && sense.gap < 5) || (v.gateWait && S.rail.gate.state !== 'open'));
 
     // curve speed: look a little ahead for the tightest bend
     let curve = limit;

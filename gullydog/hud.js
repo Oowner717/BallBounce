@@ -8,7 +8,7 @@
  */
 
 import { m4Project, clamp, dist2, hex } from './util.js';
-import { GRID, SURF, LAYOUT } from './world.js';
+import { GRID, SURF, LAYOUT, surfAt } from './world.js';
 import { DOG_NAME } from './data.js';
 import { taskTarget } from './tasks.js';
 
@@ -56,6 +56,7 @@ export class Hud {
       [SURF.ROAD]: [70, 70, 80], [SURF.CROSS]: [210, 210, 210], [SURF.WALK]: [176, 164, 142], [SURF.GALI]: [160, 148, 128],
       [SURF.PLAZA]: [196, 182, 152], [SURF.DIRT]: [176, 140, 96], [SURF.ISLAND]: [110, 160, 80], [SURF.MARKET]: [170, 150, 118],
       [SURF.BUILDING]: [96, 86, 82], [SURF.MASS]: [96, 86, 82], [SURF.RAIL]: [128, 120, 110],
+      [SURF.RIVER]: [70, 80, 58], [SURF.BANK]: [96, 84, 64],
     };
     for (let i = 0; i < N * N; i++) {
       const c3 = col[W.surf[i]] || [0, 0, 0];
@@ -186,6 +187,7 @@ export class Hud {
         case 'trainSnack': this.toast(`Somebody on the train threw you a ${e.kind}!`, 'good', 2.8); break;
         case 'showStart': if (Math.hypot(S.dog.x - e.x, S.dog.z - e.z) < 70) this.toast("Drums in Mandir Square: the rope walker's show is starting!", 'gold', 3.6); break;
         case 'showTrick': this.toast('The crowd loves it! Ek aur!', 'good', 1.8); break;
+        case 'kicked': this.vig = Math.max(this.vig || 0, 0.6); this.toast(e.border ? 'Booted back to India! No visa, no entry.' : 'Ow! Kicked. Barking in faces has its price.', 'bad', 2.6); break;
         case 'showWobble': this.toast('She wobbles! The crowd gasps.', 'bad', 1.8); break;
         case 'crossed': break;
         default:
@@ -197,6 +199,10 @@ export class Hud {
 
   update(S, cam, vp, canvas, dt, ctxAction) {
     const d = S.dog;
+    // into the nala
+    const wading = surfAt(S.W, d.x, d.z) === SURF.RIVER;
+    if (wading && !this.wading) this.toast('Splosh! Into the nala. It is... fragrant.', '', 2.4);
+    this.wading = wading;
     // needs
     for (const [k] of NEEDS) {
       const v = Math.round(d.needs[k]);

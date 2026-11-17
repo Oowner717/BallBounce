@@ -16,7 +16,7 @@
 
 import { MeshBuilder, hangingLine } from './geom.js';
 import {
-  GRID, SURF, SURF_HEIGHT, LAYOUT, PLAY_HALF, cellCenter, facadeWidth, zebraRects, cellOf,
+  GRID, SURF, SURF_HEIGHT, LAYOUT, PLAY_HALF, WATER_Y, cellCenter, facadeWidth, zebraRects, cellOf,
 } from './world.js';
 import { hex, makeRng, rand, pick, chance, TAU, clamp, mixRgb, scaleRgb, jitterRgb } from './util.js';
 import { SHOP_TYPES, WALL_ADS } from './data.js';
@@ -55,12 +55,15 @@ const C = {
   },
 };
 C.ballast = hex('#77706a');
+C.mud = hex('#4b4232');
+C.water = hex('#363a2f');
 const SURF_COLOR = {
   [SURF.ROAD]: C.asphalt, [SURF.CROSS]: C.asphalt, [SURF.WALK]: C.walk, [SURF.GALI]: C.gali,
   [SURF.PLAZA]: C.plaza, [SURF.DIRT]: C.dirt, [SURF.MARKET]: C.market, [SURF.RAIL]: C.ballast,
+  [SURF.RIVER]: C.mud, [SURF.BANK]: hex('#5a4d3a'),
 };
 const SURF_DETAIL = {
-  [SURF.ROAD]: 1, [SURF.CROSS]: 1, [SURF.WALK]: 0.8, [SURF.GALI]: 0.9, [SURF.PLAZA]: 0.7, [SURF.DIRT]: 1, [SURF.MARKET]: 1, [SURF.RAIL]: 1,
+  [SURF.ROAD]: 1, [SURF.CROSS]: 1, [SURF.WALK]: 0.8, [SURF.GALI]: 0.9, [SURF.PLAZA]: 0.7, [SURF.DIRT]: 1, [SURF.MARKET]: 1, [SURF.RAIL]: 1, [SURF.RIVER]: 1, [SURF.BANK]: 1,
 };
 
 /* ------------------------------------------------------------------ chunks */
@@ -100,6 +103,7 @@ export function buildCity(W, atlas) {
   phase('buildings', () => { for (const b of W.buildings) buildBuilding(ctx, b); });
   phase('props', () => { for (const p of W.props) buildProp(ctx, p); });
   phase('wires', () => buildWires(ctx));
+  phase('river', () => buildRiver(ctx));
   phase('skyline', () => buildSkyline(ctx));
 
   const chunks = [];
@@ -161,9 +165,13 @@ function buildGround(ctx) {
       }
     }
   }
-  // A wide plain beneath it all, so nothing ever shows sky through a crack.
+  // A wide plain beneath it all, so nothing ever shows sky through a crack; it
+  // drops under the river, which lies below the street.
+  const RV = LAYOUT.river;
   ctx.ch.far.uv(uv.white).color(hex('#9c8a6c')).detail(1);
-  ctx.ch.far.quad([-700, -0.03, 700], [700, -0.03, 700], [700, -0.03, -700], [-700, -0.03, -700]);
+  ctx.ch.far.quad([-700, -0.03, RV.step], [700, -0.03, RV.step], [700, -0.03, -700], [-700, -0.03, -700]);
+  ctx.ch.far.quad([-700, -0.03, 700], [700, -0.03, 700], [700, -0.03, RV.far], [-700, -0.03, RV.far]);
+  ctx.ch.far.color(C.mud).quad([-700, -0.6, RV.far], [700, -0.6, RV.far], [700, -0.6, RV.step], [-700, -0.6, RV.step]);
   // The roads run on into the haze.
   const far = ctx.ch.far;
   far.color(C.asphalt).detail(1);
@@ -800,6 +808,10 @@ function buildProp(ctx, p) {
     case 'gatepost': return gatePost(B, p, y0);
     case 'whistle': return whistleBoard(B, p, y0, uv);
     case 'tightrope': return tightrope(B, p, y0);
+    case 'parapet': return parapet(B, p);
+    case 'riversign': return riverSign(B, p, uv);
+    case 'drainpipe': return drainPipe(B, p);
+    case 'litter': return litter(ctx, p, rng);
     default: return null; // parked vehicles and puddles are drawn elsewhere
   }
 }
@@ -911,6 +923,97 @@ function whistleBoard(B, p, y0, uv) {
   const { x, z } = p;
   B.color(hex('#d9d4c8')).detail(0.4).box(x - 0.04, y0, z - 0.04, x + 0.04, y0 + 1.75, z + 0.04, { skip: 'b' });
   B.color([1, 1, 1]).detail(0.2).box(x - 0.02, y0 + 1.15, z - 0.3, x + 0.02, y0 + 1.75, z + 0.3, { uvFace: p.face > 0 ? { e: uv.whistle } : { w: uv.whistle } });
+}
+
+/* ------------------------------------------------------------------- river */
+
+/**
+ * The nala's water: one murky sheet each side of the bridge (and on into the
+ * haze), with scum, oily patches, foam and clumps of water hyacinth on it. The
+ * rubbish that floats down it is drawn live (main.js), so it drifts.
+ */
+function buildRiver(ctx) {
+  const R = LAYOUT.river, b = R.bridge;
+  const rng = makeRng(8191);
+  for (const [xa, xb] of [[-100, -b], [b, 100]]) {
+    const B = ctx.ch.at((xa + xb) / 2, (R.z0 + R.z1) / 2);
+    // one sheet per chunk-sized piece, so culling still works
+    for (let x = xa; x < xb - 1e-6; x += 25) {
+      const x1 = Math.min(xb, x + 25);
+      const Bc = ctx.ch.at((x + x1) / 2, (R.step + R.far) / 2);
+      Bc.uv(ctx.uv.white).bone(0).slot(0).emissive(0).sway(0);
+      Bc.color(C.water).detail(0.18).quad([x, WATER_Y, R.far], [x1, WATER_Y, R.far], [x1, WATER_Y, R.step], [x, WATER_Y, R.step]);
+      // the sky caught in long streaks down the current
+      Bc.color(hex('#4b544c')).detail(0.1);
+      for (let k = 0; k < 9; k++) {
+        const z = R.z0 + rng() * (R.z1 - R.z0), l = 2 + rng() * 6, xs = x + rng() * Math.max(0.1, x1 - x - l);
+        Bc.box(xs, WATER_Y, z, xs + l, WATER_Y + 0.004, z + 0.04 + rng() * 0.08, { skip: 'bnsew' });
+      }
+    }
+    // patches on the surface: grey-green scum, black oil, white foam, hyacinth
+    for (let k = 0; k < 70; k++) {
+      const x = xa + rng() * (xb - xa), z = R.z0 - 0.6 + rng() * (R.z1 - R.z0 + 1.2);
+      const Bc = ctx.ch.at(x, z);
+      const roll = rng();
+      const w = 0.6 + rng() * 2.4, d = 0.4 + rng() * 1.6;
+      if (roll < 0.35) Bc.color(hex('#6d7150')).detail(0.8).box(x - w / 2, WATER_Y, z - d / 2, x + w / 2, WATER_Y + 0.008, z + d / 2, { skip: 'bnsew' });
+      else if (roll < 0.55) Bc.color(hex('#2a2a26')).detail(0.2).box(x - w / 2, WATER_Y, z - d / 2, x + w / 2, WATER_Y + 0.006, z + d / 2, { skip: 'bnsew' });
+      else if (roll < 0.75) {
+        Bc.color(hex('#dcdccf')).detail(0.6);
+        for (let q = 0; q < 5; q++) Bc.sphere(x + (rng() - 0.5) * w, WATER_Y, z + (rng() - 0.5) * d, 0.12 + rng() * 0.18, 0, 0.35);
+      } else {
+        Bc.color(hex(pick(rng, ['#3f6b2a', '#4c7a31', '#355d24']))).detail(0.7);
+        for (let q = 0; q < 6; q++) Bc.sphere(x + (rng() - 0.5) * w, WATER_Y, z + (rng() - 0.5) * d, 0.2 + rng() * 0.2, 0, 0.45);
+        if (rng() < 0.5) Bc.color(hex('#b39ddb')).boxC(x, WATER_Y + 0.12, z, 0.08, 0.08, 0.08);
+      }
+    }
+  }
+  // on into the haze
+  const far = ctx.ch.far;
+  far.color(C.water).detail(0.3);
+  for (const [xa, xb] of [[-480, -100], [100, 480]]) far.quad([xa, WATER_Y, R.far], [xb, WATER_Y, R.far], [xb, WATER_Y, R.step], [xa, WATER_Y, R.step]);
+}
+
+/** A bridge parapet: plastered brick, white with black bands at the ends, the way the PWD paints them. */
+function parapet(B, p) {
+  const x = p.x, y = SURF_HEIGHT[SURF.WALK];
+  B.color(hex('#c8c1b2')).detail(0.9).box(x - 0.15, y, p.z0, x + 0.15, y + 0.95, p.z1, { skip: 'b' });
+  B.color(hex('#9a9386')).box(x - 0.18, y + 0.95, p.z0, x + 0.18, y + 1.02, p.z1, { skip: 'b' });
+  for (const z0 of [p.z0, p.z1 - 1.2]) {
+    for (let k = 0; k < 4; k++) B.color(hex(k % 2 ? '#1d1d1d' : '#f2f0ea')).box(x - 0.17, y, z0 + k * 0.3, x + 0.17, y + 1.0, z0 + (k + 1) * 0.3, { skip: 'b' });
+  }
+}
+
+/** "Keep the river clean": a board on two posts by the bridge, facing the town. */
+function riverSign(B, p, uv) {
+  const { x, z } = p, y0 = 0.03;
+  B.color(hex('#6d7277')).detail(0.3);
+  for (const dx of [-0.6, 0.6]) B.box(x + dx - 0.04, y0, z - 0.04, x + dx + 0.04, y0 + 2.2, z + 0.04, { skip: 'b' });
+  B.color([1, 1, 1]).detail(0.2).box(x - 1.0, y0 + 1.5, z - 0.03, x + 1.0, y0 + 2.1, z, { uvFace: { n: uv.riversign } });
+}
+
+/** A drain spilling into the nala from under the bank, with its stain and its froth. */
+function drainPipe(B, p) {
+  const { x, z } = p;
+  B.color(hex('#8d877c')).detail(0.8).rod([x, -0.06, z - 0.6], [x, -0.06, z + 0.55], 0.24, 10);
+  B.color(hex('#141210')).box(x - 0.17, -0.23, z + 0.55, x + 0.17, 0.11, z + 0.56, { skip: 'bnew' });
+  // the outflow: a dark tongue down into the water, and a raft of froth below it
+  B.color(hex('#2b2418')).detail(0.4).box(x - 0.14, WATER_Y, z + 0.55, x + 0.14, -0.06, z + 0.62, { skip: 'b' });
+  B.color(hex('#e4e2d6')).detail(0.6);
+  for (let k = 0; k < 7; k++) B.sphere(x + Math.sin(k * 2.1) * 0.5, WATER_Y, z + 1.0 + (k % 3) * 0.3, 0.14 + (k % 2) * 0.08, 0, 0.35);
+}
+
+/** Rubbish scattered down a bank: bags, bottles, wrappers, the odd shoe. */
+function litter(ctx, p, rng) {
+  const cols = ['#e8e8e8', '#3d6fb5', '#d32f2f', '#f1c40f', '#2e8b57', '#ff7043', '#ad1457', '#bdbdbd', '#212121', '#8d6e63'];
+  for (let k = 0; k < p.n; k++) {
+    const x = p.x + (rng() - 0.5) * p.r * 2, z = p.z + (rng() - 0.5) * p.r;
+    const B = ctx.ch.at(x, z);
+    const y = Math.max(baseY(ctx.W, x, z), WATER_Y);
+    B.uv(ctx.uv.white).bone(0).slot(0).emissive(0).sway(0).color(hex(pick(rng, cols))).detail(0.4);
+    if (rng() < 0.5) B.sphere(x, y + 0.03, z, 0.06 + rng() * 0.1, 0, 0.6);             // a bag
+    else B.boxC(x, y + 0.03, z, 0.08 + rng() * 0.22, 0.05, 0.05 + rng() * 0.12);         // a bottle, a wrapper, a carton
+  }
 }
 
 /** The rope walker's rig: a bamboo tripod at each end, the rope between them, guy ropes pegged out. */
@@ -1503,6 +1606,7 @@ function buildSkyline(ctx) {
     // leave the four roads and the railway open so they run on into the haze
     if (Math.abs(z) < 14 && Math.abs(x) > 95) continue;
     if (Math.abs(z - (LAYOUT.rail.z0 + LAYOUT.rail.z1) / 2) < 18 && Math.abs(x) > 95) continue;
+    if (Math.abs(z - (LAYOUT.river.z0 + LAYOUT.river.z1) / 2) < 14 && Math.abs(x) > 95) continue;
     if (Math.abs(x) < 11 && Math.abs(z) > 95) continue;
     const w = 6 + rng() * 14, d = 6 + rng() * 14, h = 6 + rng() * (r > 170 ? 34 : 18);
     B.color(pick(rng, hazy)).detail(0.5);

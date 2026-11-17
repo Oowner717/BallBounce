@@ -31,11 +31,15 @@ import {
   AWNING_COLORS, DOOR_COLORS,
 } from './data.js';
 
-export const SURF = { MASS: 0, ROAD: 1, WALK: 2, GALI: 3, PLAZA: 4, DIRT: 5, ISLAND: 6, BUILDING: 7, MARKET: 8, CROSS: 9, RAIL: 10 };
+export const SURF = { MASS: 0, ROAD: 1, WALK: 2, GALI: 3, PLAZA: 4, DIRT: 5, ISLAND: 6, BUILDING: 7, MARKET: 8, CROSS: 9, RAIL: 10, RIVER: 11, BANK: 12 };
 /** Ground height by surface. Sidewalks and plazas stand on a kerb; galis are near flush. */
-export const SURF_HEIGHT = [0, 0, 0.18, 0.06, 0.18, 0.03, 0.45, 0, 0.06, 0, 0.22];
-// RAIL (the ballast) is no place for people: they cross at the phatak. The dog goes where he likes.
-export const WALKABLE = [false, false, true, true, true, true, false, false, true, false, false];
+export const SURF_HEIGHT = [0, 0, 0.18, 0.06, 0.18, 0.03, 0.45, 0, 0.06, 0, 0.22, -0.55, -0.28];
+// RAIL (the ballast) is no place for people: they cross at the phatak. Nor is the
+// river (its bed, RIVER, and the muddy step along its banks, BANK). The dog goes
+// where he likes, and wades in the river up to his belly.
+export const WALKABLE = [false, false, true, true, true, true, false, false, true, false, false, false, false];
+/** Where the river's surface is drawn: everything below it is under water. */
+export const WATER_Y = -0.22;
 
 export const GRID = { half: 100, res: 0.5, n: 400 };
 /** The dog stays inside this square. Roads run on to +-100 so traffic arrives out of the haze. */
@@ -53,10 +57,14 @@ export const LAYOUT = {
   // on Bazaar Road |x| < crossHalf with its gates at gateZ, a dirt verge south of
   // it where the houses back onto the line.
   rail: { z0: -87, z1: -78, tracks: [{ z: -85.0, dir: 1 }, { z: -80.5, dir: -1 }], gauge: 1.676, crossHalf: 7.5, gateZ: [-76.6, -88.4], verge: -72 },
+  // The nala along the south edge, choked with rubbish: a dirt bank, a muddy step,
+  // the water (z0..z1), and the far bank beyond the edge of the map. Bazaar Road
+  // crosses it on a bridge (|x| < bridge).
+  river: { bank: 78, step: 79.6, z0: 80.6, z1: 92.5, far: 93.5, farBank: 96, bridge: 7 },
 };
 
 const N = GRID.n, RES = GRID.res, HALF = GRID.half;
-const { MASS, ROAD, WALK, GALI, PLAZA, DIRT, ISLAND, BUILDING, MARKET, CROSS, RAIL } = SURF;
+const { MASS, ROAD, WALK, GALI, PLAZA, DIRT, ISLAND, BUILDING, MARKET, CROSS, RAIL, RIVER, BANK } = SURF;
 
 export const cellOf = (v) => Math.floor((v + HALF) / RES);
 export const cellCenter = (i) => -HALF + (i + 0.5) * RES;
@@ -147,6 +155,18 @@ const AREAS = [
   { s: RAIL, r: [7, -87, 100, -78] },
   { s: DIRT, r: [-14, -90, -7, -87] },
   { s: DIRT, r: [7, -90, 14, -87] },
+
+  // S — the nala: bank, step, water and the far side, either side of the bridge
+  { s: DIRT, r: [-100, 78, -7, 79.6] },
+  { s: DIRT, r: [7, 78, 100, 79.6] },
+  { s: BANK, r: [-100, 79.6, -7, 80.6] },
+  { s: BANK, r: [7, 79.6, 100, 80.6] },
+  { s: RIVER, r: [-100, 80.6, -7, 92.5] },
+  { s: RIVER, r: [7, 80.6, 100, 92.5] },
+  { s: BANK, r: [-100, 92.5, -7, 93.5] },
+  { s: BANK, r: [7, 92.5, 100, 93.5] },
+  { s: DIRT, r: [-100, 93.5, -7, 96] },
+  { s: DIRT, r: [7, 93.5, 100, 96] },
 ];
 
 /** Lot shape and use by frontage class. */
@@ -171,6 +191,8 @@ const ZONES = [
   { name: 'Gully Maidan', r: [24, -58, 64, -26] },
   { name: 'Sabzi Mandi', r: [20, 22, 62, 54] },
   { name: 'Pump Wala Chowk', r: [-35, 35, -23, 47] },
+  { name: 'Nala Pul', r: [-7.5, 78, 7.5, 100] },
+  { name: 'Ganda Nala', r: [-100, 78, 100, 100] },
   { name: 'MG Road', r: [-100, -10.5, 100, 10.5] },
   { name: 'Bazaar Road', r: [-7.5, -100, 7.5, 100] },
   { name: 'Mandir Gali', r: [-86, -66, -7, -10] },
@@ -223,6 +245,7 @@ export function generateWorld(seed = 7) {
   placeLots(W, rng);
   backfill(W, rng);
   placeRailway(W);
+  placeRiver(W, rng);
   placeLandmarks(W, rng);
   placeStreetProps(W, rng);
   placeWires(W, rng);
@@ -548,6 +571,39 @@ function placeRailway(W) {
     kids: { x: 14.6, z: -72.5, kerb: { x: 8.6, z: -72.5 } },
   };
   W.pois.landmarks.push({ id: 'phatak', x: 9, z: -73.5, name: 'Railway Phatak' });
+}
+
+/**
+ * The nala: a bridge for Bazaar Road with its parapets, drains spilling into it,
+ * rubbish heaped on the bank, a board asking everyone to keep it clean, and
+ * water (of a sort) for a thirsty dog.
+ */
+function placeRiver(W, rng) {
+  const R = LAYOUT.river, b = R.bridge;
+  W.keepClear.push([-b - 2, R.bank - 1, b + 2, 100]);
+  // parapets, both sides of the bridge, and a lamp on each end
+  for (const x of [-b - 0.15, b + 0.15]) {
+    prop(W, 'parapet', x, (R.bank + R.farBank) / 2, { z0: R.bank - 0.6, z1: R.farBank + 0.5 });
+    addBox(W, x - 0.15, R.bank - 0.6, x + 0.15, R.farBank + 0.5, 0.95, { tag: 'parapet', block: false });
+  }
+  lampPost(W, -b + 0.4, R.bank + 0.4, 4.6);
+  lampPost(W, b - 0.4, R.bank + 0.4, 4.6);
+  prop(W, 'riversign', b + 2.6, R.bank - 0.2, { yaw: Math.PI });
+  addCircle(W, b + 2.0, R.bank - 0.2, 0.08, 2.2, { tag: 'post', block: false });
+  addCircle(W, b + 3.2, R.bank - 0.2, 0.08, 2.2, { tag: 'post', block: false });
+  // drains spilling into the water, rubbish down the bank
+  for (const x of [-71, -38, -15, 24, 58]) prop(W, 'drainpipe', x, R.step, {});
+  for (let x = -86; x < 86; x += 3 + rng() * 4) {
+    if (Math.abs(x) < b + 2) continue;
+    prop(W, 'litter', x, R.step + rand(rng, -0.3, 0.7), { r: rand(rng, 0.8, 2.2), n: 6 + Math.floor(rng() * 10), seed: (rng() * 1e9) | 0 });
+  }
+  for (const x of [-50.5, 40.5, -22]) garbage(W, x, R.bank + 0.9, 1.1);
+  // the water: filthy, but water
+  for (let x = -84; x <= 84; x += 8) {
+    if (Math.abs(x) < b + 2) continue;
+    W.pois.water.push({ x, z: R.step + 0.5, kind: 'river', clean: false, filthy: true, id: 'river' });
+  }
+  W.pois.landmarks.push({ id: 'nala', x: b + 3, z: R.bank, name: 'Ganda Nala' });
 }
 
 /* ---------------------------------------------------------------- landmarks */
@@ -1339,7 +1395,7 @@ function buildPedGraph(W) {
   };
 
   for (const a of AREAS) {
-    if (a.s === ROAD || a.s === RAIL) continue;
+    if (a.s === ROAD || a.s === RAIL || a.s === RIVER || a.s === BANK) continue;
     let [x0, z0, x1, z1] = a.r;
     x0 = Math.max(x0, -PLAY_HALF - 3); z0 = Math.max(z0, -PLAY_HALF - 3);
     x1 = Math.min(x1, PLAY_HALF + 3); z1 = Math.min(z1, PLAY_HALF + 3);

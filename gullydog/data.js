@@ -250,6 +250,7 @@ export const SPEECH = {
   priest: [['Prasad le lo', 'Take the offering'], ['Jai ho!', 'Glory!']],
   cop: [['Chalo, aage badho!', 'Move along!'], ['Rukk!', 'Stop!']],
   dogGrowl: [['Grrrr...', ''], ['Wuff! Grr!', '']],
+  kick: [['Chal hatt!', 'Scram!'], ['Bhaag yahan se!', 'Get lost!'], ['Bhonk mat!', "Don't bark at me!"], ['Pagal kutta!', 'Mad dog!']],
   // the gateman at the level crossing
   gateman: [['Phatak band!', 'Gate closed!'], ['Gaadi aa rahi hai!', "Train's coming!"], ['Peeche hato!', 'Stand back!'], ['Ruko, ruko!', 'Wait, wait!']],
   gatemanDog: [['Arre, patri se hatt!', 'Hey, off the tracks!'], ['Mar jayega, pagal!', "You'll get killed, you fool!"], ['Idhar aa, idhar!', 'Over here, here!']],

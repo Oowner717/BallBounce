@@ -574,6 +574,7 @@ export class AudioEngine {
         case 'honk': this.horn(e.horn, e.x, e.z, e.atDog); break;
         case 'trainHorn': this.trainHorn(e.x, e.z, e.long); break;
         case 'trainHit': this.thud(0.8); break;
+        case 'kicked': this.yelp(); this.thud(0.3); break;
         case 'coin': this.coin(e.x, e.z); break;
         case 'showCheer': this.claps(e.x, e.z); break;
         case 'hit': this.yelp(); this.thud(0.5); break;

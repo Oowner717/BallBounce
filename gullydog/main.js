@@ -7,7 +7,7 @@
  * HUD and the audio react to the frame's events.
  */
 
-import { generateWorld, collidersNear, PLAY_HALF } from './world.js';
+import { generateWorld, collidersNear, PLAY_HALF, LAYOUT, WATER_Y } from './world.js';
 import { buildCity } from './cityMesh.js';
 import { atlasLayout, paintAtlas, paintNoise } from './textures.js';
 import { buildAllModels, PEOPLE_KINDS } from './models.js';
@@ -607,6 +607,9 @@ function drawScene(dt, time) {
     rigs.bird.write(b.data, o + 16, bd.x, bd.y, bd.z, bd.yaw, 1);
   }
 
+  /* rubbish drifting down the nala */
+  drawTrash(time, near);
+
   /* things on the ground */
   for (const it of S.items) {
     if (it.state === 'carried' || !near(it.x, it.z, 50)) continue;
@@ -698,6 +701,31 @@ const PARKED = {
 const AUTO_TOP = hex('#f5c518');
 
 function groundY(x, z) { return groundAt(S, x, z, 0.5); }
+
+/* ------------------------------------------------------------- river rubbish */
+
+// Purely for show: the same rubbish drifts past at the same pace every time,
+// wrapping round at the edges of the map. The sim knows nothing of it.
+const TRASH = [];
+{
+  const R = LAYOUT.river, rng = makeRng(4242);
+  const kinds = ['bag', 'bag', 'bagb', 'bagp', 'bottle', 'bottle', 'bottle', 'foam', 'foam', 'cup', 'carton', 'chappal', 'garlands', 'tyre'];
+  for (let i = 0; i < 120; i++) {
+    TRASH.push({
+      x0: -100 + rng() * 200, z: R.z0 + 0.3 + rng() * (R.z1 - R.z0 - 0.6), kind: kinds[Math.floor(rng() * kinds.length)],
+      v: 0.15 + rng() * 0.25, ph: rng() * TAU, yaw: rng() * TAU, spin: (rng() - 0.5) * 0.25,
+    });
+  }
+}
+
+function drawTrash(time, near) {
+  const b = LAYOUT.river.bridge + 0.5;
+  for (const t of TRASH) {
+    const x = -100 + ((((t.x0 + 100 + t.v * time) % 200) + 200) % 200);
+    if (Math.abs(x) < b || !near(x, t.z, 55)) continue;
+    itemInstance(t.kind, x, WATER_Y + 0.005 + Math.sin(time * 1.3 + t.ph) * 0.012, t.z, t.yaw + time * t.spin);
+  }
+}
 
 /* ---------------------------------------------------------------- railway */
 
