@@ -234,7 +234,7 @@ function senseAhead(S, v, d, look, ignore, noPeds) {
   const kStart = Math.max(0, Math.floor((front - 0.4) / step));
   const kEnd = Math.ceil((front + look) / step);
   for (const e of near) {
-    if (e.ref === v || e.ref === ignore || (noPeds && e.kind === 'ped')) continue;
+    if (e.ref === v || (ignore && (ignore === e.ref || (Array.isArray(ignore) && ignore.includes(e.ref)))) || (noPeds && e.kind === 'ped')) continue;
     const ex = e.x, ez = e.z;
     // people and animals only matter once they are actually on the carriageway
     let margin = T.latMargin;
@@ -275,6 +275,23 @@ function noseBehind(v, o) {
   return rel < -0.05 || (rel <= 0.05 && v.id < o.id);
 }
 
+/**
+ * The other members of a loop of stopped vehicles each blocked by the next,
+ * following blockRef from `first` (the one v is waiting on) back round to v; or
+ * null if the chain does not come back to v.
+ */
+function waitingLoop(v, first) {
+  const out = [];
+  let u = first;
+  for (let hop = 0; hop < 8 && u; hop++) {
+    if (u === v) return out;
+    if (u.v > 0.3) return null; // someone in the chain is moving: no deadlock
+    out.push(u);
+    u = u.blockRef;
+  }
+  return null;
+}
+
 /** Ring entry: is anyone on the ring coming round toward our merge point? */
 function mustYield(S, v, route) {
   const merge = route.ringAngle;
@@ -301,11 +318,26 @@ export function step(S, dt) {
     const limit = Math.min(v.vmax, POSE.speed * (v.vmax / v.T.vmax));
     const look = T.lookBase + v.v * T.lookPerSpeed;
     let sense = senseAhead(S, v, v.d, look);
+    const skip = [];
+    const past = () => { skip.push(sense.ref); sense = senseAhead(S, v, v.d, look, skip); };
     // two noses side by side (a merge, a squeeze): whoever is further ahead goes
     // first, so they cannot each wait for the other
-    if (sense.what === 'veh' && noseBehind(v, sense.ref)) sense = senseAhead(S, v, v.d, look, sense.ref);
+    if (sense.what === 'veh' && noseBehind(v, sense.ref)) past();
     // two vehicles each waiting for the other: the older one goes first
-    if (sense.what === 'veh' && sense.ref.blockRef === v && v.id < sense.ref.id) sense = senseAhead(S, v, v.d, look, sense.ref);
+    if (sense.what === 'veh' && sense.ref.blockRef === v && v.id < sense.ref.id) past();
+    // three or more in a ring, each waiting on the next (round the chowk, after a
+    // burst of traffic): the oldest of them squeezes through the knot at a crawl,
+    // the others give way as it comes
+    if (sense.what === 'veh' && v.stopT > 2) {
+      const loop = waitingLoop(v, sense.ref);
+      if (loop && loop.every((u) => v.id <= u.id)) { v.ghost = loop; v.ghostT = 5; }
+    }
+    if (v.ghostT > 0) {
+      v.ghostT -= dt;
+      for (const u of v.ghost) if (!skip.includes(u)) skip.push(u);
+      sense = senseAhead(S, v, v.d, look, skip);
+      if (v.ghostT <= 0) v.ghost = null;
+    }
     // People in front for ages (a stream over the zebra, someone pressed against a
     // bus that stopped on it): nudge through at walking pace and let them part.
     if (sense.what === 'ped' && v.v < 0.5) v.pedT = (v.pedT || 0) + dt;
@@ -364,6 +396,7 @@ export function step(S, dt) {
     // creeping out of a deadlock: inch forward past another stuck vehicle
     if (v.stopT > T.creepAfter && sense.what === 'veh' && sense.ref && sense.ref.stopT > T.creepAfter && sense.gap > 0.35) target = Math.max(target, 0.6);
 
+    if (v.ghostT > 0) target = Math.min(target, 1.0); // through the knot, gently
     if (target < v.v) v.v = Math.max(target, v.v - v.T.decel * dt * (sense.gap < 2 ? 1.8 : 1));
     else v.v = Math.min(target, v.v + v.T.accel * dt);
     // Nose to tail with a vehicle or a person: stop dead, nobody gets run over. A dog
@@ -484,6 +517,15 @@ function separate(S) {
         }
       }
       if (worst > 0.15) {
+        // one squeezing through a knot is let through: the other edges back
+        const ga = a.ghostT > 0 && a.ghost.includes(b), gb = b.ghostT > 0 && b.ghost.includes(a);
+        if (ga || gb) {
+          const back = ga ? b : a;
+          back.s = Math.max(0, back.s - Math.min(worst, 0.25));
+          back.v = 0;
+          place(S, back);
+          continue;
+        }
         // whoever is behind (relative to the other's heading) yields
         const rel = (b.x - a.x) * a.dirx + (b.z - a.z) * a.dirz;
         const back = rel > 0 ? a : b;

@@ -31,13 +31,14 @@ import {
   AWNING_COLORS, DOOR_COLORS,
 } from './data.js';
 
-export const SURF = { MASS: 0, ROAD: 1, WALK: 2, GALI: 3, PLAZA: 4, DIRT: 5, ISLAND: 6, BUILDING: 7, MARKET: 8, CROSS: 9, RAIL: 10, RIVER: 11, BANK: 12 };
+export const SURF = { MASS: 0, ROAD: 1, WALK: 2, GALI: 3, PLAZA: 4, DIRT: 5, ISLAND: 6, BUILDING: 7, MARKET: 8, CROSS: 9, RAIL: 10, RIVER: 11, BANK: 12, BEYOND: 13 };
 /** Ground height by surface. Sidewalks and plazas stand on a kerb; galis are near flush. */
-export const SURF_HEIGHT = [0, 0, 0.18, 0.06, 0.18, 0.03, 0.45, 0, 0.06, 0, 0.22, -0.55, -0.28];
+export const SURF_HEIGHT = [0, 0, 0.18, 0.06, 0.18, 0.03, 0.45, 0, 0.06, 0, 0.22, -0.55, -0.28, 0.18];
 // RAIL (the ballast) is no place for people: they cross at the phatak. Nor is the
 // river (its bed, RIVER, and the muddy step along its banks, BANK). The dog goes
-// where he likes, and wades in the river up to his belly.
-export const WALKABLE = [false, false, true, true, true, true, false, false, true, false, false, false, false];
+// where he likes, and wades in the river up to his belly. BEYOND is the far side of
+// the border: the townspeople stay on this side of the line.
+export const WALKABLE = [false, false, true, true, true, true, false, false, true, false, false, false, false, false];
 /** Where the river's surface is drawn: everything below it is under water. */
 export const WATER_Y = -0.22;
 
@@ -61,10 +62,21 @@ export const LAYOUT = {
   // the water (z0..z1), and the far bank beyond the edge of the map. Bazaar Road
   // crosses it on a bridge (|x| < bridge).
   river: { bank: 78, step: 79.6, z0: 80.6, z1: 92.5, far: 93.5, farBank: 96, bridge: 7 },
+  // The border post at the west end of town (Seema Chowki): a parade road from the
+  // square out to the zero line, stands for the crowd either side, a gate on each
+  // side of the line. India is east of the line, Pakistan west of it.
+  border: {
+    line: -83, east: -50, west: -100, z0: -48, z1: -26,
+    road: [-40, -34], walk: [-41.5, -32.5],
+    gateIN: -80.8, gatePK: -85.2,
+    standN: [-47.5, -41.5], standS: [-32.5, -26.5],
+    standsIN: [[-79.5, -74.5], [-69.5, -52.5]], standsPK: [[-100, -87.5]],
+    poleIN: { x: -81.7, z: -42.3 }, polePK: { x: -84.3, z: -42.3 },
+  },
 };
 
 const N = GRID.n, RES = GRID.res, HALF = GRID.half;
-const { MASS, ROAD, WALK, GALI, PLAZA, DIRT, ISLAND, BUILDING, MARKET, CROSS, RAIL, RIVER, BANK } = SURF;
+const { MASS, ROAD, WALK, GALI, PLAZA, DIRT, ISLAND, BUILDING, MARKET, CROSS, RAIL, RIVER, BANK, BEYOND } = SURF;
 
 export const cellOf = (v) => Math.floor((v + HALF) / RES);
 export const cellCenter = (i) => -HALF + (i + 0.5) * RES;
@@ -167,6 +179,14 @@ const AREAS = [
   { s: BANK, r: [7, 92.5, 100, 93.5] },
   { s: DIRT, r: [-100, 93.5, -7, 96] },
   { s: DIRT, r: [7, 93.5, 100, 96] },
+
+  // W — the border post. All of it is out of bounds for the crowd (under the stands,
+  // the corners by the line, the far side), but for our road and its walkways, the
+  // gali's way through the stands, and the entrance from the square.
+  { s: BEYOND, r: [-100, -48, -50, -26] },
+  { s: PLAZA, r: [-83, -41.5, -50, -32.5] },
+  { s: PLAZA, r: [-74.5, -48, -69.5, -26] },
+  { s: PLAZA, r: [-52.5, -48, -50, -26] },
 ];
 
 /** Lot shape and use by frontage class. */
@@ -188,6 +208,7 @@ const ZONES = [
   { name: 'Ghanta Ghar Chowk', c: [0, 0, 19] },
   { name: 'Auto Stand', r: [-31, -14, -15, -7] },
   { name: 'Mandir Square', r: [-50, -50, -22, -24] },
+  { name: 'Seema Chowki', r: [-100, -48.5, -50, -25.5] },
   { name: 'Gully Maidan', r: [24, -58, 64, -26] },
   { name: 'Sabzi Mandi', r: [20, 22, 62, 54] },
   { name: 'Pump Wala Chowk', r: [-35, 35, -23, 47] },
@@ -246,6 +267,7 @@ export function generateWorld(seed = 7) {
   backfill(W, rng);
   placeRailway(W);
   placeRiver(W, rng);
+  placeBorder(W);
   placeLandmarks(W, rng);
   placeStreetProps(W, rng);
   placeWires(W, rng);
@@ -597,13 +619,62 @@ function placeRiver(W, rng) {
     if (Math.abs(x) < b + 2) continue;
     prop(W, 'litter', x, R.step + rand(rng, -0.3, 0.7), { r: rand(rng, 0.8, 2.2), n: 6 + Math.floor(rng() * 10), seed: (rng() * 1e9) | 0 });
   }
-  for (const x of [-50.5, 40.5, -22]) garbage(W, x, R.bank + 0.9, 1.1);
+  // heaps tipped down the bank (on the step, so the path along the top stays open)
+  for (const x of [-50.5, 40.5, -22]) garbage(W, x, R.step + 0.55, 1.1);
   // the water: filthy, but water
   for (let x = -84; x <= 84; x += 8) {
     if (Math.abs(x) < b + 2) continue;
     W.pois.water.push({ x, z: R.step + 0.5, kind: 'river', clean: false, filthy: true, id: 'river' });
   }
   W.pois.landmarks.push({ id: 'nala', x: b + 3, z: R.bank, name: 'Ganda Nala' });
+}
+
+/**
+ * Seema Chowki, the border post. The stands are stepped concrete you can climb,
+ * the gates and flags move (border.js and main.js), the fence runs along the line
+ * either side of the road, and the far side is out of bounds for everyone but the
+ * dog, briefly.
+ */
+function placeBorder(W) {
+  const B = LAYOUT.border;
+  W.keepClear.push([B.west, B.z0, B.east + 1, B.z1]);
+  prop(W, 'parade', (B.line + B.east) / 2, (B.road[0] + B.road[1]) / 2, {});
+  // the stands: three tiers each side of the road, ours and theirs
+  const stand = (x0, x1, za, zb, ours) => {
+    const toward = za < B.road[0] ? 1 : -1; // which way the tiers face (toward the road)
+    prop(W, 'stand', (x0 + x1) / 2, (za + zb) / 2, { x0, x1, z0: za, z1: zb, toward, ours });
+    if (!ours && x1 <= -PLAY_HALF) return; // out of reach: no need to stand on them
+    for (let k = 0; k < 3; k++) {
+      const d = (zb - za) / 3;
+      const zz0 = toward > 0 ? zb - (k + 1) * d : za + k * d;
+      addBox(W, x0, zz0, x1, zz0 + d, 0.5 * (k + 1), { platform: true, tag: 'stand' });
+    }
+  };
+  for (const [x0, x1] of B.standsIN) { stand(x0, x1, B.standN[0], B.standN[1], true); stand(x0, x1, B.standS[0], B.standS[1], true); }
+  for (const [x0, x1] of B.standsPK) { stand(x0, x1, B.standN[0], B.standN[1], false); stand(x0, x1, B.standS[0], B.standS[1], false); }
+  // the gates: an arch over the road on each side of the line (the leaves move)
+  for (const [x, side] of [[B.gateIN, 'IN'], [B.gatePK, 'PK']]) {
+    prop(W, 'bordergate', x, (B.road[0] + B.road[1]) / 2, { side });
+    for (const z of [B.walk[0] + 0.45, B.walk[1] - 0.45]) addBox(W, x - 0.4, z - 0.4, x + 0.4, z + 0.4, 4.8, { tag: 'pillar' });
+  }
+  // the fence along the line, either side of the road
+  prop(W, 'borderfence', B.line, (B.z0 + B.road[0]) / 2, { z0: B.z0, z1: B.road[0] });
+  prop(W, 'borderfence', B.line, (B.road[1] + B.z1) / 2, { z0: B.road[1], z1: B.z1 });
+  addBox(W, B.line - 0.1, B.z0, B.line + 0.1, B.road[0], 2.4, { tag: 'fence' });
+  addBox(W, B.line - 0.1, B.road[1], B.line + 0.1, B.z1, 2.4, { tag: 'fence' });
+  // the flagpoles, and lamps for the evening ceremony
+  for (const q of [B.poleIN, B.polePK]) {
+    prop(W, 'flagpole', q.x, q.z, { h: 10 });
+    addCircle(W, q.x, q.z, 0.15, 10, { tag: 'post', block: false });
+  }
+  for (const x of [-77, -62, -53.5]) for (const z of [B.walk[0] + 0.3, B.walk[1] - 0.3]) lampPost(W, x, z, 5.2);
+  W.special.border = Object.assign({}, B, {
+    centre: (B.road[0] + B.road[1]) / 2,
+    // where the guards stand when there is no ceremony, and the parade's ends
+    sentriesIN: [{ x: B.gateIN + 1.2, z: B.road[0] + 1.0 }, { x: B.gateIN + 1.2, z: B.road[1] - 1.0 }],
+    sentriesPK: [{ x: B.gatePK - 1.2, z: B.road[0] + 1.0 }, { x: B.gatePK - 1.2, z: B.road[1] - 1.0 }],
+  });
+  W.pois.landmarks.push({ id: 'border', x: -66, z: -37, name: 'Seema Chowki' });
 }
 
 /* ---------------------------------------------------------------- landmarks */
@@ -655,7 +726,7 @@ function placeLandmarks(W, rng) {
   W.pois.water.push({ x: -43, z: -39.3, kind: 'trough', clean: true });
 
   // Flower sellers along the west side and by the steps.
-  for (const [x, z, yaw] of [[-48.6, -38, Math.PI / 2], [-48.6, -32, Math.PI / 2], [-43, -36.5, 0]]) {
+  for (const [x, z, yaw] of [[-48.6, -45.6, Math.PI / 2], [-48.6, -28.6, Math.PI / 2], [-43, -36.5, 0]]) {
     stall(W, rng, x, z, yaw, 'flower', 1.8, 1.1);
   }
   bench(W, -24.2, -37, -Math.PI / 2);
@@ -1395,7 +1466,7 @@ function buildPedGraph(W) {
   };
 
   for (const a of AREAS) {
-    if (a.s === ROAD || a.s === RAIL || a.s === RIVER || a.s === BANK) continue;
+    if (a.s === ROAD || a.s === RAIL || a.s === RIVER || a.s === BANK || a.s === BEYOND) continue;
     let [x0, z0, x1, z1] = a.r;
     x0 = Math.max(x0, -PLAY_HALF - 3); z0 = Math.max(z0, -PLAY_HALF - 3);
     x1 = Math.min(x1, PLAY_HALF + 3); z1 = Math.min(z1, PLAY_HALF + 3);
@@ -1451,6 +1522,13 @@ function buildPedGraph(W) {
     addDest(x, z, Math.atan2(-f.nx, -f.nz), 'shop', { building: b.id, cap: 2 });
   }
   for (const p of W.stalls || []) {
+    if (p.type === 'cart') {
+      // a handcart on a narrow pavement: one customer at a time, at the end the
+      // vendor is not standing at, so the walking line past it stays open
+      const lx = Math.cos(p.yaw), lz = -Math.sin(p.yaw);
+      addDest(p.x - lx * 1.4, p.z - lz * 1.4, Math.atan2(lx, lz), 'stall', { cap: 1 });
+      continue;
+    }
     const fx = p.x + Math.sin(p.yaw) * 1.6, fz = p.z + Math.cos(p.yaw) * 1.6;
     addDest(fx, fz, p.yaw + Math.PI, 'stall', { cap: 2 });
   }

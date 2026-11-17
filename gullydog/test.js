@@ -1167,7 +1167,9 @@ test('rush hour flows: vehicles come, go round and leave, with no lasting jam', 
     checkSane(S);
   }
   assert.ok(sum / n > 25, 'only ' + (sum / n).toFixed(1) + ' vehicles on average at rush hour');
-  assert.ok(exits > 70, 'only ' + exits + ' vehicles got through in two minutes');
+  // a train shuts the phatak for about a third of these two minutes, and a quarter
+  // of all routes run over it: about a dozen fewer get through than without one
+  assert.ok(exits > 60, 'only ' + exits + ' vehicles got through in two minutes');
   assert.ok(culled <= 2, culled + ' vehicles had to be removed from jams');
   assert.ok(worstStop < 25, 'a vehicle sat still for ' + worstStop.toFixed(1) + ' s');
   assert.ok(worstOverlap < 0.4, 'two vehicles overlapped by ' + worstOverlap.toFixed(2) + ' m');
