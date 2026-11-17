@@ -1157,10 +1157,15 @@ function placeStreetProps(W, rng) {
       const p0 = horiz ? [x0 + t, y, z0 - 0.1] : [x0 - 0.1, y, z0 + t];
       const p1 = horiz ? [x0 + t + rand(rng, -2, 2), y + rand(rng, -0.4, 0.4), z1 + 0.1] : [x1 + 0.1, y + rand(rng, -0.4, 0.4), z0 + t + rand(rng, -2, 2)];
       if (Math.abs(p0[0]) > PLAY_HALF + 4 || Math.abs(p0[2]) > PLAY_HALF + 4) continue;
+      // only where it is still a gali (the border post was built over one): the dice
+      // are rolled either way, so the rest of the town comes out the same
+      const keep = surfAt(W, (p0[0] + p1[0]) / 2, (p0[2] + p1[2]) / 2) === GALI;
       if (chance(rng, 0.35)) {
-        W.laundry.push({ a: p0.map((v, i) => (i === 1 ? v - 0.9 : v)), b: p1.map((v, i) => (i === 1 ? v - 0.9 : v)), seed: (rng() * 1e9) | 0 });
+        const line = { a: p0.map((v, i) => (i === 1 ? v - 0.9 : v)), b: p1.map((v, i) => (i === 1 ? v - 0.9 : v)), seed: (rng() * 1e9) | 0 };
+        if (keep) W.laundry.push(line);
       } else {
-        W.bunting.push({ a: p0, b: p1, seed: (rng() * 1e9) | 0, sag: rand(rng, 0.3, 0.8) });
+        const line = { a: p0, b: p1, seed: (rng() * 1e9) | 0, sag: rand(rng, 0.3, 0.8) };
+        if (keep) W.bunting.push(line);
       }
     }
   }

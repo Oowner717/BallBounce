@@ -4,10 +4,24 @@ You are **Bhura**, a brown Indie street dog, and this is your neighbourhood: a
 roundabout with a clock tower, MG Road and Bazaar Road crossing at it, a temple on a
 plinth, a sabzi mandi, a maidan where the kids play cricket, a bus stop, an auto
 stand, and four districts of shopfronts in Hindi and English under a tangle of
-wires, bunting and laundry. It is busy. Autos, scooters, buses and cycle-rickshaws
-pour through the chowk on the left, honking; two hundred people go about their
-evening; cows lie in the road, pigeons crowd the temple square, and the other
-street dogs guard their patches.
+wires, bunting, laundry and stranded kites. It is busy. Autos, scooters (some with
+the whole family aboard), buses and cycle-rickshaws pour through the chowk on the
+left, honking; two hundred people go about their evening; cows lie in the road and
+leave their pats behind, pigeons crowd the temple square, and the other street dogs
+guard their patches.
+
+Round the edges of town there is more. A railway runs along the north, where trains
+crowded inside and out (people sit all along the roofs and hang from every door) roll
+through a manned level crossing every couple of minutes, kids work the queue of
+traffic at the closed gate, and two-wheelers duck under the boom. A rubbish-choked
+nala runs along the south under the bridge. At the west end is Seema Chowki, the
+border post, where twice a day Indian and Pakistani guards put on the retreat
+ceremony for cheering crowds: high kicks, stamping, the face-off at the line, both
+flags lowered together. In Mandir Square a girl walks a tightrope to her brother's
+dholak; at night the power goes, and a lineman comes to climb the pole.
+
+The town is made up: no real city, no real place names. There is one town, always
+the same.
 
 Nothing is painted on. The traffic follows the car in front and weaves round
 whatever is in the way; people walk to shops, benches and the bus, cross at the
@@ -83,13 +97,19 @@ tenfold; sleeping after 9:30 pm ends the day.
 | All day | Raju has a biscuit for a dog who sits nicely, about once an hour and a quarter. The halwai on MG Road leaves samosas on his counter; the tray refills every forty minutes. |
 | 11:30 am – 3:30 pm | The sun is fierce: out of the shade, thirst runs almost twice as fast. |
 | Noon – 4:30 pm | A nap in the shade counts for *Siesta*. Under a tree or an awning, lie down twice. |
+| Every couple of minutes | A train through the phatak. Race it beside the line (never on it), or sit by the line for a snack thrown down. |
+| 10 am – 12:30 pm, 4 – 6:45 pm | The rope walker's show in Mandir Square. Jump in front of the crowd for cheers. |
+| 10:30 am and 5:30 pm | The retreat ceremony at Seema Chowki. The zero line is past the gates; the guards there have views on dogs without visas. |
 | 6:30 pm | The evening aarti: bells, and the pujari hands out ladoos to a dog sitting at the foot of the temple steps. |
+| Some time after 8 pm | The power goes. Lamps out, generators on, everyone says "Light gayi!". The lineman comes. |
 | After 9:30 pm | Lie down twice to sleep and end the day. Stay up past 2 am and you drop where you stand. |
 
 Needs run down by the game hour, faster when you sprint. At zero hunger or thirst you
 start losing health, and a dog who runs out of health faints and wakes up at Aunty's
 an hour and a half later. Being hit by traffic costs health too: vehicles brake for a
-dog in the road, but a dog who darts out under a moving auto gets hit.
+dog in the road, but a dog who darts out under a moving auto gets hit, and a train
+cannot stop at all. Bark right in a grumpy person's face and you may get kicked.
+Lift a leg against the transformer and you will get a jolt.
 
 The other street dogs — **Kalu** at the bus stop, **Moti** under the peepal tree,
 **Sheru** in the mandi and **Lali** with her puppies in Gali No. 7 — growl at a stranger
@@ -146,7 +166,7 @@ prefix (`orbs-cache-`, `gullydog-cache-`), and Gully Dog's only ever reads its o
 The first line of real code in `sw.js` is:
 
 ```js
-const CACHE_VERSION = 'gullydog-v4';
+const CACHE_VERSION = 'gullydog-v5';
 ```
 
 Bump it whenever anything here changes. Browsers notice a new service worker by
@@ -202,6 +222,10 @@ sim.js         the game: the dog, needs, actions, the day, saves, the state hash
   crowd.js     people: plans, A* on the pavement graph, crossings, reactions
   fauna.js     cows, goats, pigeons, the street dogs
   scenes.js    Raju, the halwai, Aunty, the pujari, the traffic cop, the cricket
+  rail.js      the trains, the level crossing and its gateman
+  street.js    the phatak kids, the rope walker's show, cow dung
+  border.js    Seema Chowki: the guards, the crowds, the retreat ceremony
+  power.js     the transformer, the nightly power cut and the lineman
   tasks.js     the tasks, cred and ranks
   spatial.js   a uniform grid for "who is near"
 config.js      every gameplay number, in one place
