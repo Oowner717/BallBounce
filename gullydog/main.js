@@ -10,7 +10,7 @@
 import { generateWorld, collidersNear, PLAY_HALF, LAYOUT, WATER_Y } from './world.js';
 import { buildCity } from './cityMesh.js';
 import { atlasLayout, paintAtlas, paintNoise } from './textures.js';
-import { buildAllModels, PEOPLE_KINDS } from './models.js';
+import { buildAllModels, PEOPLE_KINDS, LEAF } from './models.js';
 import { Renderer } from './gfx.js';
 import { Rig, newAnim, animateDog, poseDog, animateHuman, poseHuman, animateQuad, poseQuad, poseBird, poseVehicle } from './rig.js';
 import { environment } from './env.js';
@@ -572,6 +572,9 @@ function drawScene(dt, time) {
   /* the railway: trains and everyone riding them, the booms, the warning lamps */
   drawRail(dt, time, env, headlights);
 
+  /* the border post: the guards, the crowds, the gates and the flags */
+  drawBorder(dt, time);
+
   /* cows and goats */
   for (const c of S.cows) {
     if (!near(c.x, c.z, 110) || !vis(c.x, 1, c.z, 1.6)) continue;
@@ -702,6 +705,78 @@ const AUTO_TOP = hex('#f5c518');
 
 function groundY(x, z) { return groundAt(S, x, z, 0.5); }
 
+/* ------------------------------------------------------------------ border */
+
+const LEAF_PAINT = {
+  IN: [hex('#f2efe6'), hex('#ff9933'), hex('#0b2c86'), hex('#f2efe6')],
+  PK: [hex('#f2efe6'), hex('#01411c'), hex('#f8f8f4'), hex('#f2efe6')],
+};
+const WHITE3 = [1, 1, 1];
+
+function drawBorder(dt, time) {
+  const st = S.border, B = W.special.border;
+  if (!st) return;
+  const near = (x, z, r) => dist2(x, z, cam.x, cam.z) < r * r;
+  const vis = (x, y, z, r) => R.visible(x, y, z, r);
+  if (!near(B.line, B.centre, 170)) return;
+  const y0 = groundY(B.line + 2, B.centre);
+  // the gates: two leaves each, swinging back toward their own side
+  const lrig = rigs.gateleaf;
+  lrig.reset();
+  const za = B.walk[0] + 0.85, zb = B.walk[1] - 0.85; // the pillars' inner faces
+  for (const [gx, side, home] of [[B.gateIN, 'IN', 1], [B.gatePK, 'PK', -1]]) {
+    if (!vis(gx, 1.2, B.centre, 4)) continue;
+    const pal = LEAF_PAINT[side];
+    for (const [hz, shut] of [[za, 0], [zb, Math.PI]]) {
+      const open = home > 0 ? Math.PI / 2 : (shut ? 1.5 * Math.PI : -Math.PI / 2);
+      const b = R.batch('gateleaf');
+      const o = b.alloc();
+      b.colors(o, pal[0], pal[1], pal[2], pal[3]);
+      lrig.write(b.data, o + 16, gx, y0, hz, shut + (open - shut) * st.gate, 1);
+    }
+  }
+  // the flags, on their way down at the end of the day
+  const frig = rigs.flagIN;
+  frig.reset();
+  for (const [q, name, yaw] of [[B.poleIN, 'flagIN', 0], [B.polePK, 'flagPK', Math.PI]]) {
+    if (st.flagUp < 0.02 && st.phase !== 'flags') continue; // folded away for the night
+    const top = y0 + 2.2 + 7.5 * st.flagUp;
+    const b = R.batch(name);
+    const o = b.alloc();
+    b.colors(o, WHITE3, WHITE3, WHITE3, WHITE3);
+    rigs[name].reset();
+    rigs[name].write(b.data, o + 16, q.x + Math.cos(yaw) * 0.12, top, q.z, yaw + 0.1 * Math.sin(time * 1.6 + yaw), 1, 0, 0.04 * Math.sin(time * 2.3));
+  }
+  // the guards
+  const srig = rigs.soldier;
+  for (const s of st.soldiers) {
+    if (s.hidden || !near(s.x, s.z, 95) || !vis(s.x, 1, s.z, 1.3)) continue;
+    const a = animOf(s);
+    animateHuman(a, { speed: s.speed, mode: s.mode, look: 0 }, dt);
+    poseHuman(srig, a, s.speed, s.mode);
+    const b = R.batch('soldier');
+    const o = b.alloc();
+    b.colors(o, s.colors[0], s.colors[1], s.colors[2], s.colors[3]);
+    srig.write(b.data, o + 16, s.x, s.y, s.z, s.yaw, s.scale);
+  }
+  // the crowds in the stands, cheering their own side, waving little flags
+  if (st.crowdOn <= 0) return;
+  const loud = st.phase === 'solo' || st.phase === 'faceoff' || st.phase === 'shake' || st.phase === 'march';
+  for (const c of st.crowd) {
+    if (c.rank >= st.crowdOn || !near(c.x, c.z, profile.peopleDist + 15) || !vis(c.x, c.y + 1, c.z, 1.1)) continue;
+    const a = animOf(c);
+    const mode = st.phase === 'flags' ? 'stand' : (loud && Math.sin(time * 0.9 + c.ph) > -0.2) ? 'cheer' : Math.sin(time * 0.5 + c.ph) > 0 ? 'clap' : 'stand';
+    animateHuman(a, { speed: 0, mode, look: 0 }, dt);
+    const hr = rigs[c.kind] || rigs.man;
+    poseHuman(hr, a, 0, mode);
+    const b = R.batch(PEOPLE_KINDS.includes(c.kind) ? c.kind : 'man');
+    const o = b.alloc();
+    b.colors(o, c.colors[0], c.colors[1], c.colors[2], c.colors[3]);
+    hr.write(b.data, o + 16, c.x, c.y, c.z, c.yaw, c.scale);
+    if (c.flag) { c.ware = c.side === 'IN' ? 'miniIN' : 'miniPK'; heldItems(hr, c); }
+  }
+}
+
 /* ------------------------------------------------------------- river rubbish */
 
 // Purely for show: the same rubbish drifts past at the same pace every time,
@@ -760,7 +835,7 @@ function heldItems(rig, p) {
       rig.pointOn(0, 0, 1.12, 0.34, flagPt);
       itemInstance('dholak', flagPt[0], flagPt[1], flagPt[2], p.yaw + Math.PI / 2);
       break;
-    case 'balloons': case 'garlands': case 'plate':
+    case 'balloons': case 'garlands': case 'plate': case 'miniIN': case 'miniPK':
       rig.pointOn(6, -0.205, 0.68, 0.04, flagPt);
       itemInstance(p.ware, flagPt[0], flagPt[1] - (p.ware === 'plate' ? 0.02 : 0), flagPt[2], p.yaw);
       break;

@@ -250,6 +250,12 @@ export const SPEECH = {
   priest: [['Prasad le lo', 'Take the offering'], ['Jai ho!', 'Glory!']],
   cop: [['Chalo, aage badho!', 'Move along!'], ['Rukk!', 'Stop!']],
   dogGrowl: [['Grrrr...', ''], ['Wuff! Grr!', '']],
+  // Seema Chowki: each crowd cheers its own side; the guards have views on visas
+  chantIN: [['Bharat Mata ki Jai!', 'Hail Mother India!'], ['Hindustan Zindabad!', 'Long live India!'], ['Vande Mataram!', 'Mother, I bow to thee!']],
+  chantPK: [['Pakistan Zindabad!', 'Long live Pakistan!'], ['Jeeve Jeeve Pakistan!', 'Long live Pakistan!'], ['Pakistan Paindabad!', 'Pakistan forever!']],
+  borderGuard: [['Oye! Wapas!', 'Hey! Back you go!'], ['Visa hai?', 'Got a visa?'], ['Idhar nahi, beta!', 'Not this way, son!']],
+  borderLaugh: [['Hahaha! Bina visa ke!', 'Hahaha! No visa!'], ['Wapas Hindustan!', 'Back to India!'], ['Kutta bhi border paar!', 'Even the dog wants to cross!']],
+  paradeDog: [['Arre, kutta bhi parade mein!', "The dog's in the parade too!"], ['Wah, sher! Left, right!', 'Bravo, lion! Left, right!']],
   kick: [['Chal hatt!', 'Scram!'], ['Bhaag yahan se!', 'Get lost!'], ['Bhonk mat!', "Don't bark at me!"], ['Pagal kutta!', 'Mad dog!']],
   // the gateman at the level crossing
   gateman: [['Phatak band!', 'Gate closed!'], ['Gaadi aa rahi hai!', "Train's coming!"], ['Peeche hato!', 'Stand back!'], ['Ruko, ruko!', 'Wait, wait!']],

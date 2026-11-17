@@ -42,11 +42,13 @@ export const TASKS = {
   train: { title: 'Race the train', desc: 'Run alongside a passing train', ev: 'trainRace', count: 1, reward: 30, hint: 'Trains pass the phatak at the top of Bazaar Road every couple of minutes. Sprint (Shift) beside one, never on the tracks!', where: (S) => S.W.special.crossing && { x: 20, z: -76.5 } },
   show: { title: 'Street star', desc: "Do tricks for the rope walker's crowd", ev: 'showTrick', count: 3, reward: 25, hint: 'In Mandir Square a girl walks a tightrope, 10 to 12:30 and 4 to 6:45. Jump (Space) in front of the crowd while she is up!', where: (S) => S.W.special.show && { x: S.W.special.show.ring.x, z: S.W.special.show.ring.z + 2.2 } },
   gateKids: { title: 'Phatak gang', desc: 'Get petted by the kids at the railway gate', ev: 'petted', filter: (e, S) => !!(S.street && S.street.kids.some((k) => k.p.id === e.by)), count: 1, reward: 15, hint: 'Three kids hang about by the gateman\'s hut at the phatak. Sit (E) in front of one.', where: (S) => S.W.special.crossing && S.W.special.crossing.kids },
+  retreat: { title: 'Beating retreat', desc: 'Watch the border ceremony up close', ev: 'retreatWatched', count: 1, reward: 30, hint: 'At 10:30 and 5:30 the soldiers at Seema Chowki, west of Mandir Square, put on their show. Be near the gates when the flags come down.', where: (S) => S.W.special.border && { x: -72, z: -37 } },
+  visa: { title: 'No visa', desc: 'Try to cross the border', ev: 'kicked', filter: (e) => !!e.border, count: 1, reward: 10, hint: 'Pakistan starts at the white line past the gates at Seema Chowki. The guards there have views on dogs without visas.', where: (S) => S.W.special.border && { x: S.W.special.border.line + 2, z: S.W.special.border.centre } },
   trainSnack: { title: 'Snack express', desc: 'Get a snack from a passing train', ev: 'trainSnack', count: 1, reward: 20, hint: 'Sit (E) by the line as a train goes by, or race it. Somebody up there always has a biscuit.', where: (S) => S.W.special.crossing && { x: -20, z: -76.5 } },
 };
 
 const DAY1 = ['eat', 'drink', 'pets3', 'pigeons', 'nap'];
-const POOL = ['samosa', 'fetch', 'mark', 'friend', 'cross', 'explore', 'prasad', 'aunty', 'puppies', 'goats', 'rummage', 'cow', 'bike', 'pets8', 'biscuit', 'drinks3', 'bark10', 'train', 'trainSnack', 'show', 'gateKids'];
+const POOL = ['samosa', 'fetch', 'mark', 'friend', 'cross', 'explore', 'prasad', 'aunty', 'puppies', 'goats', 'rummage', 'cow', 'bike', 'pets8', 'biscuit', 'drinks3', 'bark10', 'train', 'trainSnack', 'show', 'gateKids', 'retreat', 'visa'];
 
 export function tasksForDay(seed, day) {
   if (day <= 1) return DAY1.slice();

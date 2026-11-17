@@ -525,6 +525,67 @@ function humanPose(rig, a, speed, mode) {
       rig.add(2, look + 0.2 * Math.sin(t * 0.7), 0.1 * b1, 0);
       break;
     }
+    case 'march': {
+      // the border parade: straight legs, long strides, arms flung shoulder high
+      const m = Math.sin(th);
+      rig.add(7, 0, -0.8 * m, 0); rig.add(9, 0, 0.8 * m, 0);
+      rig.add(8, 0, 0.2 * Math.max(0, Math.cos(th)), 0); rig.add(10, 0, 0.2 * Math.max(0, -Math.cos(th)), 0);
+      rig.add(3, 0, 1.15 * m, 0.1); rig.add(5, 0, -1.15 * m, -0.1);
+      rig.add(4, 0, -0.15, 0); rig.add(6, 0, -0.15, 0);
+      rig.add(1, 0, -0.1, 0);
+      rig.add(2, 0, -0.1, 0);
+      rig.oy += 0.03 * Math.abs(Math.cos(th));
+      break;
+    }
+    case 'highkick': {
+      // the famous kick: the right boot swung straight up past the turban, then
+      // stamped down hard (modeT restarts with each kick)
+      const u = clamp((a.modeT || 0) / 1.1, 0, 1);
+      const up = u < 0.45 ? Math.sin((u / 0.45) * Math.PI / 2) : Math.max(0, 1 - (u - 0.45) / 0.25);
+      rig.add(9, 0, -2.95 * up, 0);
+      rig.add(7, 0, 0.12 * up, 0);
+      rig.add(1, 0, -0.22 * up, 0);
+      rig.add(3, 0, -1.7 * up, 0.55 * up); rig.add(5, 0, 0.7 * up, -0.35 * up);
+      rig.add(2, 0, -0.12 * up, 0);
+      rig.oy += 0.06 * up;
+      break;
+    }
+    case 'attention':
+      rig.add(1, 0, -0.07, 0);
+      rig.add(3, 0, 0, 0.05); rig.add(5, 0, 0, -0.05);
+      rig.add(2, 0, -0.03, 0);
+      break;
+    case 'stamp': {
+      // knee up high and down hard, one foot then the other
+      const s = Math.max(0, Math.sin(t * 4.2)), s2 = Math.max(0, -Math.sin(t * 4.2));
+      rig.add(7, 0, -1.6 * s, 0); rig.add(8, 0, 1.6 * s, 0);
+      rig.add(9, 0, -1.6 * s2, 0); rig.add(10, 0, 1.6 * s2, 0);
+      rig.add(1, 0, -0.1, 0);
+      rig.add(3, 0, -0.3, 0.5); rig.add(5, 0, -0.3, -0.5);
+      rig.add(4, 0, -1.2, 0); rig.add(6, 0, -1.2, 0);
+      break;
+    }
+    case 'flex': {
+      // fists up, chest out, a glare across the line
+      const pulse = 0.08 * Math.sin(t * 6);
+      rig.add(3, 0, -1.25, 1.25 + pulse); rig.add(4, 0, -1.95, 0);
+      rig.add(5, 0, -1.25, -1.25 - pulse); rig.add(6, 0, -1.95, 0);
+      rig.add(1, 0, 0.22, 0);
+      rig.add(2, 0, -0.18, 0);
+      rig.add(7, 0.15, -0.15, 0.12); rig.add(9, -0.15, 0.1, -0.12);
+      break;
+    }
+    case 'salute':
+      rig.add(1, 0, -0.07, 0);
+      rig.add(5, 0, -1.55, -1.1); rig.add(6, 0, -1.9, 0);
+      rig.add(3, 0, 0, 0.05);
+      rig.add(2, 0, -0.05, 0);
+      break;
+    case 'shake':
+      rig.add(5, 0, -1.15 + 0.12 * Math.sin(t * 9), -0.05); rig.add(6, 0, -0.25, 0);
+      rig.add(1, 0, -0.05, 0);
+      rig.add(3, 0, 0, 0.05);
+      break;
     case 'kick': {
       // out and back once with the right foot
       const k = Math.sin(Math.min(1, (a.modeT || 0) / 0.5) * Math.PI);

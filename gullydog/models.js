@@ -146,8 +146,9 @@ function buildPerson(name, o) {
     const sleeves = o.sleeves || 'half';
     b.color(WHITE);
     // ---- hips (0)
-    b.bone(0).slot(o.lower === 'saree' ? 2 : 3);
+    b.bone(0).slot(o.uniform ? 2 : o.lower === 'saree' ? 2 : 3);
     b.boxC(0, 0.92, 0, 0.3, 0.14, 0.19);
+    if (o.uniform) b.slot(3).boxC(0, 1.0, 0, 0.32, 0.08, 0.21); // the sash belt
     if (o.lower === 'kurta' || o.lower === 'salwar') {
       b.slot(2);
       b.taper(0, 0.5, 0, 0.36, 0.25, 0.98, 0.31, 0.2);       // the long tunic hem, flared
@@ -216,6 +217,16 @@ function buildPerson(name, o) {
         b.box(-0.13, 1.38, -0.06, -0.09, 1.56, -0.02);
       }
     }
+    if (o.crest) {
+      // the ceremonial fan rising from the turban, pleated, spread side to side
+      b.slot(3);
+      for (let k = -4; k <= 4; k++) {
+        b.push().translate(0, 1.74, -0.03).rotate(0, 0, k * 0.17);
+        b.boxC(0, 0.17, 0, 0.04, 0.34, 0.025);
+        b.pop();
+      }
+      b.slot(4).boxC(0, 1.76, -0.03, 0.1, 0.06, 0.06);
+    }
     if (o.mustache) b.box(-0.055, 1.515, 0.1, 0.055, 1.535, 0.125);
     if (o.beard) b.taper(0, 1.38, 0.06, 0.12, 0.08, 1.52, 0.17, 0.1);
     if (o.bindi) {
@@ -253,12 +264,13 @@ function buildPerson(name, o) {
     const legs = (side) => {
       const x = side * 0.085;
       const shortLeg = o.lower === 'shorts' || o.lower === 'frock';
-      b.bone(side > 0 ? 7 : 9).slot(3);
+      b.bone(side > 0 ? 7 : 9).slot(o.uniform ? 2 : 3);
       b.boxC(x, 0.69, 0, 0.13, 0.42, 0.14);
-      b.bone(side > 0 ? 8 : 10).slot(shortLeg ? 1 : 3);
+      b.bone(side > 0 ? 8 : 10).slot(shortLeg ? 1 : o.uniform ? 2 : 3);
       b.boxC(x, 0.27, 0, 0.105, 0.42, 0.115);
-      b.slot(0).color(CHAPPAL);
-      b.boxC(x, 0.025, 0.035, 0.1, 0.05, 0.24);
+      b.slot(0).color(o.uniform ? BLACK : CHAPPAL);
+      if (o.uniform) b.boxC(x, 0.09, 0.03, 0.12, 0.18, 0.26); // boots
+      else b.boxC(x, 0.025, 0.035, 0.1, 0.05, 0.24);
       b.color(WHITE);
     };
     legs(1); legs(-1);
@@ -279,6 +291,8 @@ export function buildPeople() {
     girl: buildPerson('girl', { lower: 'frock', top: 'tee', hair: 'pigtails' }),
     elder: buildPerson('elder', { lower: 'kurta', top: 'shirt', hair: 'short', stick: true, mustache: true }),
     batter: buildPerson('batter', { lower: 'shorts', top: 'tee', bat: true }),
+    // the border guards: slots are skin, uniform, belt and fan, turban
+    soldier: buildPerson('soldier', { lower: 'trousers', top: 'shirt', hair: 'turban', mustache: true, sleeves: 'full', crest: true, uniform: true }),
   };
 }
 
@@ -808,6 +822,69 @@ export function buildBoom() {
   });
 }
 
+/* ===================================================================== BORDER */
+
+/** One leaf of a border gate: hinged at the origin, LEAF m along +z. Slots: 1 frame, 2 band, 3 emblem. */
+export const LEAF = 3.65;
+export function buildGateLeaf() {
+  return model('gateleaf', BODY, (b) => {
+    b.bone(0).slot(1).color(WHITE).detail(0.3);
+    b.box(-0.05, 0.1, 0, 0.05, 0.22, LEAF).box(-0.05, 2.2, 0, 0.05, 2.32, LEAF);
+    b.box(-0.06, 0.1, 0, 0.06, 2.32, 0.12).box(-0.06, 0.1, LEAF - 0.12, 0.06, 2.32, LEAF);
+    for (let z = 0.3; z < LEAF - 0.15; z += 0.25) b.box(-0.025, 0.22, z - 0.02, 0.025, 2.2, z + 0.02);
+    b.slot(2).box(-0.045, 1.05, 0.12, 0.045, 1.45, LEAF - 0.12);
+    b.slot(3).wheel(0, 1.25, LEAF / 2, 0.32, 0.12, 14);
+    b.slot(1).wheel(0, 1.25, LEAF / 2, 0.18, 0.13, 12);
+  });
+}
+
+/** Flags on their poles: hoisted from the top corner at the origin, flying along +x, 2.1 m by 1.4 m. */
+function flagCloth(b, w, h, stripes) {
+  // stripes: [[colour, y0, y1, x0, x1]] in fractions of the flag
+  for (const [c, y0, y1, x0, x1] of stripes) b.color(hex(c)).box(x0 * w, -y1 * h, -0.012, x1 * w, -y0 * h, 0.012);
+}
+export function buildFlagIN() {
+  return model('flagIN', BODY, (b) => {
+    b.bone(0).slot(0).detail(0.15);
+    const w = 2.1, h = 1.4;
+    flagCloth(b, w, h, [['#ff9933', 0, 1 / 3, 0, 1], ['#f8f8f4', 1 / 3, 2 / 3, 0, 1], ['#138808', 2 / 3, 1, 0, 1]]);
+    // the wheel in navy, on both faces
+    b.color(hex('#0b2c86'));
+    for (const zf of [-1, 1]) {
+      b.push().translate(w / 2, -h / 2, zf * 0.016).rotate(Math.PI / 2);
+      for (let k = 0; k < 24; k++) {
+        const a = (k / 24) * Math.PI * 2;
+        b.boxC(0, Math.sin(a) * 0.19, Math.cos(a) * 0.19, 0.008, 0.05, 0.05);
+        if (k % 2 === 0) { b.push().rotate(0, a, 0); b.boxC(0, 0, 0.095, 0.008, 0.012, 0.19); b.pop(); }
+      }
+      b.pop();
+    }
+  });
+}
+export function buildFlagPK() {
+  return model('flagPK', BODY, (b) => {
+    b.bone(0).slot(0).detail(0.15);
+    const w = 2.1, h = 1.4;
+    flagCloth(b, w, h, [['#f8f8f4', 0, 1, 0, 0.25], ['#01411c', 0, 1, 0.25, 1]]);
+    // the crescent and the star, on both faces
+    const cx = 0.25 * w + 0.75 * w / 2, cy = -h / 2;
+    for (const zf of [-1, 1]) {
+      b.push().translate(cx, cy, zf * 0.016).rotate(Math.PI / 2);
+      b.color(hex('#f8f8f4')).wheel(0, 0, 0, 0.34, 0.008, 18);
+      b.color(hex('#01411c')).wheel(zf * 0.002, 0.07, -0.08, 0.29, 0.008, 18);
+      // a five-pointed star up to the right
+      b.color(hex('#f8f8f4'));
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2;
+        b.push().translate(0, 0.19, -0.2).rotate(0, a, 0);
+        b.boxC(0, 0.05, 0, 0.008, 0.11, 0.035);
+        b.pop();
+      }
+      b.pop();
+    }
+  });
+}
+
 /* ===================================================================== ITEMS */
 
 /** Small things the dog can carry or eat. One bone; drawn as instances. */
@@ -909,6 +986,20 @@ export function buildItems() {
       b.color(hex('#c0c4c8')).cyl(0, 0, 0, 0.17, 0.025, 0.19, 10, { caps: 'b' });
       b.color(hex('#e6c35c')).boxC(0.04, 0.03, 0.02, 0.04, 0.008, 0.04).boxC(-0.05, 0.03, -0.03, 0.04, 0.008, 0.04);
     }),
+    // little flags on sticks for the crowds to wave
+    miniIN: one('miniIN', (b) => {
+      b.color(hex('#7a5230')).rod([0, -0.1, 0], [0, 0.45, 0], 0.008, 4);
+      b.color(hex('#ff9933')).box(0, 0.37, -0.004, 0.27, 0.43, 0.004);
+      b.color(hex('#f8f8f4')).box(0, 0.31, -0.004, 0.27, 0.37, 0.004);
+      b.color(hex('#138808')).box(0, 0.25, -0.004, 0.27, 0.31, 0.004);
+      b.color(hex('#0b2c86')).boxC(0.135, 0.34, 0, 0.035, 0.035, 0.011);
+    }),
+    miniPK: one('miniPK', (b) => {
+      b.color(hex('#7a5230')).rod([0, -0.1, 0], [0, 0.45, 0], 0.008, 4);
+      b.color(hex('#f8f8f4')).box(0, 0.25, -0.004, 0.07, 0.43, 0.004);
+      b.color(hex('#01411c')).box(0.07, 0.25, -0.004, 0.27, 0.43, 0.004);
+      b.color(hex('#f8f8f4')).boxC(0.17, 0.34, 0, 0.05, 0.05, 0.011);
+    }),
     flag: one('flag', (b) => {
       b.color(hex('#7a5230')).rod([0, 0, 0], [0, 0.55, 0], 0.012, 4);
       b.color(hex('#1f9d3a')).box(0, 0.32, -0.005, 0.34, 0.55, 0.005);
@@ -940,7 +1031,10 @@ export function buildAllModels() {
     loco: buildLoco(),
     coach: buildCoach(),
     boom: buildBoom(),
+    gateleaf: buildGateLeaf(),
+    flagIN: buildFlagIN(),
+    flagPK: buildFlagPK(),
   }, people, items);
 }
 
-export const PEOPLE_KINDS = ['man', 'manMustache', 'kurta', 'lungi', 'turban', 'cap', 'saree', 'salwar', 'kid', 'girl', 'elder', 'batter'];
+export const PEOPLE_KINDS = ['man', 'manMustache', 'kurta', 'lungi', 'turban', 'cap', 'saree', 'salwar', 'kid', 'girl', 'elder', 'batter', 'soldier'];

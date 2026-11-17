@@ -434,6 +434,61 @@ export class AudioEngine {
     }
   }
 
+  /** Boots slammed down on the parade road: a deep thud with a crack on top. */
+  stomp(x, z) {
+    const out = this.voice(this.sfx, x, z, { gain: 0.7, ref: 10, max: 80 });
+    if (!out) return;
+    const t = this.ctx.currentTime;
+    const o = this.osc('sine', 120, t, 0.18, out, 0.55, 0.002);
+    o.frequency.exponentialRampToValueAtTime(55, t + 0.15);
+    this.noiseBurst(t, 0.05, out, 'bandpass', 1800, 0.9, 0.35, 0.001);
+  }
+
+  /** A stand full of people roaring: a swell of filtered noise. */
+  roar(x, z) {
+    const out = this.voice(this.amb, x, z, { gain: 0.9, ref: 18, max: 120 });
+    if (!out) return;
+    const t = this.ctx.currentTime;
+    const n = this.noiseBurst(t, 1.6, out, 'bandpass', 650, 0.5, 0.28, 0.25);
+    n.flt.frequency.linearRampToValueAtTime(900, t + 0.8);
+  }
+
+  /** The bugle as the flags come down: a slow call on the open notes of the horn. */
+  bugle(x, z) {
+    const out = this.voice(this.sfx, x, z, { gain: 0.6, ref: 25, max: 200 });
+    if (!out) return;
+    const ctx = this.ctx, t0 = ctx.currentTime + 0.05;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; lp.connect(out);
+    const send = ctx.createGain(); send.gain.value = 0.5; lp.connect(send); send.connect(this.verb);
+    const G4 = 392, C5 = 523.25, E5 = 659.25, G5 = 783.99;
+    const notes = [[G4, 0.5], [C5, 0.5], [E5, 1.0], [C5, 0.5], [E5, 0.5], [G5, 1.4], [E5, 0.6], [C5, 0.6], [G4, 2.0]];
+    let t = t0;
+    for (const [f, d] of notes) {
+      for (const [k, a] of [[1, 0.16], [2, 0.06], [3, 0.03]]) {
+        const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(f * k * 0.985, t); o.frequency.linearRampToValueAtTime(f * k, t + 0.06);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(a, t + 0.05);
+        g.gain.setValueAtTime(a * 0.85, t + d - 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+        o.connect(g); g.connect(lp); o.start(t); o.stop(t + d + 0.05);
+      }
+      t += d;
+    }
+  }
+
+  /** An iron gate: a long creak opening, a clang shutting. */
+  gate(x, z, slam) {
+    const out = this.voice(this.sfx, x, z, { gain: slam ? 0.8 : 0.35, ref: 12, max: 120 });
+    if (!out) return;
+    const t = this.ctx.currentTime;
+    if (slam) {
+      for (const [f, a, d] of [[180, 0.4, 0.9], [523, 0.15, 1.2], [811, 0.1, 0.8], [1290, 0.06, 0.5]]) this.osc('sine', f, t, d, out, a, 0.001);
+      this.noiseBurst(t, 0.12, out, 'lowpass', 900, 0.7, 0.5, 0.001);
+    } else {
+      const n = this.noiseBurst(t, 2.2, out, 'bandpass', 1400, 18, 0.25, 0.3);
+      n.flt.frequency.linearRampToValueAtTime(900, t + 2.2);
+    }
+  }
+
   /** A coin dropped on a steel plate, or into a palm. */
   coin(x, z) {
     const out = this.voice(this.sfx, x, z, { gain: 0.35, ref: 6, max: 40 });
@@ -576,6 +631,12 @@ export class AudioEngine {
         case 'trainHit': this.thud(0.8); break;
         case 'kicked': this.yelp(); this.thud(0.3); break;
         case 'coin': this.coin(e.x, e.z); break;
+        case 'stomp': this.stomp(e.x, e.z); break;
+        case 'roar': this.roar(e.x, e.z); break;
+        case 'handshake': this.roar(e.x, e.z); this.claps(e.x, e.z); break;
+        case 'bugle': this.bugle(e.x, e.z); break;
+        case 'gateSwing': this.gate(e.x, e.z, false); break;
+        case 'gateSlam': this.gate(e.x, e.z, true); this.roar(e.x, e.z); break;
         case 'showCheer': this.claps(e.x, e.z); break;
         case 'hit': this.yelp(); this.thud(0.5); break;
         case 'nipped': this.yelp(); break;

@@ -56,7 +56,7 @@ export class Hud {
       [SURF.ROAD]: [70, 70, 80], [SURF.CROSS]: [210, 210, 210], [SURF.WALK]: [176, 164, 142], [SURF.GALI]: [160, 148, 128],
       [SURF.PLAZA]: [196, 182, 152], [SURF.DIRT]: [176, 140, 96], [SURF.ISLAND]: [110, 160, 80], [SURF.MARKET]: [170, 150, 118],
       [SURF.BUILDING]: [96, 86, 82], [SURF.MASS]: [96, 86, 82], [SURF.RAIL]: [128, 120, 110],
-      [SURF.RIVER]: [70, 80, 58], [SURF.BANK]: [96, 84, 64],
+      [SURF.RIVER]: [70, 80, 58], [SURF.BANK]: [96, 84, 64], [SURF.BEYOND]: [150, 138, 112],
     };
     for (let i = 0; i < N * N; i++) {
       const c3 = col[W.surf[i]] || [0, 0, 0];
@@ -187,6 +187,10 @@ export class Hud {
         case 'trainSnack': this.toast(`Somebody on the train threw you a ${e.kind}!`, 'good', 2.8); break;
         case 'showStart': if (Math.hypot(S.dog.x - e.x, S.dog.z - e.z) < 70) this.toast("Drums in Mandir Square: the rope walker's show is starting!", 'gold', 3.6); break;
         case 'showTrick': this.toast('The crowd loves it! Ek aur!', 'good', 1.8); break;
+        case 'retreatSoon': this.toast(`The border ceremony starts soon at Seema Chowki, west of Mandir Square!`, 'gold', 4.5); break;
+        case 'retreatStart': if (Math.hypot(S.dog.x + 66, S.dog.z + 37) < 80) this.toast('Drums, chants, crowds: the Retreat is starting!', 'gold', 3.2); break;
+        case 'paradeDog': this.toast('You joined the parade! The crowd goes wild.', 'good', 3); break;
+        case 'retreatWatched': this.toast('The flags are down, the gates are shut. What a show!', 'good', 3.4); break;
         case 'kicked': this.vig = Math.max(this.vig || 0, 0.6); this.toast(e.border ? 'Booted back to India! No visa, no entry.' : 'Ow! Kicked. Barking in faces has its price.', 'bad', 2.6); break;
         case 'showWobble': this.toast('She wobbles! The crowd gasps.', 'bad', 1.8); break;
         case 'crossed': break;

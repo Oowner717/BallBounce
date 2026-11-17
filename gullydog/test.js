@@ -1616,6 +1616,78 @@ test('a dog jumping for the crowd joins the show; a bark puts her off her stride
 });
 
 /* ========================================================================== */
+/* The border post                                                            */
+/* ========================================================================== */
+
+group('the border post');
+
+test('the retreat: both sides march, kick and stamp, meet at the line, lower their flags together, slam the gates', () => {
+  const S = sim({ seed: 3, hour: 17.45, quiet: true });
+  const st = S.border, B = S.W.special.border;
+  assert.equal(st.phase, 'idle');
+  const order = [];
+  const ev = [];
+  let maxCrowd = 0, met = false, kicks = 0;
+  for (let i = 0; i < Math.round(130 / DT); i++) {
+    step(S, DT, IDLE);
+    for (const e of drainEvents(S)) ev.push(e);
+    if (order[order.length - 1] !== st.phase) order.push(st.phase);
+    maxCrowd = Math.max(maxCrowd, st.crowdOn);
+    for (const sd of st.soldiers) {
+      if (sd.hidden) continue;
+      // nobody crosses the line, ever
+      if (sd.side === 'IN') assert.ok(sd.x > B.line, 'one of ours stepped over the line');
+      else assert.ok(sd.x < B.line, 'one of theirs stepped over the line');
+      if (sd.mode === 'highkick') kicks++;
+    }
+    if (st.phase === 'shake') {
+      const [a, b] = st.soldiers.filter((q) => q.lead);
+      met = met || (Math.abs(a.x - B.line) < 1.2 && Math.abs(b.x - B.line) < 1.2 && Math.abs(a.z - b.z) < 0.5);
+    }
+    // the two flags are always at the same height
+    if (st.phase === 'flags') assert.ok(st.flagUp >= 0 && st.flagUp <= 1);
+  }
+  assert.deepEqual(order, ['idle', 'gather', 'march', 'solo', 'open', 'faceoff', 'shake', 'flags', 'close', 'back', 'disperse', 'idle']);
+  assert.ok(maxCrowd >= 1, 'the stands never filled');
+  assert.ok(kicks > 0, 'not a single high kick');
+  assert.ok(met, 'the leaders never met at the line');
+  for (const type of ['retreatStart', 'bugle', 'gateSlam', 'retreatEnd']) assert.equal(only(ev, type).length, 1, 'no ' + type);
+  assert.equal(st.flagUp, 0, 'the flags are still up after the evening retreat');
+  assert.ok(st.gate < 0.01, 'the gates are open for the night');
+  assert.ok(st.soldiers.filter((q) => !q.hidden).length === 4, 'the guards on night duty are not at their posts');
+});
+
+test('a dog who wanders over the white line is booted straight back into India', () => {
+  const S = sim({ seed: 3, hour: 13, quiet: true });
+  const B = S.W.special.border;
+  assert.ok(S.border.gate > 0.99, 'the gates are shut in the daytime');
+  place(S, B.line + 3, B.centre, -Math.PI / 2);
+  const h0 = S.dog.needs.health;
+  const ev = [];
+  for (let i = 0; i < Math.round(8 / DT) && !only(ev, 'kicked').length; i++) {
+    step(S, DT, { mx: -0.6, mz: 0 });
+    for (const e of drainEvents(S)) ev.push(e);
+  }
+  const k = only(ev, 'kicked');
+  assert.equal(k.length, 1, 'nobody stopped him');
+  assert.ok(k[0].border);
+  run(S, 2);
+  assert.ok(S.dog.x > B.line + 2, `not back in India: x = ${S.dog.x.toFixed(1)}`);
+  assert.ok(S.dog.needs.health < h0, 'a boot that did not hurt');
+  checkSane(S);
+});
+
+test('at night the gates are shut, and a shut gate is a wall', () => {
+  const S = sim({ seed: 3, hour: 22, quiet: true });
+  const B = S.W.special.border;
+  assert.ok(S.border.gate < 0.01);
+  place(S, B.gateIN + 4, B.centre, -Math.PI / 2);
+  run(S, 6, { mx: -1, mz: 0 });
+  assert.ok(S.dog.x > B.gateIN, `walked through a shut gate: x = ${S.dog.x.toFixed(2)}`);
+  assert.equal(S.border.phase, 'idle');
+});
+
+/* ========================================================================== */
 /* Tasks and cred                                                             */
 /* ========================================================================== */
 

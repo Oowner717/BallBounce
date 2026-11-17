@@ -60,10 +60,10 @@ C.water = hex('#363a2f');
 const SURF_COLOR = {
   [SURF.ROAD]: C.asphalt, [SURF.CROSS]: C.asphalt, [SURF.WALK]: C.walk, [SURF.GALI]: C.gali,
   [SURF.PLAZA]: C.plaza, [SURF.DIRT]: C.dirt, [SURF.MARKET]: C.market, [SURF.RAIL]: C.ballast,
-  [SURF.RIVER]: C.mud, [SURF.BANK]: hex('#5a4d3a'),
+  [SURF.RIVER]: C.mud, [SURF.BANK]: hex('#5a4d3a'), [SURF.BEYOND]: hex('#a89a80'),
 };
 const SURF_DETAIL = {
-  [SURF.ROAD]: 1, [SURF.CROSS]: 1, [SURF.WALK]: 0.8, [SURF.GALI]: 0.9, [SURF.PLAZA]: 0.7, [SURF.DIRT]: 1, [SURF.MARKET]: 1, [SURF.RAIL]: 1, [SURF.RIVER]: 1, [SURF.BANK]: 1,
+  [SURF.ROAD]: 1, [SURF.CROSS]: 1, [SURF.WALK]: 0.8, [SURF.GALI]: 0.9, [SURF.PLAZA]: 0.7, [SURF.DIRT]: 1, [SURF.MARKET]: 1, [SURF.RAIL]: 1, [SURF.RIVER]: 1, [SURF.BANK]: 1, [SURF.BEYOND]: 0.7,
 };
 
 /* ------------------------------------------------------------------ chunks */
@@ -812,6 +812,11 @@ function buildProp(ctx, p) {
     case 'riversign': return riverSign(B, p, uv);
     case 'drainpipe': return drainPipe(B, p);
     case 'litter': return litter(ctx, p, rng);
+    case 'parade': return paradeRoad(ctx);
+    case 'stand': return stand(ctx, p);
+    case 'bordergate': return borderGate(B, p, uv);
+    case 'borderfence': return borderFence(B, p);
+    case 'flagpole': return flagpole(B, p, y0);
     default: return null; // parked vehicles and puddles are drawn elsewhere
   }
 }
@@ -923,6 +928,98 @@ function whistleBoard(B, p, y0, uv) {
   const { x, z } = p;
   B.color(hex('#d9d4c8')).detail(0.4).box(x - 0.04, y0, z - 0.04, x + 0.04, y0 + 1.75, z + 0.04, { skip: 'b' });
   B.color([1, 1, 1]).detail(0.2).box(x - 0.02, y0 + 1.15, z - 0.3, x + 0.02, y0 + 1.75, z + 0.3, { uvFace: p.face > 0 ? { e: uv.whistle } : { w: uv.whistle } });
+}
+
+/* ------------------------------------------------------------------ border */
+
+/** The parade road from the square to the line and on beyond it: asphalt, white edges, the zero line. */
+function paradeRoad(ctx) {
+  const B = LAYOUT.border, y = SURF_HEIGHT[SURF.PLAZA] + 0.004;
+  const [za, zb] = B.road;
+  for (let x = B.west; x < B.east - 1e-6; x += 12.5) {
+    const x1 = Math.min(B.east, x + 12.5);
+    const Bc = ctx.ch.at((x + x1) / 2, (za + zb) / 2);
+    Bc.uv(ctx.uv.white).bone(0).slot(0).emissive(0).sway(0);
+    Bc.color(C.asphalt).detail(0.9).box(x, y - 0.004, za, x1, y, zb, { skip: 'bnsew' });
+    Bc.color(C.white).detail(0.2);
+    Bc.box(x, y, za + 0.15, x1, y + 0.003, za + 0.3, { skip: 'bnsew' }).box(x, y, zb - 0.3, x1, y + 0.003, zb - 0.15, { skip: 'bnsew' });
+    for (let xd = x + 1; xd < x1 - 1.5; xd += 3) Bc.box(xd, y, (za + zb) / 2 - 0.06, xd + 1.5, y + 0.003, (za + zb) / 2 + 0.06, { skip: 'bnsew' });
+  }
+  // the zero line: a broad white band across the road, studded with little stones
+  const Bz = ctx.ch.at(B.line, (za + zb) / 2);
+  Bz.color(hex('#f6f4ee')).detail(0.2).box(B.line - 0.12, y, za, B.line + 0.12, y + 0.006, zb, { skip: 'bnsew' });
+  Bz.color(hex('#e8c33a'));
+  for (let z = za + 0.4; z < zb - 0.2; z += 1.1) Bz.boxC(B.line, y + 0.03, z, 0.18, 0.06, 0.18);
+}
+
+/**
+ * Stepped concrete stands along the road, three tiers rising away from it, with
+ * a rail along each tier's edge and bunting along the back: ours in saffron,
+ * white and green, theirs in green and white.
+ */
+function stand(ctx, p) {
+  const { x0, x1, toward, ours } = p;
+  const za = p.z0, zb = p.z1, d = (zb - za) / 3, y0 = SURF_HEIGHT[SURF.PLAZA];
+  for (let x = x0; x < x1 - 1e-6; x += 12) {
+    const xe = Math.min(x1, x + 12);
+    const B = ctx.ch.at((x + xe) / 2, (za + zb) / 2);
+    B.uv(ctx.uv.white).bone(0).slot(0).emissive(0).sway(0);
+    for (let k = 0; k < 3; k++) {
+      const zz0 = toward > 0 ? zb - (k + 1) * d : za + k * d;
+      B.color(hex(k % 2 ? '#c9c2b4' : '#bdb5a6')).detail(0.8).box(x, y0, zz0, xe, y0 + 0.5 * (k + 1), zz0 + d, { skip: 'b' });
+      // a painted edge on each step
+      const edge = toward > 0 ? zz0 + d : zz0;
+      B.color(hex(ours ? (k === 0 ? '#ff9933' : k === 1 ? '#f4f4f0' : '#138808') : (k === 1 ? '#f4f4f0' : '#01411c'))).detail(0.3)
+        .box(x, y0 + 0.5 * (k + 1) - 0.08, edge - 0.02, xe, y0 + 0.5 * (k + 1) + 0.005, edge + 0.02, { skip: 'b' });
+    }
+    // the back wall, and the rail along the front
+    const back = toward > 0 ? za : zb;
+    B.color(hex('#b3ab9c')).detail(0.8).box(x, y0, back - 0.15, xe, y0 + 2.6, back + 0.15, { skip: 'b' });
+    B.color(hex('#55524c')).detail(0.2);
+    const front = toward > 0 ? zb - 0.1 : za + 0.1;
+    B.box(x, y0 + 0.9, front - 0.025, xe, y0 + 0.95, front + 0.025);
+    for (let xp = x + 0.2; xp < xe; xp += 2) B.box(xp - 0.025, y0, front - 0.025, xp + 0.025, y0 + 0.95, front + 0.025, { skip: 'b' });
+    // bunting along the top of the back wall
+    const cols = ours ? ['#ff9933', '#f4f4f0', '#138808'] : ['#01411c', '#f4f4f0'];
+    for (let xb = x + 0.3, k = 0; xb < xe - 0.2; xb += 0.55, k++) {
+      B.color(hex(cols[k % cols.length])).detail(0.2).pyramid(xb, y0 + 2.75, back, 0.16, 0.02, y0 + 2.45);
+    }
+  }
+}
+
+/** A gate arch over the road with its sign: pillars, a crossbeam, the country's name. The leaves move (main.js). */
+function borderGate(B, p, uv) {
+  const L = LAYOUT.border, x = p.x, y0 = SURF_HEIGHT[SURF.PLAZA];
+  const ours = p.side === 'IN';
+  const za = L.walk[0] + 0.45, zb = L.walk[1] - 0.45;
+  for (const z of [za, zb]) {
+    B.color(hex('#efe8da')).detail(0.6).box(x - 0.4, y0, z - 0.4, x + 0.4, y0 + 4.8, z + 0.4, { skip: 'b' });
+    B.color(hex(ours ? '#ff9933' : '#01411c')).box(x - 0.42, y0 + 0.9, z - 0.42, x + 0.42, y0 + 1.1, z + 0.42, { skip: 'tb' });
+    B.color(hex('#d8cdb8')).box(x - 0.5, y0 + 4.8, z - 0.5, x + 0.5, y0 + 5.0, z + 0.5);
+  }
+  // the beam and the board on both faces
+  B.color(hex('#efe8da')).detail(0.6).box(x - 0.35, y0 + 4.2, za, x + 0.35, y0 + 5.0, zb);
+  const sign = uv[ours ? 'borderIN' : 'borderPK'];
+  B.color([1, 1, 1]).detail(0.2).box(x - 0.37, y0 + 4.28, za + 0.6, x + 0.37, y0 + 4.92, zb - 0.6, { uvFace: { e: sign, w: sign }, skip: 'tbns' });
+  // a lamp atop each pillar
+  for (const z of [za, zb]) B.color(hex('#fff1c9')).emissive(90).boxC(x, y0 + 5.25, z, 0.3, 0.4, 0.3).emissive(0);
+}
+
+/** The fence along the line: concrete posts, strands of barbed wire, and a coil along the top. */
+function borderFence(B, p) {
+  const x = p.x, y0 = SURF_HEIGHT[SURF.PLAZA];
+  B.color(hex('#9b968c')).detail(0.6);
+  for (let z = p.z0; z <= p.z1 + 1e-6; z += 2.4) B.box(x - 0.07, y0, z - 0.07, x + 0.07, y0 + 2.4, z + 0.07, { skip: 'b' });
+  B.color(hex('#6d6a66')).detail(0.1);
+  for (let k = 0; k < 6; k++) B.box(x - 0.012, y0 + 0.35 + k * 0.36, p.z0, x + 0.012, y0 + 0.37 + k * 0.36, p.z1);
+  for (let z = p.z0; z < p.z1; z += 0.35) B.boxC(x, y0 + 2.45, z, 0.32, 0.32, 0.03);
+}
+
+/** A tall white flagpole with a gilded finial. The flag on it moves (main.js). */
+function flagpole(B, p, y0) {
+  B.color(hex('#f2f0ea')).detail(0.3).cyl(p.x, y0, p.z, 0.11, y0 + p.h, 0.06, 8, { smooth: true });
+  B.color(hex('#d4a017')).sphere(p.x, y0 + p.h + 0.1, p.z, 0.12, 1);
+  B.color(hex('#c9c2b4')).detail(0.7).cyl(p.x, y0, p.z, 0.45, y0 + 0.35, 0.4, 8);
 }
 
 /* ------------------------------------------------------------------- river */
