@@ -48,6 +48,7 @@ export function atlasLayout() {
   place('riversign', 256, 76);
   place('borderIN', 256, 64);
   place('borderPK', 256, 64);
+  place('danger', 96, 88);
   for (let i = 0; i < 4; i++) place('plate:' + i, 128, 32);
   place('shutter', 64, 64);
   place('brick', 128, 128);
@@ -350,6 +351,25 @@ export function paintAtlas(layout, doc) {
   banner('riversign', '#1e6b3a', '#ffffff', devanagari ? 'नदी साफ़ रखें  •  KEEP THE RIVER CLEAN' : 'KEEP THE RIVER CLEAN');
   banner('borderIN', '#f7f3ea', '#1a3c8f', devanagari ? 'भारत  •  INDIA' : 'INDIA');
   banner('borderPK', '#01411c', '#ffffff', 'PAKISTAN');
+  {
+    // the DANGER board on every electric pole: a red skull and bones, the word in two scripts
+    const [x, y, w, h] = P.danger;
+    g.fillStyle = '#f7f4ee'; g.fillRect(x, y, w, h);
+    g.strokeStyle = '#c62828'; g.lineWidth = 4; g.strokeRect(x + 2, y + 2, w - 4, h - 4);
+    g.fillStyle = '#c62828';
+    const cx = x + w / 2, cy = y + 30;
+    g.beginPath(); g.arc(cx, cy, 13, 0, Math.PI * 2); g.fill();
+    g.fillRect(cx - 8, cy + 8, 16, 9);
+    g.fillStyle = '#f7f4ee';
+    g.beginPath(); g.arc(cx - 5, cy - 1, 3.6, 0, Math.PI * 2); g.arc(cx + 5, cy - 1, 3.6, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#c62828'; g.lineWidth = 4;
+    g.beginPath(); g.moveTo(cx - 20, cy + 12); g.lineTo(cx + 20, cy + 24); g.moveTo(cx + 20, cy + 12); g.lineTo(cx - 20, cy + 24); g.stroke();
+    g.fillStyle = '#c62828'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = 'bold 15px "Arial Black", sans-serif';
+    g.fillText(devanagari ? 'खतरा' : 'DANGER', cx, y + 64);
+    g.font = 'bold 11px Arial, sans-serif';
+    g.fillText(devanagari ? 'DANGER 440 V' : '440 VOLTS', cx, y + 79);
+  }
   // one invented state code for the whole town: real codes would put it on a real map
   const plates = ['GD 07 CK 4721', 'GD 02 BZ 0912', 'GD 04 MD 5588', 'GD 01 TT 2046'];
   plates.forEach((t, i) => banner('plate:' + i, i === 1 ? '#f5d300' : '#f4f4f4', '#111111', t, '"Arial Narrow", Arial, sans-serif'));

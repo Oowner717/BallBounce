@@ -817,6 +817,9 @@ function buildProp(ctx, p) {
     case 'bordergate': return borderGate(B, p, uv);
     case 'borderfence': return borderFence(B, p);
     case 'flagpole': return flagpole(B, p, y0);
+    case 'transformer': return transformer(B, p, y0, uv);
+    case 'dungcakes': return dungCakes(B, p, rng);
+    case 'dungstack': return dungStack(B, p, y0, rng);
     default: return null; // parked vehicles and puddles are drawn elsewhere
   }
 }
@@ -928,6 +931,70 @@ function whistleBoard(B, p, y0, uv) {
   const { x, z } = p;
   B.color(hex('#d9d4c8')).detail(0.4).box(x - 0.04, y0, z - 0.04, x + 0.04, y0 + 1.75, z + 0.04, { skip: 'b' });
   B.color([1, 1, 1]).detail(0.2).box(x - 0.02, y0 + 1.15, z - 0.3, x + 0.02, y0 + 1.75, z + 0.3, { uvFace: p.face > 0 ? { e: uv.whistle } : { w: uv.whistle } });
+}
+
+/* ------------------------------------------------------------- electricity */
+
+/**
+ * A pole-mounted transformer: two concrete poles, an angle-iron platform, the
+ * finned tank with its bushings, the fuse box, the cables everyone has added,
+ * and a DANGER board on each pole.
+ */
+function transformer(B, p, y0, uv) {
+  const [[ax, az], [bx, bz]] = p.poles;
+  B.color(hex('#b9b4aa')).detail(0.8);
+  for (const [x, z] of p.poles) B.taper(x, y0, z, 0.26, 0.26, 9, 0.16, 0.16);
+  // the platform and its braces
+  B.color(hex('#5b5f63')).detail(0.3);
+  B.box(ax - 0.1, 2.95, az - 0.55, bx + 0.1, 3.08, az + 0.55);
+  B.rod([ax, 2.0, az], [ax + 0.8, 2.95, az], 0.03, 4).rod([bx, 2.0, bz], [bx - 0.8, 2.95, bz], 0.03, 4);
+  for (const [x, z] of p.poles) B.box(x - 0.95, 8.2, z - 0.05, x + 0.95, 8.32, z + 0.05);
+  // the tank, fins and bushings
+  const cx = (ax + bx) / 2, cz = (az + bz) / 2;
+  B.color(hex('#7d8a86')).detail(0.5).box(cx - 0.55, 3.08, cz - 0.42, cx + 0.55, 4.45, cz + 0.42);
+  B.color(hex('#6c7874'));
+  for (let k = -3; k <= 3; k++) B.box(cx + k * 0.15 - 0.02, 3.2, cz - 0.62, cx + k * 0.15 + 0.02, 4.3, cz + 0.62);
+  B.color(hex('#5c6764')).cyl(cx - 0.25, 4.45, cz, 0.22, 4.75, 0.22, 8);
+  B.color(hex('#8a4b2a')).detail(0.2);
+  for (const k of [-0.3, 0, 0.3]) {
+    B.cyl(cx + k, 4.45, cz + 0.2, 0.05, 4.9, 0.04, 6);
+    B.color(hex('#141414')).rod([cx + k, 4.9, cz + 0.2], [cx + k * 2.6, 8.2, cz], 0.015, 3).color(hex('#8a4b2a'));
+  }
+  // the fuse box (on the maidan side), and the tangle
+  B.color(hex('#8d9296')).detail(0.4).box(ax - 0.25, 1.3, az - 0.42, ax + 0.25, 2.0, az - 0.16);
+  B.color(hex('#141414')).detail(0);
+  B.rod([ax, 2.0, az - 0.3], [cx - 0.5, 3.1, cz - 0.3], 0.02, 3).rod([ax + 0.1, 1.6, az - 0.42], [ax + 0.4, 0.5, az - 1.3], 0.015, 3);
+  for (let k = 0; k < 4; k++) B.boxC(bx, 5.4 + k * 0.4, bz, 0.4 + k * 0.05, 0.05, 0.4 + k * 0.05);
+  // DANGER, both poles, facing the maidan
+  for (const [x, z] of p.poles) B.color([1, 1, 1]).detail(0.2).box(x - 0.3, 1.9, z - 0.17, x + 0.3, 2.45, z - 0.14, { uvFace: { n: uv.danger } });
+}
+
+/** Dung cakes slapped on a wall to dry, rows of them, each with its hand print. */
+function dungCakes(B, p, rng) {
+  const z = p.z, y0 = 0.03;
+  B.color(hex('#c9bfae')).detail(0.9).box(p.x0, y0, z - 0.15, p.x1, 1.6, z + 0.15, { skip: 'b' });
+  for (let x = p.x0 + 0.25; x < p.x1 - 0.2; x += 0.36) {
+    for (let y = 0.3; y < 1.45; y += 0.34) {
+      if (rng() < 0.12) continue;
+      const r = 0.12 + rng() * 0.04;
+      B.color(hex(pick(rng, ['#6b4f32', '#5e442b', '#7a5a3a', '#4f3a26']))).detail(0.9);
+      B.push().translate(x + (rng() - 0.5) * 0.06, y0 + y, z + 0.16).rotate(Math.PI / 2);
+      B.wheel(0, 0, 0, r, 0.035, 8);
+      B.pop();
+    }
+  }
+}
+
+/** A stack of dried dung cakes, the household's fuel for the season. */
+function dungStack(B, p, y0, rng) {
+  B.color(hex('#6b5034')).detail(1).cyl(p.x, y0, p.z, p.r, y0 + 1.1, p.r * 0.55, 10);
+  B.color(hex('#7a5d3e')).pyramid(p.x, y0 + 1.1, p.z, p.r * 0.55, p.r * 0.55, y0 + 1.6);
+  B.color(hex('#5a4129'));
+  for (let k = 0; k < 14; k++) {
+    const a = rng() * Math.PI * 2, h = rng() * 1.0;
+    const rr = p.r - (p.r * 0.45) * (h / 1.1);
+    B.boxC(p.x + Math.cos(a) * rr, y0 + 0.1 + h, p.z + Math.sin(a) * rr, 0.2, 0.05, 0.2);
+  }
 }
 
 /* ------------------------------------------------------------------ border */
@@ -1646,6 +1713,25 @@ function buildWires(ctx) {
     const segs = Math.max(4, Math.min(9, Math.round(len / 2.2)));
     const pts = hangingLine(w.a, w.b, w.sag, segs);
     for (let k = 0; k < segs; k++) B.rod(pts[k], pts[k + 1], w.color === 2 ? 0.03 : 0.014, 3);
+  }
+  // kites caught in the wires since Sankranti, some of them years ago
+  const krng = makeRng(2468);
+  const kiteCols = ['#e53935', '#fdd835', '#8e24aa', '#1e88e5', '#43a047', '#ff7043', '#ec407a'].map(hex);
+  for (const w of W.wires) {
+    if (krng() > 0.09) continue;
+    const pts = hangingLine(w.a, w.b, w.sag, 10);
+    const k = 3 + Math.floor(krng() * 5), q = pts[k];
+    const B = ch.at(q[0], q[2]);
+    B.uv(uv.white).bone(0).slot(0).emissive(0).sway(0.6).detail(0.2);
+    const yaw = krng() * Math.PI * 2, tilt = (krng() - 0.5) * 1.2;
+    const ux = Math.cos(yaw) * 0.24, uz = -Math.sin(yaw) * 0.24;
+    const c = [q[0], q[1] - 0.32, q[2]];
+    const top = [q[0] + Math.sin(tilt) * 0.05, q[1] - 0.02, q[2]], bot = [c[0] - Math.sin(tilt) * 0.1, c[1] - 0.3, c[2]];
+    const l = [c[0] - ux, c[1], c[2] - uz], r = [c[0] + ux, c[1], c[2] + uz];
+    B.color(kiteCols[Math.floor(krng() * kiteCols.length)]);
+    B.tri(top, l, bot).tri(top, bot, l).tri(top, bot, r).tri(top, r, bot);
+    B.color(hex('#f5f5f5')).rod(bot, [bot[0] + 0.05, bot[1] - 0.45, bot[2] + 0.05], 0.006, 3);
+    B.sway(0);
   }
   // bunting: small triangles on a string
   const flagCols = ['#ff9933', '#ffffff', '#138808', '#e91e63', '#ffeb3b', '#2196f3', '#9c27b0'].map(hex);

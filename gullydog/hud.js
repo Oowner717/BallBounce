@@ -187,6 +187,10 @@ export class Hud {
         case 'trainSnack': this.toast(`Somebody on the train threw you a ${e.kind}!`, 'good', 2.8); break;
         case 'showStart': if (Math.hypot(S.dog.x - e.x, S.dog.z - e.z) < 70) this.toast("Drums in Mandir Square: the rope walker's show is starting!", 'gold', 3.6); break;
         case 'showTrick': this.toast('The crowd loves it! Ek aur!', 'good', 1.8); break;
+        case 'powerCut': this.toast('Light gayi! The power has gone. Again.', 'bad', 3); break;
+        case 'powerOn': this.toast('Light aa gayi! The lineman fixed it.', 'good', 3); break;
+        case 'zapped': this.vig = Math.max(this.vig || 0, 0.5); this.toast('BZZT! Not the transformer, Bhura!', 'bad', 2.8); break;
+        case 'dungStep': this.toast('Squelch. Gobar. Fresh, too.', '', 2.2); break;
         case 'retreatSoon': this.toast(`The border ceremony starts soon at Seema Chowki, west of Mandir Square!`, 'gold', 4.5); break;
         case 'retreatStart': if (Math.hypot(S.dog.x + 66, S.dog.z + 37) < 80) this.toast('Drums, chants, crowds: the Retreat is starting!', 'gold', 3.2); break;
         case 'paradeDog': this.toast('You joined the parade! The crowd goes wild.', 'good', 3); break;

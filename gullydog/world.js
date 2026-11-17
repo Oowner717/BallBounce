@@ -268,6 +268,7 @@ export function generateWorld(seed = 7) {
   placeRailway(W);
   placeRiver(W, rng);
   placeBorder(W);
+  placeTransformer(W);
   placeLandmarks(W, rng);
   placeStreetProps(W, rng);
   placeWires(W, rng);
@@ -675,6 +676,30 @@ function placeBorder(W) {
     sentriesPK: [{ x: B.gatePK - 1.2, z: B.road[0] + 1.0 }, { x: B.gatePK - 1.2, z: B.road[1] - 1.0 }],
   });
   W.pois.landmarks.push({ id: 'border', x: -66, z: -37, name: 'Seema Chowki' });
+}
+
+/**
+ * The transformer at the corner of the maidan, on two poles with a platform,
+ * DANGER boards and a fuse box (power.js runs the power cuts and the lineman);
+ * and along the maidan's north edge, a wall covered in dung cakes drying in
+ * the sun, with a stack of dried ones beside it.
+ */
+function placeTransformer(W) {
+  const x = 29.2, z = -28.2;
+  const poles = [[x - 1.1, z], [x + 1.1, z]];
+  prop(W, 'transformer', x, z, { poles });
+  for (const [px, pz] of poles) addCircle(W, px, pz, 0.16, 9, { tag: 'post' });
+  W.pois.posts.push({ x: x - 1.1, z: z - 0.25, tag: 'transformer' });
+  W.special.transformer = {
+    // everything faces the maidan (north): the ladder, the fuse box, the DANGER boards
+    x, z, poles, box: { x, y: 3.9, z }, ladder: { x: x - 1.1, z: z - 0.55 }, workY: 2.55,
+    walkIn: { x: x + 4.5, z: -32.5 }, warn: { x, z: z - 1.2 },
+  };
+  // the dung cakes, and the stack
+  prop(W, 'dungcakes', 33.5, -57.35, { x0: 30, x1: 37 });
+  addBox(W, 30, -57.5, 37, -57.2, 1.6, { tag: 'wall' });
+  prop(W, 'dungstack', 38.6, -56.4, { r: 0.85 });
+  addCircle(W, 38.6, -56.4, 0.8, 1.5, { tag: 'stack' });
 }
 
 /* ---------------------------------------------------------------- landmarks */

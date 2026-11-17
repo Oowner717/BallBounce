@@ -586,6 +586,26 @@ function humanPose(rig, a, speed, mode) {
       rig.add(1, 0, -0.05, 0);
       rig.add(3, 0, 0, 0.05);
       break;
+    case 'climb': {
+      // up (or down) a ladder: hands over hands, knees up
+      const c = Math.sin(t * 5);
+      rig.add(3, 0, -2.4 - 0.4 * c, 0.15); rig.add(4, 0, -0.5, 0);
+      rig.add(5, 0, -2.4 + 0.4 * c, -0.15); rig.add(6, 0, -0.5, 0);
+      rig.add(7, 0, -0.9 - 0.5 * c, 0); rig.add(8, 0, 1.2, 0);
+      rig.add(9, 0, -0.9 + 0.5 * c, 0); rig.add(10, 0, 1.2, 0);
+      rig.add(2, 0, -0.35, 0);
+      break;
+    }
+    case 'work': {
+      // up the pole, one arm hooked round it, the other at the fuse with the pliers
+      const s = Math.sin(t * 7);
+      rig.add(3, 0, -1.6, 0.4); rig.add(4, 0, -1.2, 0);
+      rig.add(5, 0, -2.3 + 0.15 * s, -0.2); rig.add(6, 0, -0.6 + 0.3 * s, 0);
+      rig.add(7, 0, -0.6, 0.05); rig.add(8, 0, 1.0, 0);
+      rig.add(9, 0, -0.2, -0.05); rig.add(10, 0, 0.4, 0);
+      rig.add(2, 0, -0.45, 0);
+      break;
+    }
     case 'kick': {
       // out and back once with the right foot
       const k = Math.sin(Math.min(1, (a.modeT || 0) / 0.5) * Math.PI);

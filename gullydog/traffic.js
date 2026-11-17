@@ -14,7 +14,7 @@
  */
 
 import { routePose, ARMS, surfAt, SURF } from './world.js';
-import { pickWeighted, pick, rand, clamp, lerp, dist2, wrapAngle, hex, smoothstep } from './util.js';
+import { pickWeighted, pick, rand, clamp, lerp, dist2, wrapAngle, hex, smoothstep, makeRng } from './util.js';
 import { emit, say } from './simcore.js';
 import { gateStop } from './rail.js';
 import { SKIN_TONES, HAIR_COLORS, CLOTHES, VEHICLE_COLORS, SPEECH } from './data.js';
@@ -67,8 +67,7 @@ function chooseRoute(S, arm) {
 
 /* ------------------------------------------------------------------- riders */
 
-function person(S, opts) {
-  const rng = S.rng;
+function person(S, opts, rng = S.rng) {
   const female = opts.female !== undefined ? opts.female : rng() < 0.32;
   const kind = opts.kind || (female ? pick(rng, ['saree', 'salwar']) : pick(rng, ['man', 'manMustache', 'cap', 'kurta', 'turban']));
   const skin = hex(pick(rng, SKIN_TONES));
@@ -81,9 +80,25 @@ function person(S, opts) {
   return { kind, colors: [skin, top, bottom, hair], scale: rand(rng, 0.94, 1.06) };
 }
 
-function makeRiders(S, type) {
+/**
+ * The whole family on one scooter: dad driving, the little one standing on the
+ * footboard in front of him, another squeezed in behind, and mum side-saddle on
+ * the back with the baby. Their own dice, from the vehicle's number.
+ */
+function family(S, id) {
+  const rng = makeRng((id * 7919 + 13) >>> 0);
+  const dad = Object.assign(person(S, { female: false, kind: pick(rng, ['man', 'manMustache', 'cap']) }, rng), { seat: 'driver', pose: 'ride' });
+  const front = Object.assign(person(S, { female: false, kind: 'man' }, rng), { kind: 'kid', off: [0, 0.3, 0.17], stand: true, pose: 'stand', scale: 0.56 });
+  const mid = Object.assign(person(S, { female: false, kind: 'man' }, rng), { kind: rng() < 0.5 ? 'kid' : 'girl', off: [0, 0.84, -0.43], pose: 'passenger', scale: 0.6 });
+  const mum = Object.assign(person(S, { female: true, kind: rng() < 0.7 ? 'saree' : 'salwar' }, rng), { off: [0.13, 0.87, -0.66], turn: Math.PI / 2, pose: 'passenger', baby: true });
+  return [dad, front, mid, mum];
+}
+
+function makeRiders(S, type, id) {
   const rng = S.rng;
   const R = [];
+  // now and then, a whole family on one scooter
+  if (type === 'scooter' && ((id * 2246822519) >>> 0) % 100 < 14) return family(S, id);
   switch (type) {
     case 'auto': {
       R.push(Object.assign(person(S, { female: false, uniform: rng() < 0.7, kind: pick(rng, ['man', 'manMustache', 'cap']) }), { seat: 'driver', pose: 'ride' }));
@@ -140,7 +155,7 @@ function makeVehicle(S, type, routeIndex, s) {
     v: T.vmax * 0.6, vmax: T.vmax * rand(S.rng, 0.85, 1.12),
     x: 0, z: 0, yaw: 0, dirx: 0, dirz: 1, y: 0,
     stopT: 0, waitT: 0, honkCD: rand(S.rng, 0, 3), honkT: 0, spin: 0, steer: 0, pitch: 0,
-    colors: vehicleColors(S, type), riders: makeRiders(S, type),
+    colors: vehicleColors(S, type), riders: makeRiders(S, type, S.nextId - 1),
     blockedKind: '', blockedT: 0, weaveT: 0, brakeT: 0, creep: false,
     stopAt: -1, stopWait: 0, stopped: false,
     circles: [], len: T.len, halfW: T.halfW,
@@ -150,6 +165,7 @@ function makeVehicle(S, type, routeIndex, s) {
   const n = Math.max(1, Math.round(T.len / (2 * T.halfW)));
   const r = Math.max(T.halfW, T.len / (2 * n));
   for (let k = 0; k < n; k++) v.circles.push({ off: n === 1 ? 0 : -(T.len / 2 - r) + ((T.len - 2 * r) * k) / (n - 1), r });
+  if (v.riders.length >= 4) v.vmax *= 0.8; // a family on board: take it easy
   if (type === 'bus' && S.busStopS[routeIndex] !== undefined) v.stopAt = S.busStopS[routeIndex];
   else if (type === 'auto' && S.rng() < 0.18) {
     const end = route.entryS - 25;
@@ -429,6 +445,12 @@ export function step(S, dt) {
     const dNext = clamp(v.d + clamp(v.dTarget - v.d, -latStep, latStep), -room - 0.05, room + 0.05);
     if (dNext !== v.d && sideClear(S, v, route, dNext)) v.d = dNext;
 
+    // held up by a dog lying in the road: a long blast of the horn, and off it goes
+    if (sense.what === 'npcdog' && v.blockedT > 2.5 && S.t > (v.shooT || 0)) {
+      v.shooT = S.t + 6;
+      sense.ref.shooed = { x: v.x, z: v.z };
+      honk(S, v, false);
+    }
     // held up by a cow for a while: the driver leans out and shoos it along
     if (sense.what === 'cow' && v.blockedT > 6 && S.t > (v.shooT || 0)) {
       v.shooT = S.t + 8;

@@ -256,6 +256,9 @@ export const SPEECH = {
   borderGuard: [['Oye! Wapas!', 'Hey! Back you go!'], ['Visa hai?', 'Got a visa?'], ['Idhar nahi, beta!', 'Not this way, son!']],
   borderLaugh: [['Hahaha! Bina visa ke!', 'Hahaha! No visa!'], ['Wapas Hindustan!', 'Back to India!'], ['Kutta bhi border paar!', 'Even the dog wants to cross!']],
   paradeDog: [['Arre, kutta bhi parade mein!', "The dog's in the parade too!"], ['Wah, sher! Left, right!', 'Bravo, lion! Left, right!']],
+  // load-shedding
+  powerCut: [['Light gayi!', "The power's gone!"], ['Phir se?!', 'Again?!'], ['Arre yaar, light!', 'Oh no, the power!'], ['Inverter chalu karo!', 'Switch on the inverter!']],
+  powerBack: [['Light aa gayi!', "The power's back!"], ['Aa gayi, aa gayi!', "It's back, it's back!"], ['Shukar hai!', 'Thank goodness!']],
   kick: [['Chal hatt!', 'Scram!'], ['Bhaag yahan se!', 'Get lost!'], ['Bhonk mat!', "Don't bark at me!"], ['Pagal kutta!', 'Mad dog!']],
   // the gateman at the level crossing
   gateman: [['Phatak band!', 'Gate closed!'], ['Gaadi aa rahi hai!', "Train's coming!"], ['Peeche hato!', 'Stand back!'], ['Ruko, ruko!', 'Wait, wait!']],

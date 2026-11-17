@@ -21,6 +21,7 @@
  */
 
 import { makeRng, rand, pick, dist2, hex } from './util.js';
+import { surfAt, SURF } from './world.js';
 import { emit, say, groundAt } from './simcore.js';
 import { makePerson, startReaction } from './crowd.js';
 import { SPEECH } from './data.js';
@@ -34,7 +35,15 @@ export function init(S) {
     rng: makeRng((S.seed * 69069 + S.clock.day * 1013 + 5) >>> 0),
     kids: [],
     show: null,
+    dung: [],   // cow pats: {x, z, born}, wherever the cows have been
   };
+  // the morning's pats are already down round the cows' haunts
+  for (const c of S.W.spawns.cows || []) {
+    for (let k = 0; k < 2; k++) {
+      const a = st.rng() * Math.PI * 2, r = 1 + st.rng() * Math.min(4, c.r || 4);
+      dropPat(S, c.x + Math.cos(a) * r, c.z + Math.sin(a) * r);
+    }
+  }
   const who = { rng: st.rng, nextId: 2e6, C: S.C };
   const person = (opts) => {
     const p = makePerson(who, Object.assign({ role: 'special' }, opts));
@@ -95,6 +104,35 @@ export function init(S) {
 export function step(S, dt) {
   if (S.street.kids.length) kids(S, dt);
   if (S.street.show) show(S, dt);
+  dung(S, dt);
+}
+
+/* ---------------------------------------------------------------- cow dung */
+
+const PAT_GROUND = new Set([SURF.ROAD, SURF.WALK, SURF.GALI, SURF.PLAZA, SURF.DIRT, SURF.MARKET, SURF.CROSS]);
+
+function dropPat(S, x, z) {
+  if (!PAT_GROUND.has(surfAt(S.W, x, z))) return;
+  const D = S.street.dung;
+  D.push({ x, z, born: S.t, yaw: S.street.rng() * Math.PI * 2 });
+  if (D.length > 26) D.shift();
+}
+
+/** Cows leave pats where they stand; a dog who trots through one knows about it. */
+function dung(S, dt) {
+  const st = S.street;
+  for (const c of S.cows) {
+    if (st.rng() < dt / 95) dropPat(S, c.x - Math.sin(c.yaw) * 0.95, c.z - Math.cos(c.yaw) * 0.95);
+  }
+  const d = S.dog;
+  if (d.speed < 0.3 || !d.onGround) return;
+  for (const pt of st.dung) {
+    if (pt.stepped || dist2(pt.x, pt.z, d.x, d.z) > 0.36 * 0.36) continue;
+    pt.stepped = true;
+    d.needs.mood = Math.max(0, d.needs.mood - 2);
+    d.dungT = 14; // smelly paw prints for a while (main.js)
+    emit(S, 'dungStep', { x: pt.x, z: pt.z });
+  }
 }
 
 /* ---------------------------------------------------------------- helpers */

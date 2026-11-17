@@ -1688,6 +1688,70 @@ test('at night the gates are shut, and a shut gate is a wall', () => {
 });
 
 /* ========================================================================== */
+/* Electricity, dung, families                                                */
+/* ========================================================================== */
+
+group('wires, dung and families');
+
+test('once a night the power goes, and a lineman climbs the pole and fixes it, unhurt', () => {
+  const S = sim({ seed: 4, hour: 20.0, quiet: true });
+  const P = S.power, X = S.W.special.transformer;
+  P.cutAt = 20.05;
+  const ev = runUntil(S, 30, IDLE, (S2, out) => only(out, 'powerCut').length > 0);
+  assert.equal(only(ev, 'powerCut').length, 1, 'the power never went');
+  assert.equal(P.level, 0);
+  let top = 0;
+  const ev2 = runUntil(S, 90, IDLE, (S2, out) => { top = Math.max(top, P.lineman.y); return only(out, 'powerOn').length > 0; });
+  assert.equal(only(ev2, 'powerOn').length, 1, 'nobody came to fix it');
+  assert.ok(only(ev2, 'spark').length >= 3, 'fixed without a single spark');
+  assert.ok(top > X.workY - 0.1, 'he never climbed up');
+  assert.equal(P.level, 1);
+  runUntil(S, 30, IDLE, () => P.lineman.hidden);
+  assert.ok(P.lineman.hidden && P.lineman.phase === 'away', 'the lineman never went home');
+  // and that was tonight's cut
+  const later = run(S, 60);
+  assert.equal(only(later, 'powerCut').length, 0, 'the power went twice in one night');
+});
+
+test('a dog who marks the transformer pole gets a jolt, and nothing worse', () => {
+  const S = sim({ seed: 4, hour: 11, quiet: true });
+  const post = S.W.pois.posts.find((q) => q.tag === 'transformer');
+  place(S, post.x, post.z + 0.65, Math.PI);
+  assert.equal(contextAction(S).kind, 'mark', 'cannot mark the transformer pole from here');
+  const h0 = S.dog.needs.health;
+  const ev = press(S, 'act', 2.5);
+  assert.equal(only(ev, 'zapped').length, 1, 'no zap');
+  assert.ok(S.dog.needs.health >= h0 - 1.01 && S.dog.needs.health > 0, 'a zap that did real harm');
+  checkSane(S);
+});
+
+test('cows leave pats where they stand; a dog who trots through one carries the smell for a while', () => {
+  const S = sim({ seed: 4, hour: 9, quiet: true });
+  assert.ok(S.street.dung.length > 0, 'no pats down this morning');
+  place(S, -20, -36, Math.PI / 2);
+  S.street.dung.push({ x: -18.5, z: -36, born: S.t, yaw: 0 });
+  const ev = run(S, 1.5, { mx: 1, mz: 0 });
+  assert.equal(only(ev, 'dungStep').length, 1, 'trod straight through it and noticed nothing');
+  assert.ok(S.dog.dungT > 0);
+  const n0 = S.street.dung.length;
+  run(S, 240);
+  assert.ok(S.street.dung.length >= n0, 'the cows have stopped');
+});
+
+test('now and then a whole family rides one scooter, and takes it easy', () => {
+  const S = sim({ seed: 4, hour: 9 });
+  let fam = null;
+  for (let i = 0; i < Math.round(240 / DT) && !fam; i++) {
+    step(S, DT, IDLE);
+    drainEvents(S);
+    fam = S.vehicles.find((v) => v.type === 'scooter' && v.riders.length === 4);
+  }
+  assert.ok(fam, 'no family scooter in four minutes');
+  assert.ok(fam.riders.some((r) => r.baby) && fam.riders.some((r) => r.stand), 'not the whole family');
+  assert.ok(fam.vmax <= S.C.traffic.types.scooter.vmax * 1.12 * 0.8 + 1e-9, 'a family scooter at full tilt');
+});
+
+/* ========================================================================== */
 /* Tasks and cred                                                             */
 /* ========================================================================== */
 

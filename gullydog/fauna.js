@@ -457,6 +457,21 @@ function npcDog(S, d, dt) {
   // calm company builds trust
   if (dist < 4 && P.speed < 2 && !d.puppy && fr < A.calmCap && P.barkedAt !== S.t) addFriendship(S, d, A.friendCalm * dt);
 
+  // a driver leaning on the horn: up, and off the carriageway
+  if (d.shooed) {
+    const from = d.shooed;
+    d.shooed = null;
+    let best = null, bs = -Infinity;
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2, r = 2.5 + (k % 3) * 0.8;
+      const tx = d.x + Math.cos(a) * r, tz = d.z + Math.sin(a) * r;
+      if (!openGround(S.W, tx, tz) || surfAt(S.W, tx, tz) === SURF.ROAD) continue;
+      const score = Math.hypot(tx - from.x, tz - from.z) - 0.3 * Math.hypot(tx - d.home.x, tz - d.home.z);
+      if (score > bs) { bs = score; best = { x: tx, z: tz }; }
+    }
+    if (best && !d.puppy) { d.state = 'patrol'; d.target = best; }
+  }
+
   // food on the ground nearby is fair game
   if (d.state !== 'chase' && d.state !== 'eat') {
     for (const it of S.items) {
@@ -579,7 +594,8 @@ function npcDog(S, d, dt) {
       if (d.timer <= 0 && !siesta) {
         const a = S.rng() * Math.PI * 2, r = 2 + S.rng() * (A.dogTerritory - 2);
         const tx = d.home.x + Math.cos(a) * r, tz = d.home.z + Math.sin(a) * r;
-        if (openGround(S.W, tx, tz)) { d.target = { x: tx, z: tz }; d.state = 'patrol'; }
+        // a ramble to somewhere off the carriageway (crossing it on the way is fine)
+        if (openGround(S.W, tx, tz) && surfAt(S.W, tx, tz) !== SURF.ROAD) { d.target = { x: tx, z: tz }; d.state = 'patrol'; }
         d.timer = rand(S.rng, 15, 40);
       }
       // night watch: bark at passing traffic now and then

@@ -27,6 +27,7 @@ import * as Scenes from './scenes.js';
 import * as Rail from './rail.js';
 import * as Street from './street.js';
 import * as Border from './border.js';
+import * as Power from './power.js';
 import * as Tasks from './tasks.js';
 
 export { drainEvents };
@@ -91,6 +92,7 @@ export function createSim({ world, config, seed = 1, save = null, weather = null
   Rail.init(S);
   Street.init(S);
   Border.init(S);
+  Power.init(S);
   Tasks.startDay(S);
   if (save && save.mid && save.mid.day === S.clock.day) applyMidDay(S, save.mid);
   S.dog.y = groundAt(S, S.dog.x, S.dog.z, 1);
@@ -126,6 +128,7 @@ export function step(S, dt, input) {
   Scenes.step(S, dt);
   Street.step(S, dt);
   Border.step(S, dt);
+  Power.step(S, dt);
   updateItems(S, dt);
   updateNeeds(S, dt);
   updateBubbles(S, dt);
@@ -148,6 +151,8 @@ function updateDog(S, dt, input) {
   const d = S.dog;
   const C = S.C.dog;
   d.barkCD -= dt; d.sniffCD -= dt; d.invuln -= dt; d.scaredT -= dt; d.bikeCD -= dt;
+  if (d.zapT > 0) d.zapT -= dt;
+  if (d.dungT > 0) d.dungT -= dt;
   if (d.barkT > 0) d.barkT -= dt;
   const mx = input.mx || 0, mz = input.mz || 0;
   const mag = Math.min(1, Math.hypot(mx, mz));
@@ -210,7 +215,7 @@ function updateDog(S, dt, input) {
   d.z += d.vz * dt;
 
   // ...up and down: gravity, landing, kerbs and steps...
-  const g = groundAt(S, d.x, d.z, d.y, C.stepUp);
+  const g = dogGround(S, d.x, d.z, d.y, C.stepUp);
   if (!d.onGround || d.y > g + 0.02) {
     d.onGround = false;
     // exact for constant gravity, so a jump is the same height at any frame rate
@@ -363,6 +368,27 @@ function collideStatic(S, d) {
   }
 }
 
+const edgeList = [];
+/**
+ * The ground under the dog: under his feet, or the top of a platform (a charpai,
+ * a bench, a crate) whose edge he is mostly over. Coming down beside one he
+ * lands on its edge instead of wedging himself between it and a wall.
+ */
+function dogGround(S, x, z, y, stepUp) {
+  let g = groundAt(S, x, z, y, stepUp);
+  const r = S.C.dog.radius * 0.55;
+  collidersNear(S.W, x, z, r, edgeList);
+  for (const idx of edgeList) {
+    const c = S.W.colliders[idx];
+    if (!c.platform || c.y1 <= g || c.y1 > y + 0.08) continue; // only one he is at or above the top of
+    const dd = c.kind === 'box'
+      ? Math.hypot(x - clamp(x, c.x0, c.x1), z - clamp(z, c.z0, c.z1))
+      : Math.max(0, Math.hypot(x - c.x, z - c.z) - c.r);
+    if (dd < r) g = c.y1;
+  }
+  return g;
+}
+
 const dynList = [];
 
 function collideDynamic(S, d, dt) {
@@ -480,8 +506,8 @@ function finishAction(S, a) {
     case 'mark': {
       const p = a.target;
       const key = Math.round(p.x * 10) + ',' + Math.round(p.z * 10);
-      if (!d.marked.includes(key)) { d.marked.push(key); emit(S, 'marked', { x: p.x, z: p.z }); }
-      else emit(S, 'markedAgain', {});
+      if (!d.marked.includes(key)) { d.marked.push(key); emit(S, 'marked', { x: p.x, z: p.z, tag: p.tag || '' }); }
+      else emit(S, 'markedAgain', { tag: p.tag || '' });
       break;
     }
     case 'grab': {
@@ -974,6 +1000,7 @@ export function hashState(S) {
   for (const t of S.rail.trains) { mix(t.id); mix(t.x); mix(t.v); }
   mix(S.rail.gate.k); mix(S.rail.next);
   if (S.border) { mix(S.border.gate); mix(S.border.flagUp); for (const s of S.border.soldiers) { mix(s.x); mix(s.z); } }
+  mix(S.power.level); mix(S.street.dung.length);
   mix(S.items.length);
   mix(S.rng.getState());
   return h >>> 0;

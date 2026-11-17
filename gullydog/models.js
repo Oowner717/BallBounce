@@ -940,6 +940,20 @@ export function buildItems() {
         b.rod([Math.cos(a0) * 0.28, 0.04, Math.sin(a0) * 0.28], [Math.cos(a1) * 0.28, 0.04, Math.sin(a1) * 0.28], 0.07, 5);
       }
     }),
+    // a cow pat; the lineman's bamboo ladder; a baby in its wrap
+    dung: one('dung', (b) => {
+      b.color(hex('#4a3a24')).sphere(0, 0.0, 0, 0.17, 1, 0.3).sphere(0.03, 0.03, 0.02, 0.11, 0, 0.35);
+      b.color(hex('#3a2c1a')).sphere(-0.02, 0.05, -0.01, 0.06, 0, 0.5);
+    }),
+    ladder: one('ladder', (b) => {
+      b.color(hex('#b8975a'));
+      b.rod([-0.22, 0, 0], [-0.2, 3.4, 0], 0.03, 5).rod([0.22, 0, 0], [0.2, 3.4, 0], 0.03, 5);
+      for (let y = 0.3; y < 3.3; y += 0.32) b.rod([-0.22, y, 0], [0.22, y, 0], 0.018, 4);
+    }),
+    baby: one('baby', (b) => {
+      b.color(hex('#f3e5c8')).box(-0.07, -0.08, -0.17, 0.07, 0.08, 0.13);
+      b.color(hex('#8d5524')).sphere(0, 0.03, 0.16, 0.06, 0);
+    }),
     // luggage on the train roofs, and the gateman's flag
     bundle: one('bundle', (b) => {
       b.color(hex('#b03a2e')).sphere(0, 0.2, 0, 0.3, 1, 0.65);

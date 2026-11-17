@@ -409,6 +409,7 @@ function adaptResolution(dt) {
 function onEvents(events) {
   hud.handle(events, S);
   audio.handle(events, S);
+  streetEvents(events);
   for (const e of events) {
     switch (e.type) {
       case 'hit': cam.shake = 1; burst(S.dog.x, S.dog.y + 0.4, S.dog.z, 14, [0.85, 0.8, 0.7], 0.12, 2.5, false); break;
@@ -454,7 +455,12 @@ const tmp3 = [0, 0, 0];
 const rainSeed = makeRng(5);
 
 function drawScene(dt, time) {
-  const env = lastEnv = environment(S.clock.hours, S.weather);
+  let env = environment(S.clock.hours, S.weather);
+  // a power cut: lamps and shop lights off, a window lit here and there on an inverter
+  const pw = S.power ? S.power.level : 1;
+  powerLight = lerp(powerLight, pw, 1 - Math.exp(-dt * (pw > powerLight ? 3 : 9)));
+  if (powerLight < 0.999) env = Object.assign({}, env, { lampLevel: env.lampLevel * powerLight, winCol: env.winCol.map((v) => v * (0.1 + 0.9 * powerLight)) });
+  lastEnv = env;
   m4Mul(vp, proj, view);
   R.beginFrame();
   R.setCamera(view, proj, [cam.x, cam.y, cam.z]);
@@ -533,9 +539,14 @@ function drawScene(dt, time) {
     // riders
     const cy = Math.cos(v.yaw), sy = Math.sin(v.yaw);
     for (const rd of v.riders) {
-      const seat = rd.seat === 'driver' ? m.seats && m.seats.driver : m.seats && m.seats.back[Number(rd.seat.slice(4)) || 0];
+      const seat = rd.off || (rd.seat === 'driver' ? m.seats && m.seats.driver : m.seats && m.seats.back[Number(rd.seat.slice(4)) || 0]);
       if (!seat) continue;
       const wx = v.x + cy * seat[0] + sy * seat[2], wz = v.z - sy * seat[0] + cy * seat[2];
+      if (rd.baby) {
+        // the baby, in her lap
+        const bx = seat[0] + 0.24, by = seat[1] + 0.12, bz = seat[2];
+        itemInstance('baby', v.x + cy * bx + sy * bz, by, v.z - sy * bx + cy * bz, v.yaw);
+      }
       const ra = animOf(rd);
       animateHuman(ra, { speed: 0, mode: rd.pose, pedal: rd.pose === 'pedal' ? v.v : 0 }, dt);
       const hr = rigs[rd.kind] || rigs.man;
@@ -544,7 +555,7 @@ function drawScene(dt, time) {
       const hb = R.batch(PEOPLE_KINDS.includes(rd.kind) ? rd.kind : 'man');
       const ho = hb.alloc();
       hb.colors(ho, rd.colors[0], rd.colors[1], rd.colors[2], rd.colors[3]);
-      hr.write(hb.data, ho + 16, wx, seat[1] - 0.53 * rd.scale, wz, v.yaw, rd.scale);
+      hr.write(hb.data, ho + 16, wx, rd.stand ? seat[1] : seat[1] - 0.53 * rd.scale, wz, v.yaw + (rd.turn || 0), rd.scale);
     }
     // exhaust from autos, buses and trucks
     if ((v.type === 'auto' || v.type === 'bus' || v.type === 'truck') && near(v.x, v.z, 40) && Math.random() < dt * (v.type === 'auto' ? 3 : 5)) {
@@ -574,6 +585,9 @@ function drawScene(dt, time) {
 
   /* the border post: the guards, the crowds, the gates and the flags */
   drawBorder(dt, time);
+
+  /* the electricity: the lineman and his ladder, sparks; cow pats and their flies */
+  drawStreetBits(dt, time, env);
 
   /* cows and goats */
   for (const c of S.cows) {
@@ -679,6 +693,17 @@ function drawScene(dt, time) {
     const hx = v.x + v.dirx * (v.len / 2 + 0.05), hz = v.z + v.dirz * (v.len / 2 + 0.05);
     R.particle(hx, 0.85, hz, 0.9, 0.6 * night, 0.58 * night, 0.45 * night, 1, true);
   }
+  if (powerLight < 0.5 && env.night > 0.3) {
+    // the shops with generators keep a light going
+    let n = 0;
+    for (const l of W.lights) {
+      if (l.kind !== 'shop' || n >= 3 || !near(l.x, l.z, 40) || ((Math.round(l.x * 7 + l.z * 3) >>> 0) % 3)) continue;
+      L.push({ x: l.x, y: l.y, z: l.z, r: l.r * 0.8, color: [1.0, 0.86, 0.6], i: 1.2 * env.night });
+      n++;
+    }
+  }
+  for (const f of flashes) L.push(f);
+  flashes.length = 0;
   R.setLights(L);
 
   /* shadows follow a point a little ahead of the camera's gaze */
@@ -704,6 +729,90 @@ const PARKED = {
 const AUTO_TOP = hex('#f5c518');
 
 function groundY(x, z) { return groundAt(S, x, z, 0.5); }
+
+/* ------------------------------------------------------- electricity, dung */
+
+let powerLight = 1;
+const flashes = []; // brief point lights from sparks, this frame only
+let wireSparkT = 6;
+let pawT = 0;
+
+function sparkBurst(x, y, z, n, big) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * TAU, u = Math.random() * 2 - 1, sp = (big ? 4.5 : 2.6) * (0.4 + Math.random() * 0.6);
+    spawnP(x, y, z, Math.cos(a) * Math.sqrt(1 - u * u) * sp, Math.abs(u) * sp * 0.6, Math.sin(a) * Math.sqrt(1 - u * u) * sp, 0.35 + Math.random() * 0.4, 0.07, [1, 0.92, 0.55], 1, true, 9.8);
+  }
+  flashes.push({ x, y, z, r: big ? 10 : 6, color: [0.75, 0.85, 1.0], i: big ? 1.4 : 0.8 });
+}
+
+/** Called with the frame's events: sparks where the sim says, a jolt for a dog who deserved it. */
+function streetEvents(events) {
+  for (const e of events) {
+    if (e.type === 'spark') sparkBurst(e.x, e.y, e.z, e.big ? 26 : 12, e.big);
+    else if (e.type === 'zapped') { sparkBurst(S.dog.x, S.dog.y + 0.5, S.dog.z, 18, false); cam.shake = Math.max(cam.shake, 0.6); }
+  }
+}
+
+function drawStreetBits(dt, time, env) {
+  const near = (x, z, r) => dist2(x, z, cam.x, cam.z) < r * r;
+  const X = W.special.transformer;
+  // the lineman: on his way, up the ladder, or off home
+  const L = S.power && S.power.lineman;
+  if (L && !L.hidden && near(L.x, L.z, 80)) {
+    const a = animOf(L);
+    animateHuman(a, { speed: L.speed, mode: L.mode, look: 0 }, dt);
+    const rig = rigs.cap;
+    poseHuman(rig, a, L.speed, L.mode);
+    const b = R.batch('cap');
+    const o = b.alloc();
+    b.colors(o, L.colors[0], L.colors[1], L.colors[2], L.colors[3]);
+    rig.write(b.data, o + 16, L.x, L.y, L.z, L.yaw, L.scale);
+    if (L.phase !== 'walk' && L.phase !== 'leave') itemInstance('ladder', X.ladder.x, groundY(X.ladder.x, X.ladder.z), (X.ladder.z + X.poles[0][1]) / 2, 0);
+    if (env.night > 0.3) R.particle(L.x, L.y + 1.75 * L.scale, L.z, 0.8, 0.9 * env.night, 0.85 * env.night, 0.6 * env.night, 1, true); // his head torch
+  }
+  // the transformer: a hum, and a spit of sparks now and then (only for show)
+  if (X && near(X.x, X.z, 60) && Math.random() < dt * (S.weather === 'rain' ? 0.5 : 0.08)) sparkBurst(X.box.x + (Math.random() - 0.5) * 0.6, X.box.y + 0.5, X.box.z, 8, false);
+  // the tangle overhead: a crackle at a pole top somewhere nearby
+  wireSparkT -= dt * (S.weather === 'rain' ? 3 : 1);
+  if (wireSparkT <= 0) {
+    wireSparkT = 7 + Math.random() * 14;
+    const cand = W.wires.filter((w) => near(w.a[0], w.a[2], 32) && w.color === 2);
+    if (cand.length) {
+      const w = cand[Math.floor(Math.random() * cand.length)];
+      sparkBurst(w.a[0], w.a[1], w.a[2], 10, false);
+      if (audio) audio.crackle(w.a[0], w.a[2]);
+    }
+  }
+  // cow pats, and the flies that come with them
+  for (const pt of S.street.dung) {
+    if (!near(pt.x, pt.z, 45)) continue;
+    const y = groundY(pt.x, pt.z);
+    itemInstance('dung', pt.x, y + 0.01, pt.z, pt.yaw);
+    if (near(pt.x, pt.z, 14)) {
+      for (let k = 0; k < 3; k++) {
+        const a = time * (2.5 + k) + pt.yaw * 3 + k * 2.1;
+        R.particle(pt.x + Math.cos(a) * 0.25, y + 0.25 + 0.08 * Math.sin(a * 1.7), pt.z + Math.sin(a) * 0.25, 0.035, 0.05, 0.05, 0.05, 0.9, false);
+      }
+    }
+  }
+  // brown paw prints behind a dog who trod in one
+  const d = S.dog;
+  if (d.dungT > 0 && d.onGround && d.speed > 0.5) {
+    pawT -= dt;
+    if (pawT <= 0) {
+      pawT = 0.32;
+      pawPrints.push({ x: d.x, z: d.z, yaw: d.yaw, y: d.y, t: 10 });
+      if (pawPrints.length > 40) pawPrints.shift();
+    }
+  }
+  for (let i = pawPrints.length - 1; i >= 0; i--) {
+    const pp = pawPrints[i];
+    pp.t -= dt;
+    if (pp.t <= 0) { pawPrints.splice(i, 1); continue; }
+    if (near(pp.x, pp.z, 40)) R.decal(pp.x, pp.y + 0.015, pp.z, 0.13, pp.yaw, layout.uv['decal:paw'], 0.3, 0.2, 0.1, Math.min(1, pp.t / 3) * 0.8, 0);
+  }
+}
+const pawPrints = [];
 
 /* ------------------------------------------------------------------ border */
 

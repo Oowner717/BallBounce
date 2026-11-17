@@ -316,7 +316,7 @@ function walk(S, p, dt) {
   if (!crossingNow && pedMustWait(S, p, tx, tz)) { p.state = 'gate'; p.waitT = 0; p.speed = 0; return; }
   // Close is close enough when someone else is already standing on the spot (a
   // busy shop door): after two seconds of hovering without getting nearer, arrive.
-  if (dist < (crossingNow ? 0.5 : p.noProg > 2 ? 1.4 : 0.85)) {
+  if (dist < (crossingNow ? 0.5 : p.noProg > 2 || p.stuckN > 0 ? 1.4 : 0.85)) {
     p.node = idx;
     p.stuckN = 0;
     p.crossing = false;
@@ -387,7 +387,9 @@ function steer(S, p, dirx, dirz, speed, dt, onRoad) {
     const d2 = ex * ex + ez * ez;
     // someone standing still can be squeezed past (brushing shoulders, if it comes
     // to that); someone walking gets more room
-    let room = e.kind === 'ped' ? (e.ref.speed < 0.2 ? (p.noProg > 2 ? 0.3 : 0.5) : 0.7) : e.kind === 'dog' ? C.personalSpace : e.kind === 'veh' ? e.r + 0.55 : e.kind === 'cow' ? e.r + 0.45 : e.r + 0.35;
+    // so can a cow or a dog in a narrow gali, by someone who has been trying a while
+    const pressed = p.noProg > 2 || p.stuckN > 0;
+    let room = e.kind === 'ped' ? (e.ref.speed < 0.2 ? (pressed ? 0.3 : 0.5) : 0.7) : e.kind === 'dog' ? C.personalSpace : e.kind === 'veh' ? e.r + 0.55 : e.kind === 'cow' ? e.r + (pressed ? 0.12 : 0.45) : e.kind === 'npcdog' ? e.r + (pressed ? 0.1 : 0.35) : e.r + 0.35;
     if (d2 > room * room || d2 < 1e-6) continue;
     const d = Math.sqrt(d2);
     const push = (room - d) / room;

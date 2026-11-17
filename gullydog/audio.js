@@ -410,6 +410,20 @@ export class AudioEngine {
     strike.connect(bellG); bellG.connect(this.sfx);
     hammer.start();
     this.gateBell = { g: bellG };
+    // the transformer's hum, and the generators in a power cut
+    const hum = ctx.createOscillator(); hum.type = 'sawtooth'; hum.frequency.value = 100;
+    const humF = ctx.createBiquadFilter(); humF.type = 'bandpass'; humF.frequency.value = 200; humF.Q.value = 3;
+    const humG = ctx.createGain(); humG.gain.value = 0;
+    hum.connect(humF); humF.connect(humG); humG.connect(this.amb); hum.start();
+    this.hum = { g: humG };
+    const gen = ctx.createOscillator(); gen.type = 'square'; gen.frequency.value = 29;
+    const genF = ctx.createBiquadFilter(); genF.type = 'lowpass'; genF.frequency.value = 240;
+    const genG = ctx.createGain(); genG.gain.value = 0;
+    const genL = ctx.createOscillator(); genL.type = 'sine'; genL.frequency.value = 6.5;
+    const genLG = ctx.createGain(); genLG.gain.value = 0.25;
+    genL.connect(genLG); genLG.connect(genG.gain);
+    gen.connect(genF); genF.connect(genG); genG.connect(this.amb); gen.start(); genL.start();
+    this.genset = { g: genG };
     this.clackS = 0;
   }
 
@@ -432,6 +446,24 @@ export class AudioEngine {
       o.connect(g); g.connect(lp);
       o.start(t); o.stop(t + dur + 0.05);
     }
+  }
+
+  /** Electricity misbehaving: a dry crackle of tiny clicks. */
+  crackle(x, z, big) {
+    if (!this.ctx) return;
+    const out = this.voice(this.sfx, x, z, { gain: big ? 0.6 : 0.35, ref: 8, max: 70 });
+    if (!out) return;
+    const t = this.ctx.currentTime;
+    const n = big ? 22 : 10;
+    for (let k = 0; k < n; k++) this.noiseBurst(t + Math.random() * (big ? 0.5 : 0.25), 0.012, out, 'highpass', 2500 + Math.random() * 3000, 0.7, 0.3 + Math.random() * 0.3, 0.0005);
+    if (big) this.osc('sawtooth', 100, t, 0.25, out, 0.12, 0.002);
+  }
+
+  /** Stepping in a cow pat. */
+  squelch() {
+    const t = this.ctx.currentTime;
+    const n = this.noiseBurst(t, 0.18, this.sfx, 'lowpass', 500, 2.5, 0.35, 0.01);
+    n.flt.frequency.exponentialRampToValueAtTime(180, t + 0.18);
   }
 
   /** Boots slammed down on the parade road: a deep thud with a crack on top. */
@@ -589,6 +621,11 @@ export class AudioEngine {
         if (beat) this.dholak(sh.drummer.x, sh.drummer.z, beat === 1);
       }
     }
+    // the transformer hums; in a power cut the generators chug
+    const TR = S.W.special.transformer;
+    const xd = TR ? Math.hypot(TR.x - d.x, TR.z - d.z) : 999;
+    this.hum.g.gain.setTargetAtTime(xd < 30 && S.power.level > 0 ? 0.05 / (1 + (xd / 6) * (xd / 6)) : 0, t, 0.3);
+    this.genset.g.gain.setTargetAtTime(S.power.level < 1 ? 0.07 : 0, t, 0.8);
     // panting, in rhythm
     const pant = d.panting && !d.sleeping ? (Math.sin(t * 22) > 0 ? 0.07 : 0.012) : 0;
     this.pant.g.gain.setTargetAtTime(pant, t, 0.03);
@@ -630,6 +667,11 @@ export class AudioEngine {
         case 'trainHorn': this.trainHorn(e.x, e.z, e.long); break;
         case 'trainHit': this.thud(0.8); break;
         case 'kicked': this.yelp(); this.thud(0.3); break;
+        case 'spark': this.crackle(e.x, e.z, e.big); break;
+        case 'zapped': this.crackle(e.x, e.z, true); this.yelp(); break;
+        case 'dungStep': this.squelch(); break;
+        case 'powerCut': this.thud(0.25); break;
+        case 'powerOn': this.claps(S.dog.x, S.dog.z); break;
         case 'coin': this.coin(e.x, e.z); break;
         case 'stomp': this.stomp(e.x, e.z); break;
         case 'roar': this.roar(e.x, e.z); break;
