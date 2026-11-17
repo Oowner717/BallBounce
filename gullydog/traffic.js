@@ -361,8 +361,10 @@ export function step(S, dt) {
     // that darts out in front gets only what the brakes can do, which is the danger.
     if (sense.gap <= 0.05 && sense.what !== 'yield' && sense.what !== 'dog') v.v = Math.min(v.v, 0.2);
 
-    // weaving: two-wheelers, autos and cars squeeze past slow obstacles
-    const blocked = sense.gap < 7 && (sense.what !== 'veh' || sense.lead < v.vmax * 0.45) && sense.what !== 'yield' && sense.what !== 'stop';
+    // weaving: two-wheelers, autos and cars squeeze past slow obstacles. Only
+    // something actually in the way counts: at a crawl the look-ahead is short, and
+    // an empty road ahead of a vehicle pulling away is not a reason to swerve.
+    const blocked = sense.what !== '' && sense.gap < 7 && (sense.what !== 'veh' || sense.lead < v.vmax * 0.45) && sense.what !== 'yield' && sense.what !== 'stop';
     v.blockedT = blocked ? v.blockedT + dt : Math.max(0, v.blockedT - dt * 2);
     v.weaveT -= dt;
     const hw = POSE.halfW;

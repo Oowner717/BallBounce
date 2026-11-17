@@ -308,7 +308,9 @@ function walk(S, p, dt) {
   else if ((p.noProg += dt) > 5) { p.noProg = 0; repath(S, p); return; }
   if (p.via) { steer(S, p, dx / dist, dz / dist, p.walkSpeed, dt, false); return; }
   const crossingNow = p.crossing;
-  if (dist < (crossingNow ? 0.5 : 0.85)) {
+  // Close is close enough when someone else is already standing on the spot (a
+  // busy shop door): after two seconds of hovering without getting nearer, arrive.
+  if (dist < (crossingNow ? 0.5 : p.noProg > 2 ? 1.4 : 0.85)) {
     p.node = idx;
     p.stuckN = 0;
     p.crossing = false;
@@ -365,8 +367,9 @@ function steer(S, p, dirx, dirz, speed, dt, onRoad) {
     if (e.ref === p) continue;
     const ex = p.x - e.x, ez = p.z - e.z;
     const d2 = ex * ex + ez * ez;
-    // someone standing still can be squeezed past; someone walking gets more room
-    let room = e.kind === 'ped' ? (e.ref.speed < 0.2 ? 0.5 : 0.7) : e.kind === 'dog' ? C.personalSpace : e.kind === 'veh' ? e.r + 0.55 : e.kind === 'cow' ? e.r + 0.45 : e.r + 0.35;
+    // someone standing still can be squeezed past (brushing shoulders, if it comes
+    // to that); someone walking gets more room
+    let room = e.kind === 'ped' ? (e.ref.speed < 0.2 ? (p.noProg > 2 ? 0.3 : 0.5) : 0.7) : e.kind === 'dog' ? C.personalSpace : e.kind === 'veh' ? e.r + 0.55 : e.kind === 'cow' ? e.r + 0.45 : e.r + 0.35;
     if (d2 > room * room || d2 < 1e-6) continue;
     const d = Math.sqrt(d2);
     const push = (room - d) / room;
